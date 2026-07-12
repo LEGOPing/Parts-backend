@@ -9,14 +9,14 @@
     "orientation": "portrait",
     "icons": [
         {
-            "src": "/images/logo-192.png",
+            "src": "https://gitee.com/legoping/Parts-img/raw/master/LOGO.JPEG",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/jpeg"
         },
         {
-            "src": "/images/logo-512.png",
+            "src": "https://gitee.com/legoping/Parts-img/raw/master/LOGO.JPEG",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/jpeg"
         }
     ]
 }
