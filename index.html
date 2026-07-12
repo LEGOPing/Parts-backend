@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#F2CD37">
+    <meta name="description" content="乐高零件管理系统">
+    <title>乐高零件管理系统</title>
+    
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/css/style.css">
+    
+    <script src="/js/api.js"></script>
+    <script src="/js/store.js"></script>
+    <script src="/js/ui.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="aa-area">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="https://gitee.com/LEGOPing/LEGOPART-IMG/raw/master/LOGO.JPEG" alt="乐高零件管理系统">
+                </div>
+                <div class="title">
+                    <h1>顺德乐高玩具专卖店-零件库</h1>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bb-area">
+            <div class="nav">
+                <button class="repo-btn active" onclick="switchTab('repositories')">仓库管理</button>
+                <button class="part-btn" onclick="switchTab('parts')">零件管理</button>
+                <button class="search-btn" onclick="switchTab('search')">零件搜索</button>
+                <button class="settings-btn" onclick="switchTab('settings')">系统设置</button>
+            </div>
+        </div>
+        
+        <div class="cc-area">
+            <div class="content">
+                <div id="repositories-tab" class="tab-content active">
+                    <div class="repository-management">
+                        <div class="repository-header">
+                            <div>
+                                <h2>仓库列表</h2>
+                                <div class="repository-stats">共 <span id="repository-count">0</span> 个仓库</div>
+                            </div>
+                            <button onclick="addRepository()" class="add-repository-btn">添加仓库</button>
+                        </div>
+                        <div class="repository-scroll">
+                            <div class="repository-list" id="repositories-list"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="box-management" id="box-management" style="display: none;">
+                        <div class="box-header">
+                            <h2 id="selected-repository-name">未命名仓库 - 盒子管理</h2>
+                            <div class="box-management-buttons">
+                                <button onclick="addBox()" class="add-box-btn">添加盒子</button>
+                                <button onclick="alert('转仓功能开发中...')" class="transfer-box-btn">盒子转仓</button>
+                            </div>
+                        </div>
+                        <div class="box-stats">共 <span id="box-count">0</span> 个盒子</div>
+                        <div class="box-grid-wrapper">
+                            <div class="box-grid" id="boxes-list"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="no-repository-selected" id="no-repository-selected">
+                        <p>请选择一个仓库查看盒子</p>
+                    </div>
+                </div>
+                
+                <div id="parts-tab" class="tab-content">
+                    <div class="part-management-container">
+                        <div class="part-header">
+                            <h2 id="selected-box-name">未命名盒子 - 零件管理</h2>
+                        </div>
+                        <div class="part-header-buttons">
+                            <div>
+                                <button onclick="showAddPartSheet()" class="add-part-btn">添加零件</button>
+                                <button onclick="alert('转盒功能开发中...')" class="transfer-part-btn">零件转盒</button>
+                            </div>
+                            <div class="part-stats">共 <span id="part-count">0</span> 种零件</div>
+                            <button onclick="goBackToRepositories()" class="back-btn">返回</button>
+                        </div>
+                        <div class="part-grid-wrapper">
+                            <div class="part-grid" id="parts-list"></div>
+                        </div>
+                        <div class="no-box-selected" id="no-box-selected">
+                            <p>请选择一个盒子查看零件</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="search-tab" class="tab-content search-tab">
+                    <h2>零件搜索</h2>
+                    <div class="search-bar">
+                        <input type="text" id="search-input" placeholder="请输入搜索关键词">
+                        <button onclick="handleSearch()">搜索</button>
+                    </div>
+                    <div class="search-results" id="search-results"></div>
+                </div>
+                
+                <div id="settings-tab" class="tab-content settings-tab">
+                    <h2>系统设置</h2>
+                    
+                    <div class="settings-group">
+                        <h3>数据管理</h3>
+                        <div class="settings-buttons">
+                            <button style="background-color: #4CAF50; color: white;">初始化数据库</button>
+                            <button style="background-color: #2196F3; color: white;">数据备份</button>
+                            <button style="background-color: #FF9800; color: white;">数据恢复</button>
+                            <button style="background-color: #9C27B0; color: white;">数据同步</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <h3>关于系统</h3>
+                        <p style="color: #666; font-size: 14px;">版本: 2.0.0 (PWA版)</p>
+                        <p style="color: #666; font-size: 14px;">数据存储: 腾讯云CloudBase</p>
+                        <p style="color: #666; font-size: 14px;">静态资源: Gitee Pages</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker注册成功:', registration);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker注册失败:', error);
+                    });
+            });
+        }
+        
+        window.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>
