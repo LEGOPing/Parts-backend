@@ -29,10 +29,10 @@
         
         <div class="bb-area">
             <div class="nav">
-                <button class="repo-btn active" onclick="switchTab('repositories')">仓库管理</button>
-                <button class="part-btn" onclick="switchTab('parts')">零件管理</button>
-                <button class="search-btn" onclick="switchTab('search')">零件搜索</button>
-                <button class="settings-btn" onclick="switchTab('settings')">系统设置</button>
+                <button class="repo-btn active" onclick="switchTab('repositories', this)">仓库管理</button>
+                <button class="part-btn" onclick="switchTab('parts', this)">零件管理</button>
+                <button class="search-btn" onclick="switchTab('search', this)">零件搜索</button>
+                <button class="settings-btn" onclick="switchTab('settings', this)">系统设置</button>
             </div>
         </div>
         
@@ -79,6 +79,7 @@
                         <div class="part-header-buttons">
                             <div>
                                 <button onclick="showAddPartSheet()" class="add-part-btn">添加零件</button>
+                                <button onclick="showCSVImporter()" class="import-part-btn">批量导入</button>
                                 <button onclick="alert('转盒功能开发中...')" class="transfer-part-btn">零件转盒</button>
                             </div>
                             <div class="part-stats">共 <span id="part-count">0</span> 种零件</div>
@@ -95,9 +96,35 @@
                 
                 <div id="search-tab" class="tab-content search-tab">
                     <h2>零件搜索</h2>
-                    <div class="search-bar">
-                        <input type="text" id="search-input" placeholder="请输入搜索关键词">
-                        <button onclick="handleSearch()">搜索</button>
+                    <div class="search-filters">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>型号</label>
+                                <input type="text" id="search-part-num" placeholder="零件型号">
+                            </div>
+                            <div class="filter-group">
+                                <label>名称</label>
+                                <input type="text" id="search-part-name" placeholder="零件名称">
+                            </div>
+                        </div>
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>颜色ID</label>
+                                <input type="number" id="search-color-id" placeholder="颜色ID">
+                            </div>
+                            <div class="filter-group">
+                                <label>状态</label>
+                                <select id="search-status">
+                                    <option value="">全部</option>
+                                    <option value="true">新品</option>
+                                    <option value="false">旧品</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="search-actions">
+                            <button onclick="handleAdvancedSearch()" class="btn-search">搜索</button>
+                            <button onclick="resetSearchFilters()" class="btn-reset">重置</button>
+                        </div>
                     </div>
                     <div class="search-results" id="search-results"></div>
                 </div>
@@ -108,18 +135,52 @@
                     <div class="settings-group">
                         <h3>数据管理</h3>
                         <div class="settings-buttons">
-                            <button style="background-color: #4CAF50; color: white;">初始化数据库</button>
-                            <button style="background-color: #2196F3; color: white;">数据备份</button>
-                            <button style="background-color: #FF9800; color: white;">数据恢复</button>
-                            <button style="background-color: #9C27B0; color: white;">数据同步</button>
+                            <button onclick="initializeDatabase()" class="btn-settings" style="background-color: #4CAF50; color: white;">初始化数据库</button>
+                            <button onclick="backupData()" class="btn-settings" style="background-color: #2196F3; color: white;">数据备份</button>
+                            <button onclick="restoreData()" class="btn-settings" style="background-color: #FF9800; color: white;">数据恢复</button>
+                            <button onclick="syncData()" class="btn-settings" style="background-color: #9C27B0; color: white;">数据同步</button>
                         </div>
                     </div>
                     
                     <div class="settings-group">
+                        <h3>缓存管理</h3>
+                        <div class="settings-buttons">
+                            <button onclick="clearCache()" class="btn-settings" style="background-color: #f44336; color: white;">清除本地缓存</button>
+                            <button onclick="reloadApp()" class="btn-settings" style="background-color: #795548; color: white;">重启应用</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <h3>统计信息</h3>
+                        <div class="stats-grid" id="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-repos">--</div>
+                                <div class="stat-label">仓库数</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-boxes">--</div>
+                                <div class="stat-label">盒子数</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-parts">--</div>
+                                <div class="stat-label">零件种类</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-total-qty">--</div>
+                                <div class="stat-label">零件总数</div>
+                            </div>
+                        </div>
+                        <button onclick="loadStats()" class="btn-refresh-stats">刷新统计</button>
+                    </div>
+                    
+                    <div class="settings-group">
                         <h3>关于系统</h3>
-                        <p style="color: #666; font-size: 14px;">版本: 2.0.0 (PWA版)</p>
-                        <p style="color: #666; font-size: 14px;">数据存储: 腾讯云CloudBase</p>
-                        <p style="color: #666; font-size: 14px;">静态资源: GitHub Pages</p>
+                        <div class="about-info">
+                            <p>版本: 2.1.0 (PWA版)</p>
+                            <p>数据存储: 腾讯云CloudBase</p>
+                            <p>静态资源: GitHub Pages</p>
+                            <p>开发者: LEGOPing</p>
+                        </div>
                     </div>
                 </div>
             </div>
