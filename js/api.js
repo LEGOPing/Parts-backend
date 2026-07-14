@@ -35,6 +35,19 @@ async function callCloudFunction(functionName, data = {}) {
         }
         
         const result = await response.json();
+        
+        if (result.body && typeof result.body === 'string') {
+            try {
+                return JSON.parse(result.body);
+            } catch (e) {
+                return result;
+            }
+        }
+        
+        if (result.data && result.success !== undefined) {
+            return result;
+        }
+        
         return result;
     } catch (error) {
         console.error(`调用云函数 ${functionName} 失败:`, error);
