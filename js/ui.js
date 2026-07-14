@@ -19,9 +19,9 @@ function calculateP() {
 
 function switchTab(tabName, btn) {
     document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.style.display = 'none';
+        tab.classList.remove('active');
     });
-    document.getElementById(`${tabName}-tab`).style.display = 'block';
+    document.getElementById(`${tabName}-tab`).classList.add('active');
     
     document.querySelectorAll('.nav button').forEach(button => {
         button.classList.remove('active');
