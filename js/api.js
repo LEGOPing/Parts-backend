@@ -16,14 +16,19 @@ let partsCacheTime = 0;
 
 async function callCloudFunction(functionName, data = {}) {
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
         const response = await fetch(`${CLOUD_FUNCTIONS_URL}${functionName}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(data),
-            timeout: 10000
+            signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);

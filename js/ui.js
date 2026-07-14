@@ -152,12 +152,15 @@ async function saveRepositoryName(card, id, name) {
 }
 
 async function addRepository() {
+    console.log('addRepository called');
     const newRepo = await createRepository('新仓库');
     if (newRepo) {
         await loadRepositories();
         setTimeout(() => {
             selectRepository(newRepo);
         }, 100);
+    } else {
+        alert('添加仓库失败，请检查网络连接或稍后重试');
     }
 }
 
