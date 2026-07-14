@@ -95,10 +95,10 @@ body {
     background-repeat: no-repeat;
 }
 
-.bb-area .nav button.repo-btn { background-color: #2196F3 !important; background-image: url('/icons/blue1.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
-.bb-area .nav button.part-btn { background-color: #FF9800 !important; background-image: url('/icons/orange1.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
-.bb-area .nav button.search-btn { background-color: #4CAF50 !important; background-image: url('/icons/green2.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
-.bb-area .nav button.settings-btn { background-color: #FF9800 !important; background-image: url('/icons/orange2.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.repo-btn { background-color: #2196F3; background-image: url('/icons/blue1.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.part-btn { background-color: #FF9800; background-image: url('/icons/orange1.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.search-btn { background-color: #4CAF50; background-image: url('/icons/green2.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.settings-btn { background-color: #FF9800; background-image: url('/icons/orange2.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
 
 .bb-area .nav button.active {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);

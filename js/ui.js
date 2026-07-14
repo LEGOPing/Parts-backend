@@ -19,9 +19,9 @@ function calculateP() {
 
 function switchTab(tabName, btn) {
     document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
+        tab.style.display = 'none';
     });
-    document.getElementById(`${tabName}-tab`).classList.add('active');
+    document.getElementById(`${tabName}-tab`).style.display = 'block';
     
     document.querySelectorAll('.nav button').forEach(button => {
         button.classList.remove('active');
@@ -1005,10 +1005,7 @@ async function initializeApp() {
         document.documentElement.style.setProperty('--card-height', (2 * P) + 'px');
         document.documentElement.style.setProperty('--grid-width', (9 * P + 30) + 'px');
         
-        document.querySelectorAll('.tab-content').forEach(tab => {
-            tab.style.display = 'none';
-        });
-        document.getElementById('repositories-tab').style.display = 'block';
+        switchTab('repositories');
         
         await loadRepositories();
     } catch (error) {
