@@ -1,18 +1,18 @@
-const CACHE_NAME = 'lego-parts-v5';
+const CACHE_NAME = 'lego-parts-v6';
 const ASSETS_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/css/style.css',
-    '/js/api.js',
-    '/js/ui.js',
-    '/js/store.js',
-    '/manifest.json',
-    '/icons/icon-192x192.png',
-    '/icons/icon-512x512.png',
-    '/icons/blue1.png',
-    '/icons/orange1.png',
-    '/icons/green2.png',
-    '/icons/orange2.png'
+    './',
+    './index.html',
+    './css/style.css',
+    './js/api.js',
+    './js/ui.js',
+    './js/store.js',
+    './manifest.json',
+    './icons/icon-192x192.png',
+    './icons/icon-512x512.png',
+    './icons/blue1.png',
+    './icons/orange1.png',
+    './icons/green2.png',
+    './icons/orange2.png'
 ];
 
 self.addEventListener('install', (event) => {
