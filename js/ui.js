@@ -153,14 +153,19 @@ async function saveRepositoryName(card, id, name) {
 
 async function addRepository() {
     console.log('addRepository called');
-    const newRepo = await createRepository('新仓库');
-    if (newRepo) {
-        await loadRepositories();
-        setTimeout(() => {
-            selectRepository(newRepo);
-        }, 100);
-    } else {
-        alert('添加仓库失败，请检查网络连接或稍后重试');
+    try {
+        const newRepo = await createRepository('新仓库');
+        if (newRepo) {
+            await loadRepositories();
+            setTimeout(() => {
+                selectRepository(newRepo);
+            }, 100);
+        } else {
+            alert('添加仓库失败：云函数返回为空，请检查云函数是否正确部署');
+        }
+    } catch (error) {
+        console.error('添加仓库异常:', error);
+        alert('添加仓库失败：' + error.message);
     }
 }
 

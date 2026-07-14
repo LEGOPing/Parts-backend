@@ -2,7 +2,7 @@ const CLOUDBASE_ENV = 'legopart-d3gyvl7hw36084032';
 const CLOUDBASE_REGION = 'ap-shanghai';
 const CLOUDBASE_APPID = '1450790322';
 
-const CLOUD_FUNCTIONS_URL = `https://${CLOUDBASE_ENV}-service.${CLOUDBASE_REGION}.tcloudbaseapi.com/`;
+const CLOUD_FUNCTIONS_URL = `https://${CLOUDBASE_ENV}.app.tcloudbase.com/`;
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
