@@ -1005,7 +1005,8 @@ async function initializeApp() {
         document.documentElement.style.setProperty('--card-height', (2 * P) + 'px');
         document.documentElement.style.setProperty('--grid-width', (9 * P + 30) + 'px');
         
-        switchTab('repositories');
+        const repoBtn = document.querySelector('.nav button.repo-btn');
+        switchTab('repositories', repoBtn);
         
         await loadRepositories();
     } catch (error) {
