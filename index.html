@@ -199,6 +199,16 @@
                     });
             });
         }
+
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error('全局错误:', message, '文件:', source, '行:', lineno);
+            return true;
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('未处理的Promise拒绝:', event.reason);
+            event.preventDefault();
+        });
         
         window.addEventListener('DOMContentLoaded', initializeApp);
     </script>

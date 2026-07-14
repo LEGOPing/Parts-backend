@@ -997,14 +997,22 @@ async function confirmCSVImport() {
     }
 }
 
-function initializeApp() {
-    const P = calculateP();
-    document.documentElement.style.setProperty('--P', P);
-    document.documentElement.style.setProperty('--card-width', (3 * P) + 'px');
-    document.documentElement.style.setProperty('--card-height', (2 * P) + 'px');
-    document.documentElement.style.setProperty('--grid-width', (9 * P + 30) + 'px');
-    
-    loadRepositories();
+async function initializeApp() {
+    try {
+        const P = calculateP();
+        document.documentElement.style.setProperty('--P', P);
+        document.documentElement.style.setProperty('--card-width', (3 * P) + 'px');
+        document.documentElement.style.setProperty('--card-height', (2 * P) + 'px');
+        document.documentElement.style.setProperty('--grid-width', (9 * P + 30) + 'px');
+        
+        await loadRepositories();
+    } catch (error) {
+        console.error('应用初始化失败:', error);
+        const list = document.getElementById('repositories-list');
+        if (list) {
+            list.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">无法连接到数据库，请检查网络连接或稍后重试</div>';
+        }
+    }
 }
 
 async function initializeDatabase() {

@@ -6,6 +6,8 @@ const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/master/';
 
 let cloudbaseInitialized = false;
+let cloudbaseApp = null;
+let cloudbaseError = null;
 
 let cachedColors = null;
 let colorsCacheTime = 0;
@@ -14,18 +16,37 @@ const CACHE_EXPIRY = 3600000;
 let cachedParts = null;
 let partsCacheTime = 0;
 
+function timeoutPromise(promise, ms) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`操作超时 (${ms}ms)`));
+        }, ms);
+        promise.then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (error) => {
+                clearTimeout(timer);
+                reject(error);
+            }
+        );
+    });
+}
+
 async function initCloudbase() {
-    if (cloudbaseInitialized) return;
+    if (cloudbaseInitialized) return cloudbaseApp;
+    if (cloudbaseError) return null;
     
     try {
         if (!window.cloudbase) {
-            await new Promise((resolve, reject) => {
+            await timeoutPromise(new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.src = 'https://unpkg.com/@cloudbase/js-sdk@latest/dist/cloudbase.full.js';
                 script.onload = resolve;
                 script.onerror = reject;
                 document.head.appendChild(script);
-            });
+            }), 10000);
         }
         
         const app = window.cloudbase.init({
@@ -33,19 +54,29 @@ async function initCloudbase() {
             region: CLOUDBASE_REGION
         });
         
-        await app.auth({ persistence: 'local' }).signInAnonymously();
+        await timeoutPromise(app.auth({ persistence: 'local' }).signInAnonymously(), 10000);
         cloudbaseInitialized = true;
+        cloudbaseApp = app;
         return app;
     } catch (error) {
         console.error('CloudBase初始化失败:', error);
+        cloudbaseError = error;
         return null;
     }
 }
 
 async function getDatabase() {
     const app = await initCloudbase();
-    if (!app) return null;
-    return app.database();
+    if (!app) {
+        console.warn('CloudBase未初始化，返回null');
+        return null;
+    }
+    try {
+        return app.database();
+    } catch (error) {
+        console.error('获取数据库实例失败:', error);
+        return null;
+    }
 }
 
 async function fetchJSONFile(fileName) {
