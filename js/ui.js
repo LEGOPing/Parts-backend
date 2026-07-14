@@ -1021,20 +1021,12 @@ async function initializeDatabase() {
     }
     
     try {
-        const db = await getDatabase();
-        if (!db) {
-            alert('数据库连接失败');
-            return;
+        const repos = await getRepositories();
+        for (const repo of repos) {
+            await deleteRepository(repo.id);
         }
         
-        await db.collection('repositories').where({}).remove();
-        await db.collection('boxes').where({}).remove();
-        await db.collection('parts').where({}).remove();
-        
-        await db.collection('repositories').add({
-            name: '待定盒子',
-            createdAt: new Date().toISOString()
-        });
+        await createRepository('待定盒子');
         
         alert('数据库初始化成功！已创建默认仓库"待定盒子"');
         loadRepositories();
@@ -1100,45 +1092,39 @@ async function restoreData() {
             reader.onload = async (e) => {
                 const backup = JSON.parse(e.target.result);
                 
-                const db = await getDatabase();
-                if (!db) {
-                    alert('数据库连接失败');
-                    return;
+                const existingRepos = await getRepositories();
+                for (const repo of existingRepos) {
+                    await deleteRepository(repo.id);
                 }
-                
-                await db.collection('repositories').where({}).remove();
-                await db.collection('boxes').where({}).remove();
-                await db.collection('parts').where({}).remove();
                 
                 const repoMap = {};
                 for (const repo of backup.repositories) {
-                    const res = await db.collection('repositories').add({
-                        name: repo.name,
-                        createdAt: repo.createdAt || new Date().toISOString()
-                    });
-                    repoMap[repo.id] = res.id;
+                    const newRepo = await createRepository(repo.name);
+                    if (newRepo) {
+                        repoMap[repo.id] = newRepo.id;
+                    }
                 }
                 
                 const boxMap = {};
                 for (const box of backup.boxes) {
-                    const res = await db.collection('boxes').add({
-                        repository_id: repoMap[box.repository_id] || Object.values(repoMap)[0],
-                        box_number: box.box_number || 1,
-                        name: box.name,
-                        createdAt: box.createdAt || new Date().toISOString()
-                    });
-                    boxMap[box.id] = res.id;
+                    const newBox = await createBox(
+                        repoMap[box.repository_id] || Object.values(repoMap)[0],
+                        box.box_number || 1,
+                        box.name
+                    );
+                    if (newBox) {
+                        boxMap[box.id] = newBox.id;
+                    }
                 }
                 
                 for (const part of backup.parts) {
-                    await db.collection('parts').add({
+                    await createPart({
                         box_id: boxMap[part.box_id] || Object.values(boxMap)[0],
                         part_num: part.part_num,
                         name: part.name,
                         color_id: part.color_id || 1,
                         is_new: part.is_new !== undefined ? part.is_new : true,
-                        quantity: part.quantity || 1,
-                        createdAt: part.createdAt || new Date().toISOString()
+                        quantity: part.quantity || 1
                     });
                 }
                 
