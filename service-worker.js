@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v2';
+const CACHE_NAME = 'lego-parts-v3';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
@@ -8,7 +8,11 @@ const ASSETS_TO_CACHE = [
     '/js/store.js',
     '/manifest.json',
     '/icons/icon-192x192.png',
-    '/icons/icon-512x512.png'
+    '/icons/icon-512x512.png',
+    '/icons/blue1.png',
+    '/icons/orange1.png',
+    '/icons/green2.png',
+    '/icons/orange2.png'
 ];
 
 self.addEventListener('install', (event) => {

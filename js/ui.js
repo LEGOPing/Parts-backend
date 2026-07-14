@@ -1005,6 +1005,11 @@ async function initializeApp() {
         document.documentElement.style.setProperty('--card-height', (2 * P) + 'px');
         document.documentElement.style.setProperty('--grid-width', (9 * P + 30) + 'px');
         
+        document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.style.display = 'none';
+        });
+        document.getElementById('repositories-tab').style.display = 'block';
+        
         await loadRepositories();
     } catch (error) {
         console.error('应用初始化失败:', error);

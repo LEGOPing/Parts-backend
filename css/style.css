@@ -95,10 +95,10 @@ body {
     background-repeat: no-repeat;
 }
 
-.repo-btn { background: #2196F3 url('https://gitee.com/LEGOPing/LEGOPART-IMG/raw/master/blue1.png') center/cover no-repeat; }
-.part-btn { background: #FF9800 url('https://gitee.com/LEGOPing/LEGOPART-IMG/raw/master/orange1.png') center/cover no-repeat; }
-.search-btn { background: #4CAF50 url('https://gitee.com/LEGOPing/LEGOPART-IMG/raw/master/green2.png') center/cover no-repeat; }
-.settings-btn { background: #FF9800 url('https://gitee.com/LEGOPing/LEGOPART-IMG/raw/master/orange2.png') center/cover no-repeat; }
+.bb-area .nav button.repo-btn { background-color: #2196F3 !important; background-image: url('/icons/blue1.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.part-btn { background-color: #FF9800 !important; background-image: url('/icons/orange1.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.search-btn { background-color: #4CAF50 !important; background-image: url('/icons/green2.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
+.bb-area .nav button.settings-btn { background-color: #FF9800 !important; background-image: url('/icons/orange2.png'); background-position: center; background-size: cover; background-repeat: no-repeat; }
 
 .bb-area .nav button.active {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
