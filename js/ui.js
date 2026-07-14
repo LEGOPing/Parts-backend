@@ -62,7 +62,10 @@ async function loadRepositories() {
         card.dataset.id = repo.id;
         
         card.innerHTML = `
-            <h3>${repo.name}</h3>
+            <div class="repo-card-header">
+                <h3>${repo.name}</h3>
+                <button class="repo-delete-btn" onclick="event.stopPropagation(); deleteRepositoryConfirm('${repo.id}')">×</button>
+            </div>
             <div class="repo-info">
                 <span class="repo-id">ID: ${repo.id}</span>
                 <span class="repo-box-count">${boxCounts[repo.id]}B</span>
@@ -191,7 +194,10 @@ async function loadBoxes(repoId) {
         card.dataset.id = box.id;
         
         card.innerHTML = `
-            <h4>${box.name}</h4>
+            <div class="box-card-header">
+                <h4>${box.name}</h4>
+                <button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>
+            </div>
             <div class="box-info">
                 <div class="box-number">ID: ${box.box_number}</div>
                 <div class="box-part-count">${partCounts[box.id]}P</div>
@@ -303,7 +309,7 @@ async function loadParts(boxId) {
         card.innerHTML = `
             <div class="part-num">${part.part_num}</div>
             <div class="part-image">
-                <img src="https://rebrickable.com/media/${part.part_num}.png" alt="${part.name}" onerror="this.style.display='none'">
+                <img src="https://cdn.rebrickable.com/media/parts/${part.part_num}_${part.color_id}.jpg" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">
             </div>
             <div class="part-name">${part.name}</div>
             <div class="part-color">${colorName}</div>
@@ -646,16 +652,7 @@ function filterColors(searchText) {
     });
 }
 
-async function handleSearch() {
-    const query = document.getElementById('search-input').value;
-    if (!query) {
-        alert('请输入搜索关键词');
-        return;
-    }
-    
-    const parts = await searchParts(query);
-    renderSearchResults(parts);
-}
+
 
 async function handleAdvancedSearch() {
     const params = {
@@ -714,7 +711,10 @@ function renderSearchResults(parts) {
 }
 
 function clearSearchResults() {
-    document.getElementById('search-input').value = '';
+    document.getElementById('search-part-num').value = '';
+    document.getElementById('search-part-name').value = '';
+    document.getElementById('search-color-id').value = '';
+    document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
 }
 
@@ -739,7 +739,7 @@ async function showPartDetail(part) {
         <div class="modal-body">
             <div class="part-detail-container">
                 <div class="part-detail-image">
-                    <img src="https://rebrickable.com/media/${part.part_num}.png" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">
+                    <img src="https://cdn.rebrickable.com/media/parts/${part.part_num}_${part.color_id}.jpg" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">
                 </div>
                 <div class="part-detail-info">
                     <div class="part-detail-row">
