@@ -5,7 +5,7 @@ const CLOUDBASE_APPID = '1450790322';
 const CLOUD_FUNCTIONS_URL = `https://${CLOUDBASE_ENV}-service.${CLOUDBASE_REGION}.tcloudbaseapi.com/`;
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
-const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/master/';
+const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
 
 let cachedColors = null;
 let colorsCacheTime = 0;
