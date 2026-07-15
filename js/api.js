@@ -27,13 +27,16 @@ async function initCloudBase() {
                 persistence: 'none'
             }).anonymousAuthProvider().signIn();
             console.log('CloudBase 初始化成功（已登录）');
+            return cloudbaseApp;
         } catch (authError) {
-            console.warn('匿名登录失败，尝试无认证模式:', authError.message);
+            console.error('匿名登录失败:', authError.message);
+            console.error('请确保在 CloudBase 控制台中启用了匿名登录功能');
+            cloudbaseApp = null;
+            return null;
         }
-        
-        return cloudbaseApp;
     } catch (error) {
         console.error('CloudBase 初始化失败:', error);
+        cloudbaseApp = null;
         return null;
     }
 }
@@ -139,15 +142,19 @@ async function getPartSuggestions(query) {
 
 async function getRepositories() {
     try {
+        console.log('getRepositories: 开始获取仓库列表');
         const db = await getDatabase();
+        console.log('getRepositories: 数据库连接成功');
         const res = await db.collection('repositories').orderBy('createdAt', 'desc').get();
+        console.log('getRepositories: 查询成功，返回', res.data.length, '条记录');
         return res.data.map(item => ({
             id: item._id,
             name: item.name,
             createdAt: item.createdAt
         }));
     } catch (error) {
-        console.error('获取仓库列表失败:', error);
+        console.error('获取仓库列表失败:', error.message || error);
+        console.error('错误详情:', JSON.stringify(error));
         return [];
     }
 }
@@ -159,16 +166,20 @@ async function getRepositoryById(repoId) {
 
 async function createRepository(name) {
     try {
+        console.log('createRepository: 开始创建仓库，名称:', name);
         const db = await getDatabase();
+        console.log('createRepository: 数据库连接成功');
         const result = await db.collection('repositories').add({
             data: {
                 name: name || '新仓库',
                 createdAt: new Date().toISOString()
             }
         });
+        console.log('createRepository: 创建成功，ID:', result.id);
         return { id: result.id, name: name || '新仓库' };
     } catch (error) {
-        console.error('创建仓库失败:', error);
+        console.error('创建仓库失败:', error.message || error);
+        console.error('错误详情:', JSON.stringify(error));
         throw error;
     }
 }
