@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v7';
+const CACHE_NAME = 'lego-parts-v9';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

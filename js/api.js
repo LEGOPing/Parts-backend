@@ -1,8 +1,5 @@
 const CLOUDBASE_ENV = 'legopart-d3gyvl7hw36084032';
 const CLOUDBASE_REGION = 'ap-shanghai';
-const CLOUDBASE_APPID = '1450790322';
-
-const CLOUD_FUNCTIONS_URL = `https://${CLOUDBASE_ENV}.app.tcloudbase.com/`;
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
@@ -14,45 +11,39 @@ const CACHE_EXPIRY = 3600000;
 let cachedParts = null;
 let partsCacheTime = 0;
 
-async function callCloudFunction(functionName, data = {}) {
+let cloudbaseApp = null;
+
+async function initCloudBase() {
+    if (cloudbaseApp) return cloudbaseApp;
+    
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        const response = await fetch(`${CLOUD_FUNCTIONS_URL}${functionName}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data),
-            signal: controller.signal
+        cloudbaseApp = cloudbase.init({
+            env: CLOUDBASE_ENV,
+            region: CLOUDBASE_REGION
         });
         
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        try {
+            await cloudbaseApp.auth({
+                persistence: 'none'
+            }).anonymousAuthProvider().signIn();
+            console.log('CloudBase 初始化成功（已登录）');
+        } catch (authError) {
+            console.warn('匿名登录失败，尝试无认证模式:', authError.message);
         }
         
-        const result = await response.json();
-        
-        if (result.body && typeof result.body === 'string') {
-            try {
-                return JSON.parse(result.body);
-            } catch (e) {
-                return result;
-            }
-        }
-        
-        if (result.data && result.success !== undefined) {
-            return result;
-        }
-        
-        return result;
+        return cloudbaseApp;
     } catch (error) {
-        console.error(`调用云函数 ${functionName} 失败:`, error);
-        return { success: false, error: error.message };
+        console.error('CloudBase 初始化失败:', error);
+        return null;
     }
+}
+
+async function getDatabase() {
+    const app = await initCloudBase();
+    if (!app) {
+        throw new Error('CloudBase 未初始化');
+    }
+    return app.database();
 }
 
 async function fetchJSONFile(fileName) {
@@ -147,12 +138,18 @@ async function getPartSuggestions(query) {
 }
 
 async function getRepositories() {
-    const result = await callCloudFunction('getRepositories');
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const res = await db.collection('repositories').orderBy('createdAt', 'desc').get();
+        return res.data.map(item => ({
+            id: item._id,
+            name: item.name,
+            createdAt: item.createdAt
+        }));
+    } catch (error) {
+        console.error('获取仓库列表失败:', error);
+        return [];
     }
-    console.error('获取仓库列表失败:', result.error);
-    return [];
 }
 
 async function getRepositoryById(repoId) {
@@ -161,122 +158,307 @@ async function getRepositoryById(repoId) {
 }
 
 async function createRepository(name) {
-    const result = await callCloudFunction('createRepository', { name: name || '新仓库' });
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const result = await db.collection('repositories').add({
+            data: {
+                name: name || '新仓库',
+                createdAt: new Date().toISOString()
+            }
+        });
+        return { id: result.id, name: name || '新仓库' };
+    } catch (error) {
+        console.error('创建仓库失败:', error);
+        throw error;
     }
-    console.error('创建仓库失败:', result.error);
-    return null;
 }
 
 async function updateRepository(repoId, data) {
-    const result = await callCloudFunction('updateRepository', { id: repoId, ...data });
-    return result.success;
+    try {
+        const db = await getDatabase();
+        await db.collection('repositories').doc(repoId).update({
+            data: data
+        });
+        return true;
+    } catch (error) {
+        console.error('更新仓库失败:', error);
+        return false;
+    }
 }
 
 async function deleteRepository(repoId) {
-    const result = await callCloudFunction('deleteRepository', { id: repoId });
-    return result.success;
+    try {
+        const db = await getDatabase();
+        await db.collection('repositories').doc(repoId).remove();
+        return true;
+    } catch (error) {
+        console.error('删除仓库失败:', error);
+        return false;
+    }
 }
 
 async function getBoxes(repoId) {
-    const result = await callCloudFunction('getBoxes', { repository_id: repoId });
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const res = await db.collection('boxes').where({
+            repository_id: repoId
+        }).orderBy('box_number', 'asc').get();
+        return res.data.map(item => ({
+            id: item._id,
+            box_number: item.box_number,
+            name: item.name,
+            repository_id: item.repository_id,
+            createdAt: item.createdAt
+        }));
+    } catch (error) {
+        console.error('获取盒子列表失败:', error);
+        return [];
     }
-    console.error('获取盒子列表失败:', result.error);
-    return [];
 }
 
 async function getBoxById(boxId) {
-    const result = await callCloudFunction('getBoxById', { id: boxId });
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const res = await db.collection('boxes').doc(boxId).get();
+        return res.data ? {
+            id: res.data._id,
+            box_number: res.data.box_number,
+            name: res.data.name,
+            repository_id: res.data.repository_id,
+            createdAt: res.data.createdAt
+        } : null;
+    } catch (error) {
+        console.error('获取盒子失败:', error);
+        return null;
     }
-    return null;
 }
 
 async function createBox(repositoryId, boxNumber, name) {
-    const result = await callCloudFunction('createBox', {
-        repository_id: repositoryId,
-        box_number: boxNumber,
-        name: name || '新盒子'
-    });
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const result = await db.collection('boxes').add({
+            data: {
+                repository_id: repositoryId,
+                box_number: boxNumber,
+                name: name || '新盒子',
+                createdAt: new Date().toISOString()
+            }
+        });
+        return {
+            id: result.id,
+            box_number: boxNumber,
+            name: name || '新盒子',
+            repository_id: repositoryId
+        };
+    } catch (error) {
+        console.error('创建盒子失败:', error);
+        return null;
     }
-    console.error('创建盒子失败:', result.error);
-    return null;
 }
 
 async function updateBox(boxId, data) {
-    const result = await callCloudFunction('updateBox', { id: boxId, ...data });
-    return result.success;
+    try {
+        const db = await getDatabase();
+        await db.collection('boxes').doc(boxId).update({
+            data: data
+        });
+        return true;
+    } catch (error) {
+        console.error('更新盒子失败:', error);
+        return false;
+    }
 }
 
 async function deleteBox(boxId) {
-    const result = await callCloudFunction('deleteBox', { id: boxId });
-    return result.success;
+    try {
+        const db = await getDatabase();
+        await db.collection('boxes').doc(boxId).remove();
+        return true;
+    } catch (error) {
+        console.error('删除盒子失败:', error);
+        return false;
+    }
 }
 
 async function getParts(boxId) {
-    const result = await callCloudFunction('getParts', { box_id: boxId });
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const res = await db.collection('parts').where({
+            box_id: boxId
+        }).orderBy('part_num', 'asc').get();
+        return res.data.map(item => ({
+            id: item._id,
+            box_id: item.box_id,
+            part_num: item.part_num,
+            name: item.name,
+            color_id: item.color_id,
+            is_new: item.is_new,
+            quantity: item.quantity,
+            createdAt: item.createdAt
+        }));
+    } catch (error) {
+        console.error('获取零件列表失败:', error);
+        return [];
     }
-    console.error('获取零件列表失败:', result.error);
-    return [];
 }
 
 async function getPartById(partId) {
-    const result = await callCloudFunction('getPartById', { id: partId });
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const res = await db.collection('parts').doc(partId).get();
+        return res.data ? {
+            id: res.data._id,
+            box_id: res.data.box_id,
+            part_num: res.data.part_num,
+            name: res.data.name,
+            color_id: res.data.color_id,
+            is_new: res.data.is_new,
+            quantity: res.data.quantity,
+            createdAt: res.data.createdAt
+        } : null;
+    } catch (error) {
+        console.error('获取零件失败:', error);
+        return null;
     }
-    return null;
 }
 
 async function createPart(data) {
-    const result = await callCloudFunction('createPart', data);
-    if (result.success) {
-        return result.data;
+    try {
+        const db = await getDatabase();
+        const result = await db.collection('parts').add({
+            data: {
+                box_id: data.box_id,
+                part_num: data.part_num,
+                name: data.name,
+                color_id: data.color_id,
+                is_new: data.is_new !== undefined ? data.is_new : false,
+                quantity: data.quantity !== undefined ? data.quantity : 1,
+                createdAt: new Date().toISOString()
+            }
+        });
+        return {
+            id: result.id,
+            box_id: data.box_id,
+            part_num: data.part_num,
+            name: data.name,
+            color_id: data.color_id,
+            is_new: data.is_new !== undefined ? data.is_new : false,
+            quantity: data.quantity !== undefined ? data.quantity : 1
+        };
+    } catch (error) {
+        console.error('创建零件失败:', error);
+        return null;
     }
-    console.error('创建零件失败:', result.error);
-    return null;
 }
 
 async function updatePart(partId, data) {
-    const result = await callCloudFunction('updatePart', { id: partId, ...data });
-    return result.success;
+    try {
+        const db = await getDatabase();
+        await db.collection('parts').doc(partId).update({
+            data: data
+        });
+        return true;
+    } catch (error) {
+        console.error('更新零件失败:', error);
+        return false;
+    }
 }
 
 async function deletePart(partId) {
-    const result = await callCloudFunction('deletePart', { id: partId });
-    return result.success;
+    try {
+        const db = await getDatabase();
+        await db.collection('parts').doc(partId).remove();
+        return true;
+    } catch (error) {
+        console.error('删除零件失败:', error);
+        return false;
+    }
 }
 
-async function searchParts(query) {
-    const result = await callCloudFunction('searchParts', { query });
-    if (result.success) {
-        return result.data;
+async function searchParts(params) {
+    try {
+        const db = await getDatabase();
+        let query = db.collection('parts');
+        
+        if (params.partNum) {
+            query = query.where({
+                part_num: db.RegExp({
+                    regexp: params.partNum,
+                    options: 'i'
+                })
+            });
+        }
+        
+        if (params.partName) {
+            query = query.where({
+                name: db.RegExp({
+                    regexp: params.partName,
+                    options: 'i'
+                })
+            });
+        }
+        
+        if (params.colorId) {
+            query = query.where({
+                color_id: parseInt(params.colorId)
+            });
+        }
+        
+        if (params.isNew !== undefined) {
+            query = query.where({
+                is_new: params.isNew
+            });
+        }
+        
+        const res = await query.orderBy('part_num', 'asc').get();
+        return res.data.map(item => ({
+            id: item._id,
+            box_id: item.box_id,
+            part_num: item.part_num,
+            name: item.name,
+            color_id: item.color_id,
+            is_new: item.is_new,
+            quantity: item.quantity,
+            createdAt: item.createdAt
+        }));
+    } catch (error) {
+        console.error('搜索零件失败:', error);
+        return [];
     }
-    console.error('搜索零件失败:', result.error);
-    return [];
 }
 
 async function advancedSearchParts(params) {
-    const result = await callCloudFunction('searchParts', params);
-    if (result.success) {
-        return result.data;
-    }
-    console.error('高级搜索零件失败:', result.error);
-    return [];
+    return await searchParts(params);
 }
 
 async function batchCreateParts(partsData) {
-    const result = await callCloudFunction('importData', { parts: partsData });
-    if (result.success) {
-        return { success: true, count: result.data.count || partsData.length, errors: [] };
+    try {
+        const db = await getDatabase();
+        let successCount = 0;
+        const errors = [];
+        
+        for (const data of partsData) {
+            try {
+                await db.collection('parts').add({
+                    data: {
+                        box_id: data.box_id,
+                        part_num: data.part_num,
+                        name: data.name || data.part_num,
+                        color_id: parseInt(data.color_id) || 1,
+                        is_new: data.is_new !== undefined ? data.is_new : false,
+                        quantity: parseInt(data.quantity) || 1,
+                        createdAt: new Date().toISOString()
+                    }
+                });
+                successCount++;
+            } catch (e) {
+                errors.push({ part_num: data.part_num, error: e.message });
+            }
+        }
+        
+        return { success: true, count: successCount, errors: errors };
+    } catch (error) {
+        console.error('批量导入失败:', error);
+        return { success: false, count: 0, errors: [{ part_num: '批量导入', error: error.message }] };
     }
-    return { success: false, count: 0, errors: [{ part_num: '批量导入', error: result.error }] };
 }
