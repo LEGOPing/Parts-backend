@@ -15,12 +15,12 @@ let partsCacheTime = 0;
 async function callCloudFunction(functionName, data = {}) {
     try {
         console.log(`callCloudFunction: 调用 ${functionName}`, data);
-        const response = await fetch(`${CLOUD_FUNCTIONS_URL}${functionName}`, {
+        const response = await fetch(`${CLOUD_FUNCTIONS_URL}api`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(data),
+            body: JSON.stringify({ action: functionName, ...data }),
             timeout: 10000
         });
         
