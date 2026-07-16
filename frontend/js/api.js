@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://legoparts-api-legopart-d3gyvl7hw36084032.service.tcloudbase.com/api';
+const API_BASE_URL = 'https://parts-backend-282911-9-1450790322.sh.run.tcloudbase.com/api';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
