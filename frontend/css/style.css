@@ -88,12 +88,16 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.bb-area .nav button.repo-btn { background-color: #2196F3; }
-.bb-area .nav button.part-btn { background-color: #FF9800; }
-.bb-area .nav button.search-btn { background-color: #4CAF50; }
-.bb-area .nav button.settings-btn { background-color: #FF9800; }
+.bb-area .nav button.repo-btn { background-image: url('https://gitee.com/legoping/Parts-img/raw/main/blue2.png'); }
+.bb-area .nav button.part-btn { background-image: url('https://gitee.com/legoping/Parts-img/raw/main/orange2.png'); }
+.bb-area .nav button.search-btn { background-image: url('https://gitee.com/legoping/Parts-img/raw/main/green2.png'); }
+.bb-area .nav button.settings-btn { background-image: url('https://gitee.com/legoping/Parts-img/raw/main/red2.png'); }
 
 .bb-area .nav button.active {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
