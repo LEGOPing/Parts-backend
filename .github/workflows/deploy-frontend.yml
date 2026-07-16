@@ -7,16 +7,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Deploy frontend to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: frontend
-          clean: true
-          clean-exclude: .nojekyll
+      - name: Configure Git
+        run: |
+          git config --global user.name "LEGOPing"
+          git config --global user.email "legoping@users.noreply.github.com"
+
+      - name: Deploy to gh-pages
+        run: |
+          git checkout main
+          git subtree split --prefix frontend -b gh-pages-deploy
+          git push -f origin gh-pages-deploy:gh-pages
+          git branch -D gh-pages-deploy
