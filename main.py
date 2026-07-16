@@ -2,12 +2,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
+import logging
 from dotenv import load_dotenv
 
-# 加载环境变量
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
-# 导入数据库配置
+logger.info(f"DATA_DIR: {os.getenv('DATA_DIR', 'not set')}")
+logger.info(f"DATABASE_URL: {os.getenv('DATABASE_URL', 'not set')}")
+
 from app.database import Base, engine, get_db
 
 # 导入所有模型，确保它们被注册到Base.metadata
@@ -15,8 +20,13 @@ from app.models.repository import Repository
 from app.models.box import Box
 from app.models.part import Part
 
-# 创建数据库表
-Base.metadata.create_all(bind=engine)
+logger.info("Creating database tables...")
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created successfully")
+except Exception as e:
+    logger.error(f"Failed to create database tables: {e}")
+    raise
 
 # 创建FastAPI应用
 app = FastAPI(
