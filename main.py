@@ -59,9 +59,16 @@ app.include_router(settings.router, prefix="/api/settings", tags=["系统设置"
 def health_check():
     return {"status": "ok"}
 
-# 挂载静态文件
-app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
-app.mount("/images", StaticFiles(directory="images"), name="images")
+# 挂载静态文件（仅本地开发时使用，云托管时前端由GitHub Pages托管）
+try:
+    app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
+except RuntimeError:
+    logger.info("frontend directory not found, skipping static mount")
+
+try:
+    app.mount("/images", StaticFiles(directory="images"), name="images")
+except RuntimeError:
+    logger.info("images directory not found, skipping static mount")
 
 # 根路径
 @app.get("/")
