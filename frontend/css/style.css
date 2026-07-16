@@ -76,7 +76,7 @@ body {
 
 .bb-area .nav button {
     width: calc(2 * var(--P));
-    height: calc(1 * var(--P));
+    height: calc(1.5 * var(--P));
     flex-shrink: 0;
     font-size: 12px;
     padding: 0;
