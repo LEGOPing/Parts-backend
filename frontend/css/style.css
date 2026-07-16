@@ -49,8 +49,8 @@ body {
 }
 
 .logo img {
-    height: 40px;
-    width: 40px;
+    height: calc(2 * var(--P));
+    width: calc(2 * var(--P));
     border-radius: 0;
     border: none;
 }
@@ -63,7 +63,7 @@ body {
 
 .bb-area {
     background-color: var(--primary-color);
-    padding: 10px 0;
+    padding: 0;
 }
 
 .bb-area .nav {
@@ -72,7 +72,7 @@ body {
     gap: 8px;
     flex-wrap: nowrap;
     overflow-x: auto;
-    padding: 5px;
+    padding: 0;
 }
 
 .bb-area .nav button {
