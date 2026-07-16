@@ -5,7 +5,7 @@
 }
 
 :root {
-    --P: 30px;
+    --P: 44px;
     --card-width: 90px;
     --card-height: 60px;
     --grid-width: 300px;
@@ -51,7 +51,8 @@ body {
 .logo img {
     height: 40px;
     width: 40px;
-    border-radius: 8px;
+    border-radius: 0;
+    border: none;
 }
 
 .title h1 {
