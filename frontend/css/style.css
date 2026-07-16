@@ -49,10 +49,10 @@ body {
 }
 
 .logo img {
-    max-height: calc(2 * var(--P));
-    max-width: calc(2 * var(--P));
-    height: calc(2 * var(--P));
-    width: calc(2 * var(--P));
+    height: 88px !important;
+    width: 88px !important;
+    max-height: 88px !important;
+    max-width: 88px !important;
     object-fit: contain;
     border-radius: 0;
     border: none;
