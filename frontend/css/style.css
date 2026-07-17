@@ -66,7 +66,7 @@ body {
 
 .bb-area {
     background-color: var(--primary-color);
-    padding: 0;
+    padding: 0 4px;
     height: 96px;
 }
 

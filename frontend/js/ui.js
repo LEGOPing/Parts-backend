@@ -45,18 +45,21 @@ function switchTab(tabName, btn) {
 
 async function loadRepositories() {
     const repos = await getRepositories();
+    const uniqueRepos = repos.filter((repo, index, self) => 
+        index === self.findIndex(r => r.id === repo.id)
+    );
     const list = document.getElementById('repositories-list');
     list.innerHTML = '';
     
-    document.getElementById('repository-count').textContent = repos.length;
+    document.getElementById('repository-count').textContent = uniqueRepos.length;
     
     const boxCounts = {};
-    await Promise.all(repos.map(async repo => {
+    await Promise.all(uniqueRepos.map(async repo => {
         const boxes = await getBoxes(repo.id);
         boxCounts[repo.id] = boxes.length;
     }));
     
-    repos.forEach(repo => {
+    uniqueRepos.forEach(repo => {
         const card = document.createElement('div');
         card.className = `repository-card ${selectedRepository && selectedRepository.id === repo.id ? 'selected' : ''}`;
         card.dataset.id = repo.id;
