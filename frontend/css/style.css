@@ -67,7 +67,7 @@ body {
 .bb-area {
     background-color: var(--primary-color);
     padding: 0;
-    height: calc(2 * var(--P));
+    height: 88px;
 }
 
 .bb-area .nav {
@@ -80,8 +80,8 @@ body {
 }
 
 .bb-area .nav button {
-    width: calc(2 * var(--P));
-    height: calc(1.5 * var(--P));
+    width: 88px;
+    height: 66px;
     flex-shrink: 0;
     font-size: 12px;
     padding: 0;
