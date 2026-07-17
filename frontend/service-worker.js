@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v14';
+const CACHE_NAME = 'lego-parts-v15';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -42,7 +42,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const request = event.request;
     
-    if (request.method === 'POST') {
+    if (request.method === 'POST' || request.url.includes('/api/')) {
         event.respondWith(fetch(request));
         return;
     }
