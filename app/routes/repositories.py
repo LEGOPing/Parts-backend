@@ -17,7 +17,14 @@ def create_repository(repository: RepositoryCreate, db: Session = Depends(get_db
 
 @router.get("/", response_model=List[RepositorySchema])
 def get_repositories(db: Session = Depends(get_db)):
-    return db.query(Repository).all()
+    repositories = db.query(Repository).all()
+    seen_ids = set()
+    unique_repos = []
+    for repo in repositories:
+        if repo.id not in seen_ids:
+            seen_ids.add(repo.id)
+            unique_repos.append(repo)
+    return unique_repos
 
 @router.get("/{repository_id}", response_model=RepositorySchema)
 def get_repository(repository_id: int, db: Session = Depends(get_db)):
