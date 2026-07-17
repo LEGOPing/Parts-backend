@@ -5,7 +5,7 @@
 }
 
 :root {
-    --P: 44px;
+    --P: 48px;
     --card-width: 90px;
     --card-height: 60px;
     --grid-width: 300px;
@@ -49,10 +49,10 @@ body {
 }
 
 .logo img {
-    height: 88px !important;
-    width: 88px !important;
-    max-height: 88px !important;
-    max-width: 88px !important;
+    height: 96px !important;
+    width: 96px !important;
+    max-height: 96px !important;
+    max-width: 96px !important;
     object-fit: contain;
     border-radius: 0;
     border: none;
@@ -67,21 +67,21 @@ body {
 .bb-area {
     background-color: var(--primary-color);
     padding: 0;
-    height: 88px;
+    height: 96px;
 }
 
 .bb-area .nav {
     display: flex;
     justify-content: center;
-    gap: 10px;
+    gap: 3px;
     flex-wrap: nowrap;
     overflow-x: auto;
     padding: 0;
 }
 
 .bb-area .nav button {
-    width: 92px;
-    height: 70px;
+    width: 100px;
+    height: 76px;
     flex-shrink: 0;
     font-size: 12px;
     padding: 0;
@@ -93,7 +93,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-size: cover;
+    background-size: 96px auto;
     background-position: center;
     background-repeat: no-repeat;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
