@@ -73,15 +73,15 @@ body {
 .bb-area .nav {
     display: flex;
     justify-content: center;
-    gap: 3px;
+    gap: 0;
     flex-wrap: nowrap;
     overflow-x: auto;
     padding: 0;
 }
 
 .bb-area .nav button {
-    width: 100px;
-    height: 76px;
+    width: 96px;
+    height: 72px;
     flex-shrink: 0;
     font-size: 12px;
     padding: 0;
@@ -93,7 +93,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-size: 96px auto;
+    background-size: 94px auto;
     background-position: center;
     background-repeat: no-repeat;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
