@@ -1,0 +1,42 @@
+{
+  "envId": "legopart-d3gyvl7hw36084032",
+  "version": "2.0",
+  "$schema": "https://json.schemastore.org/cloudbaserc",
+  "services": {
+    "parts-backend": {
+      "platform": "cloudbase",
+      "build": {
+        "command": "",
+        "outputPath": "."
+      },
+      "cloudbase": {
+        "envId": "legopart-d3gyvl7hw36084032",
+        "serviceName": "parts-backend",
+        "servicePath": ".",
+        "deployMode": "cloudify",
+        "containerConfig": {
+          "cpu": 1,
+          "mem": 256,
+          "minNum": 0,
+          "maxNum": 1,
+          "policyType": "cpu",
+          "policyThreshold": 60,
+          "envVariables": {
+            "DATA_DIR": "/data",
+            "DATABASE_URL": "sqlite:////data/parts.db"
+          },
+          "port": 8000
+        },
+        "storageConfig": {
+          "paths": [
+            {
+              "path": "/data",
+              "storageType": "CFS",
+              "storagePath": "/data"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

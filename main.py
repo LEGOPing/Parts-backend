@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 import logging
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,6 +15,7 @@ logger.info(f"DATA_DIR: {os.getenv('DATA_DIR', 'not set')}")
 logger.info(f"DATABASE_URL: {os.getenv('DATABASE_URL', 'not set')}")
 
 from app.database import Base, engine, get_db
+from app.backup import auto_backup
 
 # 导入所有模型，确保它们被注册到Base.metadata
 from app.models.repository import Repository
@@ -74,3 +76,21 @@ except RuntimeError:
 @app.get("/")
 def read_root():
     return {"message": "欢迎使用乐高零件管理系统"}
+
+# 获取数据库路径
+DATABASE_PATH = os.getenv("DATABASE_URL", "sqlite:///./parts.db").replace("sqlite:///", "")
+
+# 定时备份
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    func=lambda: auto_backup(DATABASE_PATH),
+    trigger="cron",
+    hour=2,
+    minute=0,
+    id="daily_backup",
+    name="每日数据库备份",
+    replace_existing=True
+)
+scheduler.start()
+
+logger.info("定时备份任务已启动")

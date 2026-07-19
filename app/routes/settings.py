@@ -5,28 +5,23 @@ import os
 import shutil
 from app.database import get_db, engine
 from app.models import Base
+from app.backup import backup_database, backup_to_gitee
 
 router = APIRouter()
 
 @router.post("/backup")
-def backup_database(db: Session = Depends(get_db)):
+def manual_backup(db: Session = Depends(get_db)):
     db_url = str(engine.url)
-    backup_dir = "./backups"
-    os.makedirs(backup_dir, exist_ok=True)
-    
-    import datetime
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     
     if db_url.startswith("sqlite"):
         db_path = db_url.replace("sqlite:///", "")
-        if not os.path.exists(db_path):
-            raise HTTPException(status_code=404, detail="数据库文件不存在")
+        backup_path = backup_database(db_path)
         
-        backup_filename = f"parts_backup_{timestamp}.db"
-        backup_path = os.path.join(backup_dir, backup_filename)
-        shutil.copy2(db_path, backup_path)
-        
-        return {"message": "数据库备份成功", "backup_path": backup_path}
+        if backup_path:
+            uploaded = backup_to_gitee(backup_path)
+            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded}
+        else:
+            raise HTTPException(status_code=500, detail="数据库备份失败")
     else:
         raise HTTPException(status_code=501, detail="暂不支持该数据库类型的备份")
 
