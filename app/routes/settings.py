@@ -5,7 +5,7 @@ import os
 import shutil
 from app.database import get_db, engine
 from app.models import Base
-from app.backup import backup_database, backup_to_gitee
+from app.backup import backup_database, backup_to_gitee, upload_to_cos
 
 router = APIRouter()
 
@@ -18,8 +18,9 @@ def manual_backup(db: Session = Depends(get_db)):
         backup_path = backup_database(db_path)
         
         if backup_path:
-            uploaded = backup_to_gitee(backup_path)
-            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded}
+            uploaded_gitee = backup_to_gitee(backup_path)
+            uploaded_cos = upload_to_cos(db_path)
+            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded_gitee, "uploaded_to_cos": uploaded_cos}
         else:
             raise HTTPException(status_code=500, detail="数据库备份失败")
     else:

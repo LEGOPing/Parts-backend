@@ -10,6 +10,15 @@ load_dotenv()
 DATA_DIR = os.getenv("DATA_DIR", "./")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR}/parts.db")
 
+db_path = DATABASE_URL.replace("sqlite:///", "")
+db_dir = os.path.dirname(db_path)
+if db_dir:
+    os.makedirs(db_dir, exist_ok=True)
+
+from app.backup import download_from_cos
+if not os.path.exists(db_path):
+    download_from_cos(db_path)
+
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 def set_sqlite_pragmas(dbapi_connection, connection_record):

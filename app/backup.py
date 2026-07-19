@@ -3,11 +3,22 @@ import shutil
 import datetime
 import subprocess
 import logging
+from qcloud_cos import CosConfig
+from qcloud_cos import CosS3Client
+from qcloud_cos.cos_exception import CosServiceError
 
 logger = logging.getLogger(__name__)
 
 BACKUP_DIR = "./backups"
 MAX_BACKUPS = 5
+
+COS_CONFIG = {
+    "region": os.getenv("COS_REGION", "ap-shanghai"),
+    "secret_id": os.getenv("COS_SECRET_ID"),
+    "secret_key": os.getenv("COS_SECRET_KEY"),
+    "bucket": os.getenv("COS_BUCKET"),
+    "db_key": os.getenv("COS_DB_KEY", "parts/parts.db"),
+}
 
 def ensure_backup_dir():
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -109,7 +120,63 @@ def backup_to_gitee(backup_path):
         logger.error(f"上传到 Gitee 失败: {e}")
         return False
 
+def get_cos_client():
+    if not COS_CONFIG["secret_id"] or not COS_CONFIG["secret_key"] or not COS_CONFIG["bucket"]:
+        logger.warning("COS配置不完整，跳过云存储备份")
+        return None
+    
+    config = CosConfig(
+        Region=COS_CONFIG["region"],
+        SecretId=COS_CONFIG["secret_id"],
+        SecretKey=COS_CONFIG["secret_key"]
+    )
+    return CosS3Client(config)
+
+def upload_to_cos(db_path):
+    client = get_cos_client()
+    if not client:
+        return False
+    
+    try:
+        with open(db_path, 'rb') as f:
+            client.put_object(
+                Bucket=COS_CONFIG["bucket"],
+                Key=COS_CONFIG["db_key"],
+                Body=f,
+                ContentType='application/octet-stream'
+            )
+        logger.info(f"数据库已上传到COS: {COS_CONFIG['db_key']}")
+        return True
+    except CosServiceError as e:
+        logger.error(f"上传到COS失败: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"上传到COS失败: {e}")
+        return False
+
+def download_from_cos(db_path):
+    client = get_cos_client()
+    if not client:
+        return False
+    
+    try:
+        response = client.get_object(
+            Bucket=COS_CONFIG["bucket"],
+            Key=COS_CONFIG["db_key"]
+        )
+        with open(db_path, 'wb') as f:
+            f.write(response['Body'].read())
+        logger.info(f"从COS下载数据库成功: {db_path}")
+        return True
+    except CosServiceError as e:
+        logger.error(f"从COS下载失败: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"从COS下载失败: {e}")
+        return False
+
 def auto_backup(db_path):
     backup_path = backup_database(db_path)
     if backup_path:
         backup_to_gitee(backup_path)
+        upload_to_cos(db_path)

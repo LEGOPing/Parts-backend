@@ -23,18 +23,14 @@
           "policyThreshold": 60,
           "envVariables": {
             "DATA_DIR": "/data",
-            "DATABASE_URL": "sqlite:////data/parts.db"
+            "DATABASE_URL": "sqlite:////data/parts.db",
+            "COS_REGION": "ap-shanghai",
+            "COS_BUCKET": "",
+            "COS_SECRET_ID": "",
+            "COS_SECRET_KEY": "",
+            "COS_DB_KEY": "parts/parts.db"
           },
           "port": 8000
-        },
-        "storageConfig": {
-          "paths": [
-            {
-              "path": "/data",
-              "storageType": "CFS",
-              "storagePath": "/data"
-            }
-          ]
         }
       }
     }
