@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#F2CD37">
+    <meta name="description" content="乐高零件管理系统">
+    <title>乐高零件管理系统</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/style.css?v=20260717013">
+    
+    <script src="js/api.js?v=20260715004"></script>
+    <script src="js/store.js?v=20260715004"></script>
+    <script src="js/ui.js?v=20260717001"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="aa-area">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="https://raw.githubusercontent.com/legoping/Parts-backend/main/frontend/icons/LOGO.JPEG" alt="乐高零件管理系统">
+                </div>
+                <div class="title">
+                    <h1>顺德乐高玩具专卖店-零件库</h1>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bb-area">
+            <div class="nav">
+                <button class="repo-btn active" onclick="switchTab('repositories', this)">仓库管理</button>
+                <button class="part-btn" onclick="switchTab('parts', this)">零件管理</button>
+                <button class="search-btn" onclick="switchTab('search', this)">零件搜索</button>
+                <button class="settings-btn" onclick="switchTab('settings', this)">系统设置</button>
+            </div>
+        </div>
+        
+        <div class="cc-area">
+            <div class="content">
+                <div id="repositories-tab" class="tab-content active">
+                    <div class="repository-management">
+                        <div class="repository-header">
+                            <div>
+                                <h2>仓库列表</h2>
+                                <div class="repository-stats">共 <span id="repository-count">0</span> 个仓库</div>
+                            </div>
+                            <button onclick="addRepository()" class="add-repository-btn">添加仓库</button>
+                        </div>
+                        <div class="repository-scroll">
+                            <div class="repository-list" id="repositories-list"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="box-management" id="box-management">
+                        <div class="box-header">
+                            <h2 id="selected-repository-name">未命名仓库 - 盒子管理</h2>
+                            <div class="box-management-buttons">
+                                <button onclick="addBox()" class="add-box-btn">添加盒子</button>
+                                <button onclick="alert('转仓功能开发中...')" class="transfer-box-btn">盒子转仓</button>
+                            </div>
+                        </div>
+                        <div class="box-stats">共 <span id="box-count">0</span> 个盒子</div>
+                        <div class="box-grid-wrapper">
+                            <div class="box-grid" id="boxes-list"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="no-repository-selected" id="no-repository-selected">
+                        <p>请选择一个仓库查看盒子</p>
+                    </div>
+                </div>
+                
+                <div id="parts-tab" class="tab-content">
+                    <div class="part-management-container">
+                        <div class="part-header">
+                            <h2 id="selected-box-name">未命名盒子 - 零件管理</h2>
+                        </div>
+                        <div class="part-header-buttons">
+                            <div>
+                                <button onclick="showAddPartSheet()" class="add-part-btn">添加零件</button>
+                                <button onclick="showCSVImporter()" class="import-part-btn">批量导入</button>
+                                <button onclick="alert('转盒功能开发中...')" class="transfer-part-btn">零件转盒</button>
+                            </div>
+                            <div class="part-stats">共 <span id="part-count">0</span> 种零件</div>
+                            <button onclick="goBackToRepositories()" class="back-btn">返回</button>
+                        </div>
+                        <div class="part-grid-wrapper">
+                            <div class="part-grid" id="parts-list"></div>
+                        </div>
+                        <div class="no-box-selected" id="no-box-selected">
+                            <p>请选择一个盒子查看零件</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="search-tab" class="tab-content search-tab">
+                    <h2>零件搜索</h2>
+                    <div class="search-filters">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>型号</label>
+                                <input type="text" id="search-part-num" placeholder="零件型号">
+                            </div>
+                            <div class="filter-group">
+                                <label>名称</label>
+                                <input type="text" id="search-part-name" placeholder="零件名称">
+                            </div>
+                        </div>
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>颜色ID</label>
+                                <input type="number" id="search-color-id" placeholder="颜色ID">
+                            </div>
+                            <div class="filter-group">
+                                <label>状态</label>
+                                <select id="search-status">
+                                    <option value="">全部</option>
+                                    <option value="true">新品</option>
+                                    <option value="false">旧品</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="search-actions">
+                            <button onclick="handleAdvancedSearch()" class="btn-search">搜索</button>
+                            <button onclick="resetSearchFilters()" class="btn-reset">重置</button>
+                        </div>
+                    </div>
+                    <div class="search-results" id="search-results"></div>
+                </div>
+                
+                <div id="settings-tab" class="tab-content settings-tab">
+                    <h2>系统设置</h2>
+                    
+                    <div class="settings-group">
+                        <h3>数据管理</h3>
+                        <div class="settings-buttons">
+                            <button onclick="initializeDatabase()" class="btn-settings" style="background-color: #4CAF50; color: white;">初始化数据库</button>
+                            <button onclick="backupData()" class="btn-settings" style="background-color: #2196F3; color: white;">数据备份</button>
+                            <button onclick="restoreData()" class="btn-settings" style="background-color: #FF9800; color: white;">数据恢复</button>
+                            <button onclick="syncData()" class="btn-settings" style="background-color: #9C27B0; color: white;">数据同步</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <h3>缓存管理</h3>
+                        <div class="settings-buttons">
+                            <button onclick="clearCache()" class="btn-settings" style="background-color: #f44336; color: white;">清除本地缓存</button>
+                            <button onclick="reloadApp()" class="btn-settings" style="background-color: #795548; color: white;">重启应用</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <h3>统计信息</h3>
+                        <div class="stats-grid" id="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-repos">--</div>
+                                <div class="stat-label">仓库数</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-boxes">--</div>
+                                <div class="stat-label">盒子数</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-parts">--</div>
+                                <div class="stat-label">零件种类</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-total-qty">--</div>
+                                <div class="stat-label">零件总数</div>
+                            </div>
+                        </div>
+                        <button onclick="loadStats()" class="btn-refresh-stats">刷新统计</button>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <h3>关于系统</h3>
+                        <div class="about-info">
+                            <p>版本: 2.1.0 (PWA版)</p>
+                            <p>数据存储: 腾讯云CloudBase</p>
+                            <p>静态资源: GitHub Pages</p>
+                            <p>开发者: LEGOPing</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker注册成功:', registration);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker注册失败:', error);
+                    });
+            });
+        }
+
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error('全局错误:', message, '文件:', source, '行:', lineno);
+            return true;
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('未处理的Promise拒绝:', event.reason);
+            event.preventDefault();
+        });
+        
+        window.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>
