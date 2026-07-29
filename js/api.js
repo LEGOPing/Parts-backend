@@ -1,14 +1,80 @@
-const API_BASE_URL = 'https://parts-backend-282911-9-1450790322.sh.run.tcloudbase.com/api';
+const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
+
+const API_BASE = `${SUPABASE_URL}/rest/v1`;
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
+const GITEE_RB_URL = 'https://gitee.com/legoping/Parts-RB/raw/master/';
 
 let cachedColors = null;
 let colorsCacheTime = 0;
 const CACHE_EXPIRY = 3600000;
 
-let cachedParts = null;
-let partsCacheTime = 0;
+function supabaseHeaders(extra = {}) {
+    return {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+        ...extra
+    };
+}
+
+async function supabaseRequest(table, options = {}) {
+    try {
+        let url = `${API_BASE}/${table}`;
+        const queryParams = [];
+        
+        if (options.select) {
+            queryParams.push(`select=${encodeURIComponent(options.select)}`);
+        }
+        if (options.filters) {
+            for (const [key, value] of Object.entries(options.filters)) {
+                if (value !== undefined && value !== null) {
+                    if (Array.isArray(value)) {
+                        const encodedValues = value.map(v => encodeURIComponent(v)).join(',');
+                        queryParams.push(`${key}=eq.${encodedValues}`);
+                    } else if (typeof value === 'string' && value.startsWith('eq.')) {
+                        queryParams.push(`${key}=${value}`);
+                    } else {
+                        queryParams.push(`${key}=eq.${value}`);
+                    }
+                }
+            }
+        }
+        if (options.order) {
+            queryParams.push(`order=${encodeURIComponent(options.order)}`);
+        }
+        if (options.limit) {
+            queryParams.push(`limit=${options.limit}`);
+        }
+        
+        if (queryParams.length > 0) {
+            url += `?${queryParams.join('&')}`;
+        }
+
+        const response = await fetch(url, {
+            method: options.method || 'GET',
+            headers: supabaseHeaders(options.headers),
+            body: options.body ? JSON.stringify(options.body) : undefined
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return await response.json();
+        }
+        return await response.text();
+    } catch (error) {
+        console.error(`Supabase request failed (${table}):`, error.message);
+        throw error;
+    }
+}
 
 async function fetchJSONFile(fileName) {
     try {
@@ -18,6 +84,107 @@ async function fetchJSONFile(fileName) {
         console.error(`加载JSON文件失败: ${fileName}`, error);
         return null;
     }
+}
+
+async function fetchRBFile(fileName) {
+    try {
+        const response = await fetch(`${GITEE_RB_URL}${fileName}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return await response.text();
+    } catch (error) {
+        console.error(`加载RB文件失败: ${fileName}`, error);
+        return null;
+    }
+}
+
+function parseRBCSVLine(line) {
+    const result = [];
+    let currentField = '';
+    let inQuotes = false;
+    
+    for (const char of line) {
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(currentField.trim());
+            currentField = '';
+        } else {
+            currentField += char;
+        }
+    }
+    
+    result.push(currentField.trim());
+    return result;
+}
+
+function parseRBCSV(text) {
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    if (lines.length === 0) return { headers: [], data: [] };
+    
+    const headers = parseRBCSVLine(lines[0]);
+    const data = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+        const row = parseRBCSVLine(lines[i]);
+        if (row.length === headers.length) {
+            const obj = {};
+            headers.forEach((h, idx) => {
+                obj[h] = row[idx];
+            });
+            data.push(obj);
+        }
+    }
+    
+    return { headers, data };
+}
+
+// RB数据类型定义 - 明确指定每个字段的类型
+const RB_SCHEMAS = {
+    colors: {
+        numeric: ['id', 'num_parts', 'num_sets', 'y1', 'y2'],
+        boolean: ['is_trans']
+    },
+    parts: {
+        numeric: ['part_cat_id'],
+        string: ['part_num', 'name', 'part_material']
+    },
+    part_categories: {
+        numeric: ['id'],
+        string: ['name']
+    },
+    elements: {
+        numeric: ['element_id', 'color_id', 'design_id'],
+        string: ['part_num']
+    },
+    inventory_parts: {
+        numeric: ['inventory_id', 'color_id', 'quantity'],
+        boolean: ['is_spare'],
+        string: ['part_num', 'img_url']
+    },
+    part_relationships: {
+        string: ['rel_type', 'child_part_num', 'parent_part_num']
+    }
+};
+
+function convertRBData(storeKey, data) {
+    const schema = RB_SCHEMAS[storeKey];
+    if (!schema) return data;
+    
+    return data.map(row => {
+        const converted = {};
+        for (const [key, value] of Object.entries(row)) {
+            if (schema.numeric && schema.numeric.includes(key)) {
+                converted[key] = value !== '' ? Number(value) : 0;
+            } else if (schema.boolean && schema.boolean.includes(key)) {
+                converted[key] = value === 'True' || value === 'true';
+            } else {
+                converted[key] = value;
+            }
+        }
+        return converted;
+    });
 }
 
 async function getColorName(colorId) {
@@ -103,8 +270,10 @@ async function getPartSuggestions(query) {
 
 async function getRepositories() {
     try {
-        const response = await fetch(`${API_BASE_URL}/repositories/`);
-        return await response.json();
+        return await supabaseRequest('repositories', {
+            select: 'id,name',
+            order: 'id'
+        });
     } catch (error) {
         console.error('获取仓库列表失败:', error.message);
         return [];
@@ -113,11 +282,10 @@ async function getRepositories() {
 
 async function getRepositoryById(repoId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/repositories/${repoId}`);
-        if (response.ok) {
-            return await response.json();
-        }
-        return null;
+        const results = await supabaseRequest('repositories', {
+            filters: { id: repoId }
+        });
+        return results.length > 0 ? results[0] : null;
     } catch (error) {
         console.error('获取仓库信息失败:', error.message);
         return null;
@@ -126,15 +294,12 @@ async function getRepositoryById(repoId) {
 
 async function createRepository(name) {
     try {
-        const response = await fetch(`${API_BASE_URL}/repositories/`, {
+        const results = await supabaseRequest('repositories', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ name: name || '新仓库' })
+            body: { name: name || '新仓库' }
         });
-        if (response.ok) {
-            return await response.json();
+        if (results && results.length > 0) {
+            return results[0];
         }
         throw new Error('创建仓库失败');
     } catch (error) {
@@ -145,14 +310,12 @@ async function createRepository(name) {
 
 async function updateRepository(repoId, data) {
     try {
-        const response = await fetch(`${API_BASE_URL}/repositories/${repoId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
+        const results = await supabaseRequest('repositories', {
+            method: 'PATCH',
+            filters: { id: repoId },
+            body: data
         });
-        return response.ok;
+        return true;
     } catch (error) {
         console.error('更新仓库失败:', error.message);
         return false;
@@ -161,10 +324,11 @@ async function updateRepository(repoId, data) {
 
 async function deleteRepository(repoId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/repositories/${repoId}`, {
-            method: 'DELETE'
+        await supabaseRequest('repositories', {
+            method: 'DELETE',
+            filters: { id: repoId }
         });
-        return response.ok;
+        return true;
     } catch (error) {
         console.error('删除仓库失败:', error.message);
         return false;
@@ -173,9 +337,14 @@ async function deleteRepository(repoId) {
 
 async function getBoxes(repoId) {
     try {
-        const url = repoId ? `${API_BASE_URL}/boxes/?repository_id=${repoId}` : `${API_BASE_URL}/boxes/`;
-        const response = await fetch(url);
-        return await response.json();
+        const options = {
+            select: 'id,box_number,name,repository_id',
+            order: 'box_number'
+        };
+        if (repoId) {
+            options.filters = { repository_id: repoId };
+        }
+        return await supabaseRequest('boxes', options);
     } catch (error) {
         console.error('获取盒子列表失败:', error.message);
         return [];
@@ -184,11 +353,10 @@ async function getBoxes(repoId) {
 
 async function getBoxById(boxId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/boxes/${boxId}`);
-        if (response.ok) {
-            return await response.json();
-        }
-        return null;
+        const results = await supabaseRequest('boxes', {
+            filters: { id: boxId }
+        });
+        return results.length > 0 ? results[0] : null;
     } catch (error) {
         console.error('获取盒子信息失败:', error.message);
         return null;
@@ -197,19 +365,16 @@ async function getBoxById(boxId) {
 
 async function createBox(repositoryId, boxNumber, name) {
     try {
-        const response = await fetch(`${API_BASE_URL}/boxes/`, {
+        const results = await supabaseRequest('boxes', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
+            body: {
                 repository_id: repositoryId,
                 box_number: boxNumber,
                 name: name || '新盒子'
-            })
+            }
         });
-        if (response.ok) {
-            return await response.json();
+        if (results && results.length > 0) {
+            return results[0];
         }
         return null;
     } catch (error) {
@@ -220,14 +385,12 @@ async function createBox(repositoryId, boxNumber, name) {
 
 async function updateBox(boxId, data) {
     try {
-        const response = await fetch(`${API_BASE_URL}/boxes/${boxId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
+        await supabaseRequest('boxes', {
+            method: 'PATCH',
+            filters: { id: boxId },
+            body: data
         });
-        return response.ok;
+        return true;
     } catch (error) {
         console.error('更新盒子失败:', error.message);
         return false;
@@ -236,10 +399,11 @@ async function updateBox(boxId, data) {
 
 async function deleteBox(boxId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/boxes/${boxId}`, {
-            method: 'DELETE'
+        await supabaseRequest('boxes', {
+            method: 'DELETE',
+            filters: { id: boxId }
         });
-        return response.ok;
+        return true;
     } catch (error) {
         console.error('删除盒子失败:', error.message);
         return false;
@@ -248,9 +412,14 @@ async function deleteBox(boxId) {
 
 async function getParts(boxId) {
     try {
-        const url = boxId ? `${API_BASE_URL}/parts/?box_id=${boxId}` : `${API_BASE_URL}/parts/`;
-        const response = await fetch(url);
-        return await response.json();
+        const options = {
+            select: 'id,part_num,name,color_id,is_new,quantity,box_id',
+            order: 'part_num'
+        };
+        if (boxId) {
+            options.filters = { box_id: boxId };
+        }
+        return await supabaseRequest('parts', options);
     } catch (error) {
         console.error('获取零件列表失败:', error.message);
         return [];
@@ -259,11 +428,10 @@ async function getParts(boxId) {
 
 async function getPartById(partId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/parts/${partId}`);
-        if (response.ok) {
-            return await response.json();
-        }
-        return null;
+        const results = await supabaseRequest('parts', {
+            filters: { id: partId }
+        });
+        return results.length > 0 ? results[0] : null;
     } catch (error) {
         console.error('获取零件信息失败:', error.message);
         return null;
@@ -272,15 +440,12 @@ async function getPartById(partId) {
 
 async function createPart(data) {
     try {
-        const response = await fetch(`${API_BASE_URL}/parts/`, {
+        const results = await supabaseRequest('parts', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
+            body: data
         });
-        if (response.ok) {
-            return await response.json();
+        if (results && results.length > 0) {
+            return results[0];
         }
         return null;
     } catch (error) {
@@ -291,14 +456,12 @@ async function createPart(data) {
 
 async function updatePart(partId, data) {
     try {
-        const response = await fetch(`${API_BASE_URL}/parts/${partId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
+        await supabaseRequest('parts', {
+            method: 'PATCH',
+            filters: { id: partId },
+            body: data
         });
-        return response.ok;
+        return true;
     } catch (error) {
         console.error('更新零件失败:', error.message);
         return false;
@@ -307,10 +470,11 @@ async function updatePart(partId, data) {
 
 async function deletePart(partId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/parts/${partId}`, {
-            method: 'DELETE'
+        await supabaseRequest('parts', {
+            method: 'DELETE',
+            filters: { id: partId }
         });
-        return response.ok;
+        return true;
     } catch (error) {
         console.error('删除零件失败:', error.message);
         return false;
@@ -319,14 +483,42 @@ async function deletePart(partId) {
 
 async function searchParts(params) {
     try {
-        const url = new URL(`${API_BASE_URL}/search/`);
-        Object.entries(params).forEach(([key, value]) => {
-            if (value !== undefined && value !== null) {
-                url.searchParams.set(key, value);
-            }
-        });
-        const response = await fetch(url.toString());
-        return await response.json();
+        const { part_num, name, color_id, is_new } = params;
+        const filters = {};
+        
+        if (color_id !== undefined && color_id !== null && color_id !== '') {
+            filters.color_id = color_id;
+        }
+        if (is_new !== undefined && is_new !== null && is_new !== '') {
+            filters.is_new = is_new;
+        }
+        
+        let results;
+        if (Object.keys(filters).length > 0) {
+            results = await supabaseRequest('parts', {
+                select: 'id,part_num,name,color_id,is_new,quantity,box_id',
+                filters: filters,
+                order: 'part_num'
+            });
+        } else {
+            results = await supabaseRequest('parts', {
+                select: 'id,part_num,name,color_id,is_new,quantity,box_id',
+                order: 'part_num'
+            });
+        }
+        
+        let filtered = results || [];
+        
+        if (part_num) {
+            const q = part_num.toLowerCase();
+            filtered = filtered.filter(p => p.part_num.toLowerCase().includes(q));
+        }
+        if (name) {
+            const q = name.toLowerCase();
+            filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+        }
+        
+        return filtered;
     } catch (error) {
         console.error('搜索零件失败:', error.message);
         return [];
@@ -339,20 +531,38 @@ async function advancedSearchParts(params) {
 
 async function batchCreateParts(partsData) {
     try {
-        const response = await fetch(`${API_BASE_URL}/parts/batch`, {
+        const results = await supabaseRequest('parts', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(partsData)
+            body: partsData
         });
-        if (response.ok) {
-            const results = await response.json();
+        if (results) {
             return { success: true, count: results.length, errors: [] };
         }
         return { success: false, count: 0, errors: [{ part_num: '批量导入', error: '批量导入失败' }] };
     } catch (error) {
         console.error('批量导入失败:', error.message);
         return { success: false, count: 0, errors: [{ part_num: '批量导入', error: error.message }] };
+    }
+}
+
+async function getStats() {
+    try {
+        const [repos, boxes, parts] = await Promise.all([
+            supabaseRequest('repositories', { select: 'id' }),
+            supabaseRequest('boxes', { select: 'id' }),
+            supabaseRequest('parts', { select: 'id,quantity' })
+        ]);
+        
+        const totalQty = (parts || []).reduce((sum, p) => sum + (p.quantity || 0), 0);
+        
+        return {
+            repositories: repos ? repos.length : 0,
+            boxes: boxes ? boxes.length : 0,
+            parts: parts ? parts.length : 0,
+            total_quantity: totalQty
+        };
+    } catch (error) {
+        console.error('获取统计信息失败:', error.message);
+        return { repositories: 0, boxes: 0, parts: 0, total_quantity: 0 };
     }
 }

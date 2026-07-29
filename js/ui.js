@@ -17,7 +17,7 @@ function calculateP() {
     }
 }
 
-function switchTab(tabName, btn) {
+async function switchTab(tabName, btn) {
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
@@ -31,7 +31,7 @@ function switchTab(tabName, btn) {
     }
     
     if (tabName === 'repositories') {
-        loadRepositories();
+        await loadRepositories();
     } else if (tabName === 'parts') {
         if (selectedBox) {
             loadParts(selectedBox.id);
@@ -43,49 +43,92 @@ function switchTab(tabName, btn) {
     }
 }
 
+let isLoadingRepositories = false;
+
 async function loadRepositories() {
-    const repos = await getRepositories();
-    const list = document.getElementById('repositories-list');
-    list.innerHTML = '';
+    if (isLoadingRepositories) return;
+    isLoadingRepositories = true;
     
-    document.getElementById('repository-count').textContent = repos.length;
-    
-    const boxCounts = {};
-    await Promise.all(repos.map(async repo => {
-        const boxes = await getBoxes(repo.id);
-        boxCounts[repo.id] = boxes.length;
-    }));
-    
-    repos.forEach(repo => {
-        const card = document.createElement('div');
-        card.className = `repository-card ${selectedRepository && selectedRepository.id === repo.id ? 'selected' : ''}`;
-        card.dataset.id = repo.id;
+    try {
+        let repos = await getRepositories();
         
-        card.innerHTML = `
-            <div class="repo-card-header">
-                <h3>${repo.name}</h3>
-                <button class="repo-delete-btn" onclick="event.stopPropagation(); deleteRepositoryConfirm('${repo.id}')">×</button>
-            </div>
-            <div class="repo-info">
-                <span class="repo-id">ID: ${repo.id}</span>
-                <span class="repo-box-count">${boxCounts[repo.id]}B</span>
-            </div>
-        `;
-        
-        card.addEventListener('click', () => {
-            if (!editingRepository) {
-                selectRepository(repo);
+        // 确保临时仓库存在
+        let tempRepo = repos.find(r => r.name === '临时仓库');
+        if (!tempRepo) {
+            tempRepo = await createRepository('临时仓库');
+            if (tempRepo) {
+                repos = await getRepositories();
             }
+        }
+        
+        // 确保临时仓库中有临时盒子
+        if (tempRepo) {
+            let tempBoxes = await getBoxes(tempRepo.id);
+            let tempBox = tempBoxes.find(b => b.name === '临时盒子');
+            if (!tempBox) {
+                // 查找最大box_number
+                const maxBoxNumber = tempBoxes.reduce((max, b) => Math.max(max, b.box_number || 0), 0);
+                await createBox(tempRepo.id, maxBoxNumber + 1, '临时盒子');
+            }
+        }
+        
+        // 确保临时仓库排在最后
+        repos.sort((a, b) => {
+            if (a.name === '临时仓库') return 1;
+            if (b.name === '临时仓库') return -1;
+            return a.id - b.id;
         });
         
-        setupLongPress(card, () => {
-            if (repo.name !== '待定盒子') {
-                startEditRepository(card, repo);
-            }
-        });
+        const uniqueRepos = repos.filter((repo, index, self) => 
+            index === self.findIndex(r => r.id === repo.id)
+        );
+        const list = document.getElementById('repositories-list');
+        list.innerHTML = '';
         
-        list.appendChild(card);
-    });
+        document.getElementById('repository-count').textContent = uniqueRepos.length;
+        
+        const boxCounts = {};
+        await Promise.all(uniqueRepos.map(async repo => {
+            const boxes = await getBoxes(repo.id);
+            boxCounts[repo.id] = boxes.length;
+        }));
+        
+        uniqueRepos.forEach(repo => {
+            const card = document.createElement('div');
+            card.className = `repository-card ${selectedRepository && selectedRepository.id === repo.id ? 'selected' : ''}`;
+            card.dataset.id = repo.id;
+            
+            const isTemp = repo.name === '临时仓库';
+            const deleteBtn = isTemp ? '' : `<button class="repo-delete-btn" onclick="event.stopPropagation(); deleteRepositoryConfirm('${repo.id}')">×</button>`;
+            
+            card.innerHTML = `
+                ${deleteBtn}
+                <div class="repo-card-name">${repo.name}</div>
+                <div class="repo-card-footer">
+                    <span class="repo-id">ID: ${repo.id}</span>
+                    <span class="repo-box-count"><span class="count">${boxCounts[repo.id]}</span> <span class="unit">B</span></span>
+                </div>
+            `;
+            
+            card.addEventListener('click', () => {
+                if (!editingRepository) {
+                    selectRepository(repo);
+                }
+            });
+            
+            if (!isTemp) {
+                setupLongPress(card, () => {
+                    if (repo.name !== '待定盒子') {
+                        startEditRepository(card, repo);
+                    }
+                });
+            }
+            
+            list.appendChild(card);
+        });
+    } finally {
+        isLoadingRepositories = false;
+    }
 }
 
 async function selectRepository(repo) {
@@ -93,8 +136,11 @@ async function selectRepository(repo) {
     
     document.querySelectorAll('.repository-card').forEach(card => {
         card.classList.remove('selected');
-        if (card.dataset.id === repo.id) {
+        card.style.backgroundColor = '';
+        if (parseInt(card.dataset.id) === repo.id || card.dataset.id === String(repo.id)) {
             card.classList.add('selected');
+            // 直接设置内联样式，确保优先级最高
+            card.style.backgroundColor = '#F2CD37';
         }
     });
     
@@ -111,9 +157,9 @@ function startEditRepository(card, repo) {
     
     card.innerHTML = `
         <input type="text" value="${repo.name}" class="repo-edit-input" />
-        <div class="repo-info">
+        <div class="repo-card-footer">
             <span class="repo-id">ID: ${repo.id}</span>
-            <span class="repo-box-count">0B</span>
+            <span class="repo-box-count"><span class="count">0</span> <span class="unit">B</span></span>
         </div>
     `;
     
@@ -161,7 +207,7 @@ async function addRepository() {
                 selectRepository(newRepo);
             }, 100);
         } else {
-            alert('添加仓库失败：云函数返回为空，请检查云函数是否正确部署');
+            alert('添加仓库失败：数据库未返回结果，请稍后重试');
         }
     } catch (error) {
         console.error('添加仓库异常:', error);
@@ -170,52 +216,113 @@ async function addRepository() {
 }
 
 async function deleteRepositoryConfirm(id) {
-    if (confirm('确定要删除这个仓库吗？删除后将同时删除仓库中的所有盒子和零件。')) {
-        const success = await deleteRepository(id);
-        if (success) {
-            if (selectedRepository && selectedRepository.id === id) {
-                setSelectedRepository(null);
-                document.getElementById('box-management').style.display = 'none';
-                document.getElementById('no-repository-selected').style.display = 'flex';
-            }
-            await loadRepositories();
+    const PASSWORD = '22332468';
+    
+    // 第一次密码验证
+    const pwd1 = prompt('请输入删除密码：');
+    if (pwd1 !== PASSWORD) {
+        alert('密码错误，操作已取消');
+        return;
+    }
+    
+    // 第二次密码验证
+    const pwd2 = prompt('请再次输入密码确认：');
+    if (pwd2 !== PASSWORD) {
+        alert('密码错误，操作已取消');
+        return;
+    }
+    
+    // 查找要删除的仓库
+    const repos = await getRepositories();
+    const repoToDelete = repos.find(r => r.id === parseInt(id));
+    if (!repoToDelete) {
+        alert('仓库不存在');
+        return;
+    }
+    
+    // 查找或创建临时仓库
+    let tempRepo = repos.find(r => r.name === '临时仓库');
+    if (!tempRepo) {
+        tempRepo = await createRepository('临时仓库');
+        if (!tempRepo) {
+            alert('创建临时仓库失败');
+            return;
         }
+    }
+    
+    // 显示删除确认提示
+    if (!confirm(`删除后，原仓库「${repoToDelete.name}」的盒子将转入「临时仓库」，确认删除吗？`)) {
+        return;
+    }
+    
+    // 将盒子转移到临时仓库
+    const boxes = await getBoxes(parseInt(id));
+    for (const box of boxes) {
+        await updateBox(box.id, { repository_id: tempRepo.id });
+    }
+    
+    // 删除仓库
+    const success = await deleteRepository(id);
+    if (success) {
+        if (selectedRepository && selectedRepository.id === parseInt(id)) {
+            setSelectedRepository(tempRepo);
+            await loadBoxes(tempRepo.id);
+            document.getElementById('box-management').style.display = 'block';
+            document.getElementById('no-repository-selected').style.display = 'none';
+            document.getElementById('selected-repository-name').textContent = `${tempRepo.name} - 盒子管理`;
+        }
+        await loadRepositories();
     }
 }
 
 async function loadBoxes(repoId) {
-    const boxes = await getBoxes(repoId);
+    let boxes = await getBoxes(repoId);
     const grid = document.getElementById('boxes-list');
     grid.innerHTML = '';
     
-    document.getElementById('box-count').textContent = boxes.length;
+    // 去重：相同box_number的盒子只保留一个
+    const uniqueBoxes = boxes.filter((box, index, self) => 
+        index === self.findIndex(b => b.box_number === box.box_number)
+    );
+    
+    document.getElementById('box-count').textContent = uniqueBoxes.length;
     
     const partCounts = {};
-    await Promise.all(boxes.map(async box => {
+    await Promise.all(uniqueBoxes.map(async box => {
         const parts = await getParts(box.id);
         partCounts[box.id] = parts.length;
     }));
     
-    boxes.forEach(box => {
+    uniqueBoxes.forEach(box => {
         const card = document.createElement('div');
         card.className = `box-card ${box.name === '新盒子' ? 'default' : ''}`;
         card.dataset.id = box.id;
         
+        const isTempBox = box.name === '临时盒子';
+        const deleteBtn = isTempBox ? '' : `<button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>`;
+        
         card.innerHTML = `
-            <div class="box-card-header">
-                <h4>${box.name}</h4>
-                <button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>
-            </div>
-            <div class="box-info">
-                <div class="box-number">ID: ${box.box_number}</div>
-                <div class="box-part-count">${partCounts[box.id]}P</div>
-            </div>
-        `;
+                ${deleteBtn}
+                <div class="box-card-name">${box.name}</div>
+                <div class="box-card-footer">
+                    <span class="box-id">ID: ${box.box_number}</span>
+                    <span class="box-part-count"><span class="count">${partCounts[box.id]}</span> <span class="unit">P</span></span>
+                </div>
+            `;
         
         card.addEventListener('click', () => {
             if (!editingBox) {
                 setSelectedBox(box);
                 document.getElementById('selected-box-name').textContent = `${box.name}盒子_零件管理`;
+                
+                // 更新选中状态样式
+                document.querySelectorAll('.box-card').forEach(c => {
+                    c.classList.remove('selected');
+                    c.style.backgroundColor = '';
+                });
+                card.classList.add('selected');
+                card.style.backgroundColor = '#F2CD37';
+                
                 const btn = document.querySelector('.part-btn');
                 switchTab('parts', btn);
             }
@@ -236,9 +343,9 @@ function startEditBox(card, box) {
     
     card.innerHTML = `
         <input type="text" value="${box.name}" class="box-edit-input" />
-        <div class="box-info">
-            <div class="box-number">ID: ${box.box_number}</div>
-            <div class="box-part-count">0P</div>
+        <div class="box-card-footer">
+            <span class="box-id">ID: ${box.box_number}</span>
+            <span class="box-part-count"><span class="count">0</span> <span class="unit">P</span></span>
         </div>
     `;
     
@@ -287,6 +394,14 @@ async function addBox() {
 }
 
 async function deleteBoxConfirm(id) {
+    // 查找盒子信息
+    const boxes = await getBoxes();
+    const boxToDelete = boxes.find(b => b.id === parseInt(id));
+    if (boxToDelete && boxToDelete.name === '临时盒子') {
+        alert('临时盒子不可删除');
+        return;
+    }
+    
     if (confirm('确定要删除这个盒子吗？')) {
         const success = await deleteBox(id);
         if (success && selectedRepository) {
@@ -664,10 +779,10 @@ function filterColors(searchText) {
 
 async function handleAdvancedSearch() {
     const params = {
-        partNum: document.getElementById('search-part-num').value,
-        partName: document.getElementById('search-part-name').value,
-        colorId: document.getElementById('search-color-id').value,
-        isNew: document.getElementById('search-status').value === '' ? undefined : 
+        part_num: document.getElementById('search-part-num').value,
+        name: document.getElementById('search-part-name').value,
+        color_id: document.getElementById('search-color-id').value,
+        is_new: document.getElementById('search-status').value === '' ? undefined : 
                document.getElementById('search-status').value === 'true'
     };
     
@@ -1007,16 +1122,14 @@ async function confirmCSVImport() {
 
 async function initializeApp() {
     try {
-        const P = calculateP();
+        const P = 46;
         document.documentElement.style.setProperty('--P', P);
-        document.documentElement.style.setProperty('--card-width', (3 * P) + 'px');
-        document.documentElement.style.setProperty('--card-height', (2 * P) + 'px');
-        document.documentElement.style.setProperty('--grid-width', (9 * P + 30) + 'px');
+        document.documentElement.style.setProperty('--card-width', (2 * P) + 'px');
+        document.documentElement.style.setProperty('--card-height', (1.4 * P) + 'px');
+        document.documentElement.style.setProperty('--grid-width', (4 * P) + 'px');
         
         const repoBtn = document.querySelector('.nav button.repo-btn');
-        switchTab('repositories', repoBtn);
-        
-        await loadRepositories();
+        await switchTab('repositories', repoBtn);
     } catch (error) {
         console.error('应用初始化失败:', error);
         const list = document.getElementById('repositories-list');
@@ -1203,4 +1316,106 @@ async function loadStats() {
     } catch (error) {
         console.error('加载统计信息失败:', error);
     }
+}
+
+async function readRB() {
+    if (!confirm('确定要从Gitee Parts-RB仓库读取零件基础信息到本地数据库吗？\n这将覆盖现有的RB数据。')) {
+        return;
+    }
+
+    const files = [
+        { name: 'colors.csv', store: RB_STORES.COLORS, label: '颜色数据' },
+        { name: 'parts.csv', store: RB_STORES.PARTS, label: '零件基础数据' },
+        { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, label: '零件类别数据' },
+        { name: 'elements.csv', store: RB_STORES.ELEMENTS, label: '元素数据' },
+        { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, label: '库存零件数据' },
+        { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, label: '零件关系数据' }
+    ];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">读取RB数据</span>
+            </div>
+            <div class="modal-body">
+                <div id="rb-progress" style="padding: 20px 0;">
+                    <div class="rb-progress-bar" style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; margin: 10px 0;">
+                        <div id="rb-progress-fill" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="rb-progress-text" style="font-size: 14px; color: #666; margin-top: 10px;">准备读取...</div>
+                    <div id="rb-progress-detail" style="font-size: 12px; color: #999; margin-top: 5px;"></div>
+                </div>
+                <div id="rb-result" style="display: none;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const progress = Math.round((i / files.length) * 100);
+        
+        document.getElementById('rb-progress-fill').style.width = progress + '%';
+        document.getElementById('rb-progress-text').textContent = `正在读取 ${file.label} (${i + 1}/${files.length})...`;
+        document.getElementById('rb-progress-detail').textContent = file.name;
+
+        try {
+            const csvText = await fetchRBFile(file.name);
+            if (!csvText) {
+                failCount++;
+                document.getElementById('rb-progress-detail').textContent = `${file.name} - 读取失败`;
+                continue;
+            }
+
+            const { data } = parseRBCSV(csvText);
+            const schemaKey = RB_STORE_KEYS[file.store];
+            const typedData = convertRBData(schemaKey, data);
+
+            await importRBData(file.store, typedData);
+            successCount++;
+            document.getElementById('rb-progress-detail').textContent = `${file.name} - 导入成功 (${typedData.length}条)`;
+            
+        } catch (error) {
+            console.error(`处理 ${file.name} 失败:`, error);
+            failCount++;
+            document.getElementById('rb-progress-detail').textContent = `${file.name} - 导入失败`;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    // 完成
+    document.getElementById('rb-progress-fill').style.width = '100%';
+    document.getElementById('rb-progress-text').textContent = '读取完成！';
+    
+    const resultDiv = document.getElementById('rb-result');
+    resultDiv.style.display = 'block';
+    
+    const stats = await getRBStats();
+    let statsHtml = '';
+    if (stats) {
+        statsHtml = '<div style="font-size: 12px; color: #666; margin: 10px 0;">';
+        statsHtml += `<div>颜色: ${stats.rb_colors || 0} 条</div>`;
+        statsHtml += `<div>零件: ${stats.rb_parts || 0} 条</div>`;
+        statsHtml += `<div>类别: ${stats.rb_part_categories || 0} 条</div>`;
+        statsHtml += `<div>元素: ${stats.rb_elements || 0} 条</div>`;
+        statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
+        statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
+        statsHtml += '</div>';
+    }
+
+    resultDiv.innerHTML = `
+        <div style="padding: 15px; margin-top: 10px;">
+            <div style="font-size: 16px; margin-bottom: 10px;">
+                ${failCount === 0 ? '✓ 全部成功' : `⚠ 成功 ${successCount} 个，失败 ${failCount} 个`}
+            </div>
+            ${statsHtml}
+            <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+        </div>
+    `;
 }

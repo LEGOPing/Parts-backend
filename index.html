@@ -8,18 +8,20 @@
     <title>乐高零件管理系统</title>
     
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="icons/icon-192x192.png">
+    <link rel="stylesheet" href="css/style.css?v=2026073001">
     
-    <script src="js/api.js?v=20260715004"></script>
-    <script src="js/store.js?v=20260715004"></script>
-    <script src="js/ui.js?v=20260715004"></script>
+    <script src="js/api.js?v=2026073001"></script>
+    <script src="js/store.js?v=2026073001"></script>
+    <script src="js/rb-db.js?v=2026073001"></script>
+    <script src="js/ui.js?v=2026073001"></script>
 </head>
 <body>
     <div class="container">
         <div class="aa-area">
             <div class="header-content">
                 <div class="logo">
-                    <img src="https://gitee.com/legoping/Parts-img/raw/main/LOGO.JPEG" alt="乐高零件管理系统">
+                    <img src="icons/LOGO.JPEG" alt="乐高零件管理系统">
                 </div>
                 <div class="title">
                     <h1>顺德乐高玩具专卖店-零件库</h1>
@@ -41,9 +43,11 @@
                 <div id="repositories-tab" class="tab-content active">
                     <div class="repository-management">
                         <div class="repository-header">
-                            <div>
-                                <h2>仓库列表</h2>
-                                <div class="repository-stats">共 <span id="repository-count">0</span> 个仓库</div>
+                            <div class="header-left">
+                                <div class="header-title-row">
+                                    <h2>仓库列表</h2>
+                                    <div class="repository-stats">共 <span id="repository-count">0</span> 个仓库</div>
+                                </div>
                             </div>
                             <button onclick="addRepository()" class="add-repository-btn">添加仓库</button>
                         </div>
@@ -54,13 +58,15 @@
                     
                     <div class="box-management" id="box-management">
                         <div class="box-header">
-                            <h2 id="selected-repository-name">未命名仓库 - 盒子管理</h2>
+                            <div class="box-header-left">
+                                <h2 id="selected-repository-name">未命名仓库 - 盒子管理</h2>
+                                <div class="box-stats">共 <span id="box-count">0</span> 个盒子</div>
+                            </div>
                             <div class="box-management-buttons">
                                 <button onclick="addBox()" class="add-box-btn">添加盒子</button>
                                 <button onclick="alert('转仓功能开发中...')" class="transfer-box-btn">盒子转仓</button>
                             </div>
                         </div>
-                        <div class="box-stats">共 <span id="box-count">0</span> 个盒子</div>
                         <div class="box-grid-wrapper">
                             <div class="box-grid" id="boxes-list"></div>
                         </div>
@@ -139,6 +145,7 @@
                             <button onclick="backupData()" class="btn-settings" style="background-color: #2196F3; color: white;">数据备份</button>
                             <button onclick="restoreData()" class="btn-settings" style="background-color: #FF9800; color: white;">数据恢复</button>
                             <button onclick="syncData()" class="btn-settings" style="background-color: #9C27B0; color: white;">数据同步</button>
+                            <button onclick="readRB()" class="btn-settings" style="background-color: #00BCD4; color: white;">读取RB</button>
                         </div>
                     </div>
                     
@@ -176,9 +183,9 @@
                     <div class="settings-group">
                         <h3>关于系统</h3>
                         <div class="about-info">
-                            <p>版本: 2.1.0 (PWA版)</p>
-                            <p>数据存储: 腾讯云CloudBase</p>
-                            <p>静态资源: GitHub Pages</p>
+                            <p>版本: 3.0.0 (Supabase版)</p>
+                            <p>数据库: Supabase PostgreSQL</p>
+                            <p>静态资源: GitHub Pages + Gitee</p>
                             <p>开发者: LEGOPing</p>
                         </div>
                     </div>
