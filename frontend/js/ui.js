@@ -1522,8 +1522,11 @@ async function initializeApp() {
         document.documentElement.style.setProperty('--card-height', (1.4 * P) + 'px');
         document.documentElement.style.setProperty('--grid-width', (4 * P) + 'px');
         
-        // 启动时检查并建立 RB 数据库
-        await loadRBOnStartup();
+        // 启动时检查并建立 RB 数据库（不阻塞主流程）
+        loadRBOnStartup().catch(e => {
+            console.error('RB数据库初始化失败:', e);
+            showRBStatusHint('rb-failed');
+        });
         
         const repoBtn = document.querySelector('.nav button.repo-btn');
         await switchTab('repositories', repoBtn);
@@ -1539,6 +1542,8 @@ async function initializeApp() {
 // 启动时自动建立 RB 数据库（如果不存在）
 async function loadRBOnStartup() {
     try {
+        showRBStatusHint('rb-loading');
+        
         const hasLocalData = await hasLocalRBData();
         if (hasLocalData) {
             console.log('RB本地数据库已存在，使用离线数据');
@@ -1592,47 +1597,55 @@ async function loadRBOnStartup() {
 }
 
 // 显示 RB 状态提示
-async function showRBStatusHint(status) {
+function showRBStatusHint(status) {
     const hint = document.getElementById('rb-status-hint');
-    if (!hint) return;
+    if (!hint) {
+        console.warn('rb-status-hint 元素未找到');
+        return;
+    }
     
-    try {
-        const stats = await getRBStats();
-        const totalCount = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
-        
-        const messages = {
-            'rb-ready': { 
-                text: `✓ RB数据库已就绪 (共 ${totalCount} 条数据)`, 
-                color: '#4CAF50' 
-            },
-            'rb-partial': { 
-                text: `⚠ RB数据库部分加载 (${totalCount} 条)，请点击"更新RB"`, 
-                color: '#FF9800' 
-            },
-            'rb-failed': { 
-                text: '✗ RB数据库加载失败，请点击"更新RB"', 
-                color: '#f44336' 
-            },
-            'rb-empty': {
-                text: 'ℹ RB数据库为空，请点击"更新RB"建立',
-                color: '#9E9E9E'
-            }
-        };
-        
-        // 如果状态是 ready 但没有数据，显示空状态
-        if (status === 'rb-ready' && totalCount === 0) {
-            hint.textContent = messages['rb-empty'].text;
-            hint.style.color = messages['rb-empty'].color;
-        } else {
-            const msg = messages[status];
-            if (msg) {
-                hint.textContent = msg.text;
-                hint.style.color = msg.color;
-            }
+    const messages = {
+        'rb-ready': { 
+            text: '✓ RB数据库已就绪', 
+            color: '#4CAF50' 
+        },
+        'rb-partial': { 
+            text: '⚠ RB数据库部分加载，请点击"更新RB"', 
+            color: '#FF9800' 
+        },
+        'rb-failed': { 
+            text: '✗ RB数据库加载失败，请点击"更新RB"', 
+            color: '#f44336' 
+        },
+        'rb-empty': {
+            text: 'ℹ RB数据库为空，请点击"更新RB"建立',
+            color: '#9E9E9E'
+        },
+        'rb-loading': {
+            text: '⏳ RB数据库加载中...',
+            color: '#2196F3'
         }
+    };
+    
+    const msg = messages[status];
+    if (msg) {
+        hint.textContent = msg.text;
+        hint.style.color = msg.color;
         hint.style.display = 'block';
-    } catch (e) {
-        console.error('获取RB状态失败:', e);
+        console.log('RB状态提示:', msg.text);
+    }
+    
+    // 异步获取统计数据并更新
+    if (status === 'rb-ready' || status === 'rb-partial') {
+        getRBStats().then(stats => {
+            const totalCount = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
+            if (status === 'rb-ready' && totalCount === 0) {
+                hint.textContent = messages['rb-empty'].text;
+                hint.style.color = messages['rb-empty'].color;
+            } else if (totalCount > 0) {
+                hint.textContent = `${msg.text} (共 ${totalCount} 条数据)`;
+            }
+        }).catch(e => console.error('获取RB统计失败:', e));
     }
 }
 
