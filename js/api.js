@@ -4,8 +4,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
+const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
-const GITEE_RB_URL = 'https://gitee.com/legoping/Parts-RB/raw/master/';
+const GITEE_RB_RAW_URL = 'https://gitee.com/legoping/parts-rb/raw/main';
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+const RB_DATABASE_FILE = 'rb_database.json';
+const DEFAULT_GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0';
 
 let cachedColors = null;
 let colorsCacheTime = 0;
@@ -88,11 +92,34 @@ async function fetchJSONFile(fileName) {
 
 async function fetchRBFile(fileName) {
     try {
-        const response = await fetch(`${GITEE_RB_URL}${fileName}`);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+        // 方式1: 使用Gitee API + Token（适用于私有仓库）
+        const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+        if (token) {
+            const apiUrl = `https://gitee.com/api/v5/repos/legoping/parts-rb/contents/${fileName}?ref=main`;
+            const apiResponse = await fetch(apiUrl, {
+                headers: { 'Authorization': `token ${token}` }
+            });
+            if (apiResponse.ok) {
+                const data = await apiResponse.json();
+                if (data.content) {
+                    return decodeURIComponent(escape(atob(data.content)));
+                }
+            }
         }
-        return await response.text();
+        
+        // 方式2: 使用CORS代理直接访问raw文件（回退方案）
+        const rawUrl = `${GITEE_RB_RAW_URL}/${fileName}`;
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(rawUrl)}`;
+        
+        const response = await fetch(proxyUrl);
+        if (response.ok) {
+            const text = await response.text();
+            if (text && !text.includes('404') && !text.includes('未找到')) {
+                return text;
+            }
+        }
+        
+        throw new Error('无法访问文件');
     } catch (error) {
         console.error(`加载RB文件失败: ${fileName}`, error);
         return null;
@@ -564,5 +591,103 @@ async function getStats() {
     } catch (error) {
         console.error('获取统计信息失败:', error.message);
         return { repositories: 0, boxes: 0, parts: 0, total_quantity: 0 };
+    }
+}
+
+// 检查 Parts-json 仓库是否存在 rb_database.json
+async function checkRBDatabaseOnCloud() {
+    try {
+        const response = await fetch(`${GITEE_JSON_API_URL}/${RB_DATABASE_FILE}?ref=master`);
+        if (response.status === 404) {
+            return { exists: false, message: 'RB数据库不存在于Parts-json仓库' };
+        }
+        if (response.ok) {
+            const data = await response.json();
+            return { exists: true, sha: data.sha, message: 'RB数据库存在于Parts-json仓库' };
+        }
+        throw new Error(`HTTP ${response.status}`);
+    } catch (error) {
+        console.error('检查Parts-json仓库RB数据库失败:', error);
+        return { exists: false, message: '检查失败: ' + error.message };
+    }
+}
+
+// 从 Parts-json 仓库下载 rb_database.json
+async function downloadRBDatabaseFromCloud() {
+    try {
+        const response = await fetch(`${GITEE_JSON_API_URL}/${RB_DATABASE_FILE}?ref=master`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        if (data.content) {
+            const jsonText = decodeURIComponent(escape(atob(data.content)));
+            return JSON.parse(jsonText);
+        }
+        return null;
+    } catch (error) {
+        console.error('从Parts-json下载RB数据库失败:', error);
+        return null;
+    }
+}
+
+// 将 rb_database.json 上传到 Parts-json 仓库（需要 token）
+async function uploadRBDatabaseToCloud(jsonData, token = '') {
+    try {
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(jsonData))));
+        const apiUrl = `${GITEE_JSON_API_URL}/${RB_DATABASE_FILE}`;
+        
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify({
+                message: '更新RB数据库',
+                content: content,
+                branch: 'master'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        return { success: true, sha: result.sha };
+    } catch (error) {
+        console.error('上传RB数据库到Parts-json失败:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// 更新已存在的 rb_database.json（需要 token 和 sha）
+async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
+    try {
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(jsonData))));
+        const apiUrl = `${GITEE_JSON_API_URL}/${RB_DATABASE_FILE}`;
+        
+        const response = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify({
+                message: '更新RB数据库',
+                content: content,
+                sha: sha,
+                branch: 'master'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        return { success: true, sha: result.sha };
+    } catch (error) {
+        console.error('更新Parts-json上的RB数据库失败:', error);
+        return { success: false, error: error.message };
     }
 }

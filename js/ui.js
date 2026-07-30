@@ -52,12 +52,62 @@ async function loadRepositories() {
     try {
         let repos = await getRepositories();
         
+        // 清理重复仓库：按name分组，保留第一个，合并其他仓库的盒子到第一个，然后删除重复仓库
+        const nameGroups = {};
+        repos.forEach(r => {
+            if (!nameGroups[r.name]) nameGroups[r.name] = [];
+            nameGroups[r.name].push(r);
+        });
+        
+        for (const [name, group] of Object.entries(nameGroups)) {
+            if (group.length > 1) {
+                const keepRepo = group[0];
+                const duplicateRepos = group.slice(1);
+                
+                for (const dupRepo of duplicateRepos) {
+                    try {
+                        // 获取重复仓库的所有盒子
+                        const dupBoxes = await getBoxes(dupRepo.id);
+                        
+                        // 将盒子转移到保留的仓库
+                        for (const box of dupBoxes) {
+                            await updateBox(box.id, { repository_id: keepRepo.id });
+                        }
+                        
+                        // 删除空仓库
+                        await deleteRepository(dupRepo.id);
+                        console.log(`已清理重复仓库: ${name} (ID: ${dupRepo.id})`);
+                    } catch (err) {
+                        console.error(`清理仓库失败: ${name}`, err);
+                    }
+                }
+            }
+        }
+        
+        // 重新获取仓库列表
+        repos = await getRepositories();
+        
+        // 按name去重（保留第一个）
+        const seen = new Set();
+        repos = repos.filter(r => {
+            if (seen.has(r.name)) return false;
+            seen.add(r.name);
+            return true;
+        });
+        
         // 确保临时仓库存在
         let tempRepo = repos.find(r => r.name === '临时仓库');
         if (!tempRepo) {
             tempRepo = await createRepository('临时仓库');
             if (tempRepo) {
                 repos = await getRepositories();
+                // 再次去重
+                const seen2 = new Set();
+                repos = repos.filter(r => {
+                    if (seen2.has(r.name)) return false;
+                    seen2.add(r.name);
+                    return true;
+                });
             }
         }
         
@@ -313,7 +363,7 @@ async function loadBoxes(repoId) {
         card.addEventListener('click', () => {
             if (!editingBox) {
                 setSelectedBox(box);
-                document.getElementById('selected-box-name').textContent = `${box.name}盒子_零件管理`;
+                document.getElementById('selected-box-name').textContent = `${box.name}零件管理`;
                 
                 // 更新选中状态样式
                 document.querySelectorAll('.box-card').forEach(c => {
@@ -532,9 +582,10 @@ function showAddPartSheet() {
     
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
+    overlay.id = 'add-part-overlay';
     
     const sheet = document.createElement('div');
-    sheet.className = 'modal-content';
+    sheet.className = 'modal-content add-part-modal';
     
     sheet.innerHTML = `
         <div class="modal-header">
@@ -544,11 +595,15 @@ function showAddPartSheet() {
                 <button class="btn-save" onclick="saveNewPart(this)">保存</button>
             </div>
         </div>
-        <div class="modal-body">
+        <div class="modal-body add-part-body">
             <div class="form-section">
-                <div class="form-row">
+                <div class="form-row part-number-row">
                     <label class="form-label">零件型号：</label>
-                    <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" />
+                    <div class="part-number-input-wrapper">
+                        <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" />
+                        <div class="part-number-suggestions" id="part-number-suggestions"></div>
+                    </div>
+                    <span class="part-name-hint" id="part-name-hint"></span>
                     <button class="btn-secondary" onclick="showPartSelector()" style="padding: 8px 10px; font-size: 12px;">选择零件</button>
                     <div class="status-group">
                         <span class="status-label">状态：</span>
@@ -558,9 +613,12 @@ function showAddPartSheet() {
                 </div>
             </div>
             <div class="form-section">
-                <div class="form-row">
+                <div class="form-row part-name-row">
                     <label class="form-label">零件名称：</label>
-                    <input type="text" id="new-part-name" class="form-input" placeholder="请输入零件名称" />
+                    <div class="part-name-input-wrapper">
+                        <input type="text" id="new-part-name" class="form-input" placeholder="请输入零件名称" autocomplete="off" />
+                        <div class="part-name-suggestions" id="part-name-suggestions"></div>
+                    </div>
                 </div>
                 <div class="form-row">
                     <label class="form-label">零件颜色：</label>
@@ -576,6 +634,7 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
+            <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
@@ -584,6 +643,341 @@ function showAddPartSheet() {
     document.body.appendChild(overlay);
     
     window.newPartIsNew = true;
+    
+    // 初始化联想功能
+    initAddPartSuggestions();
+}
+
+// 初始化添加零件的联想功能
+function initAddPartSuggestions() {
+    const partNumInput = document.getElementById('new-part-num');
+    const partNameInput = document.getElementById('new-part-name');
+    const partNumSuggestions = document.getElementById('part-number-suggestions');
+    const partNameSuggestions = document.getElementById('part-name-suggestions');
+    const partNameHint = document.getElementById('part-name-hint');
+    const partInfoPreview = document.getElementById('part-info-preview');
+    
+    let partNumTimer = null;
+    let partNameTimer = null;
+    let partMatchTimer = null;
+    let currentWordIndex = 0;
+    
+    // 隐藏联想建议
+    function hidePartNumSuggestions() {
+        partNumSuggestions.style.display = 'none';
+        partNumSuggestions.innerHTML = '';
+    }
+    
+    function hidePartNameSuggestions() {
+        partNameSuggestions.style.display = 'none';
+        partNameSuggestions.innerHTML = '';
+    }
+    
+    // 显示零件型号联想
+    async function showPartNumSuggestions(query) {
+        if (!query || query.trim().length === 0) {
+            hidePartNumSuggestions();
+            return;
+        }
+        
+        if (query.length > 10) {
+            hidePartNumSuggestions();
+            return;
+        }
+        
+        const suggestions = await searchPartsByNumber(query, 15);
+        
+        if (suggestions.length === 0) {
+            hidePartNumSuggestions();
+            return;
+        }
+        
+        partNumSuggestions.innerHTML = suggestions.map(s => `
+            <div class="part-number-suggestion-item" data-part-num="${s.part_num}" data-part-name="${s.name}">
+                <span class="suggestion-num">${s.part_num}</span>
+                <span class="suggestion-name">${s.name}</span>
+            </div>
+        `).join('');
+        partNumSuggestions.style.display = 'block';
+        
+        // 绑定点击事件
+        partNumSuggestions.querySelectorAll('.part-number-suggestion-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const partNum = item.dataset.partNum;
+                const partName = item.dataset.partName;
+                
+                partNumInput.value = partNum;
+                hidePartNumSuggestions();
+                
+                if (partName) {
+                    partNameInput.value = partName;
+                    partNameHint.textContent = '';
+                }
+                
+                updatePartInfoPreview();
+            });
+        });
+    }
+    
+    // 显示零件名称联想
+    async function showPartNameSuggestions(query, wordIndex, previousWords) {
+        const suggestions = await getPartNameSuggestions(query, wordIndex, previousWords, 30);
+        
+        if (suggestions.length === 0) {
+            hidePartNameSuggestions();
+            return;
+        }
+        
+        // 分组显示
+        const groups = {};
+        suggestions.forEach(s => {
+            let key;
+            if (/x/i.test(s)) {
+                const match = s.match(/^(\d+)/);
+                key = match ? match[1] : s[0].toUpperCase();
+            } else if (/^\d/.test(s)) {
+                key = s.split(' ')[0];
+            } else {
+                key = s[0].toUpperCase();
+            }
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(s);
+        });
+        
+        let html = '';
+        Object.keys(groups).sort((a, b) => {
+            const numA = parseInt(a), numB = parseInt(b);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+            if (!isNaN(numA)) return -1;
+            if (!isNaN(numB)) return 1;
+            return a.localeCompare(b);
+        }).forEach(key => {
+            html += `<div class="suggestion-group"><span class="suggestion-group-key">${key}</span><div class="suggestion-group-items">`;
+            groups[key].forEach(word => {
+                html += `<span class="part-name-suggestion-word">${word}</span>`;
+            });
+            html += '</div></div>';
+        });
+        
+        partNameSuggestions.innerHTML = html;
+        partNameSuggestions.style.display = 'block';
+        
+        // 绑定点击事件
+        partNameSuggestions.querySelectorAll('.part-name-suggestion-word').forEach(wordEl => {
+            wordEl.addEventListener('click', () => {
+                const selectedWord = wordEl.textContent;
+                const currentValue = partNameInput.value;
+                const endsWithSpace = currentValue.endsWith(' ');
+                const words = currentValue.split(/\s+/).filter(w => w);
+                
+                if (endsWithSpace || words.length === 0) {
+                    words.push(selectedWord);
+                } else {
+                    words[words.length - 1] = selectedWord;
+                }
+                
+                partNameInput.value = words.join(' ') + ' ';
+                partNameHint.textContent = selectedWord;
+                
+                hidePartNameSuggestions();
+                
+                // 更新单词索引
+                currentWordIndex = words.length;
+                
+                // 触发下一个单词的联想
+                if (partNameInput.value.trim()) {
+                    triggerPartNameSuggestions();
+                    triggerPartMatch();
+                }
+            });
+        });
+    }
+    
+    // 获取当前单词和之前的单词
+    function getWordInfo(text) {
+        if (!text) return { words: [], currentWord: '', currentIndex: 0 };
+        
+        const tokens = text.split(/\s+/).filter(t => t);
+        const words = [];
+        let i = 0;
+        
+        while (i < tokens.length) {
+            const token = tokens[i];
+            
+            if (i + 2 < tokens.length && 
+                !isNaN(parseInt(token)) && 
+                tokens[i + 1].toLowerCase() === 'x' && 
+                !isNaN(parseInt(tokens[i + 2]))) {
+                words.push(`${token} ${tokens[i + 1]} ${tokens[i + 2]}`);
+                i += 3;
+            } else if (!isNaN(parseInt(token))) {
+                const numTokens = [token];
+                let j = i + 1;
+                while (j < tokens.length && !isNaN(parseInt(tokens[j]))) {
+                    numTokens.push(tokens[j]);
+                    j++;
+                }
+                if (numTokens.length > 1) {
+                    words.push(numTokens.join(' '));
+                    i = j;
+                } else {
+                    words.push(token);
+                    i++;
+                }
+            } else {
+                words.push(token);
+                i++;
+            }
+        }
+        
+        const endsWithSpace = text.endsWith(' ');
+        const currentIndex = endsWithSpace ? words.length : Math.max(0, words.length - 1);
+        const currentWord = endsWithSpace ? '' : (words[words.length - 1] || '');
+        
+        return { words, currentWord, currentIndex };
+    }
+    
+    // 触发零件名称联想
+    function triggerPartNameSuggestions() {
+        const input = partNameInput.value;
+        const { words, currentWord, currentIndex } = getWordInfo(input);
+        
+        currentWordIndex = currentIndex;
+        
+        if (input.length > 100) return;
+        
+        clearTimeout(partNameTimer);
+        partNameTimer = setTimeout(() => {
+            showPartNameSuggestions(currentWord, currentIndex, words);
+        }, 300);
+    }
+    
+    // 触发零件型号匹配
+    function triggerPartMatch() {
+        const input = partNameInput.value;
+        const cleanInput = input.trim();
+        
+        if (!cleanInput || cleanInput.length > 100) return;
+        
+        clearTimeout(partMatchTimer);
+        partMatchTimer = setTimeout(async () => {
+            const partNum = await matchPartNumberFromName(cleanInput);
+            if (partNum) {
+                partNumInput.value = partNum;
+                updatePartInfoPreview();
+            }
+        }, 1000);
+    }
+    
+    // 根据型号更新零件信息预览
+    async function updatePartInfoPreview() {
+        const partNum = partNumInput.value.trim();
+        if (!partNum) {
+            partInfoPreview.style.display = 'none';
+            return;
+        }
+        
+        const part = await getPartByNum(partNum);
+        if (part) {
+            if (!partNameInput.value) {
+                partNameInput.value = part.name || '';
+            }
+            
+            const colorCount = await getPartColorCount(partNum);
+            partInfoPreview.innerHTML = `
+                <div class="part-preview-item">
+                    <span class="preview-label">型号</span>
+                    <span class="preview-value">${part.part_num}</span>
+                </div>
+                <div class="part-preview-item">
+                    <span class="preview-label">名称</span>
+                    <span class="preview-value">${part.name || '-'}</span>
+                </div>
+                ${colorCount > 0 ? `<div class="part-preview-item"><span class="preview-label">可用颜色</span><span class="preview-value">${colorCount} 种</span></div>` : ''}
+            `;
+            partInfoPreview.style.display = 'block';
+        } else {
+            partInfoPreview.style.display = 'none';
+        }
+    }
+    
+    // 零件型号输入事件
+    partNumInput.addEventListener('input', () => {
+        const value = partNumInput.value;
+        
+        // 清除之前的定时器
+        clearTimeout(partNumTimer);
+        clearTimeout(partMatchTimer);
+        
+        if (!value) {
+            hidePartNumSuggestions();
+            partNameHint.textContent = '';
+            partInfoPreview.style.display = 'none';
+            return;
+        }
+        
+        if (value.length > 10) {
+            hidePartNumSuggestions();
+            return;
+        }
+        
+        // 延迟1秒触发查询
+        partNumTimer = setTimeout(async () => {
+            await showPartNumSuggestions(value);
+            
+            // 如果是精确匹配，自动填充信息
+            const part = await getPartByNum(value);
+            if (part) {
+                partNameInput.value = part.name || '';
+                updatePartInfoPreview();
+            }
+        }, 800);
+    });
+    
+    // 零件名称输入事件
+    partNameInput.addEventListener('input', () => {
+        const value = partNameInput.value;
+        
+        clearTimeout(partNameTimer);
+        clearTimeout(partMatchTimer);
+        
+        partNameHint.textContent = '';
+        
+        if (!value) {
+            hidePartNameSuggestions();
+            return;
+        }
+        
+        if (value.length > 100) {
+            hidePartNameSuggestions();
+            return;
+        }
+        
+        triggerPartNameSuggestions();
+        triggerPartMatch();
+    });
+    
+    // 点击输入框时显示联想
+    partNumInput.addEventListener('focus', () => {
+        if (partNumInput.value && partNumInput.value.trim()) {
+            showPartNumSuggestions(partNumInput.value);
+        }
+    });
+    
+    partNameInput.addEventListener('focus', () => {
+        if (partNameInput.value && partNameInput.value.trim()) {
+            triggerPartNameSuggestions();
+        }
+    });
+    
+    // 点击外部关闭联想
+    document.getElementById('add-part-overlay').addEventListener('click', (e) => {
+        if (!e.target.closest('.part-number-input-wrapper') && 
+            !e.target.closest('.part-name-input-wrapper')) {
+            hidePartNumSuggestions();
+            hidePartNameSuggestions();
+        }
+    });
 }
 
 function togglePartNewStatus(isNew) {
@@ -1128,6 +1522,9 @@ async function initializeApp() {
         document.documentElement.style.setProperty('--card-height', (1.4 * P) + 'px');
         document.documentElement.style.setProperty('--grid-width', (4 * P) + 'px');
         
+        // 启动时检查并建立 RB 数据库
+        await loadRBOnStartup();
+        
         const repoBtn = document.querySelector('.nav button.repo-btn');
         await switchTab('repositories', repoBtn);
     } catch (error) {
@@ -1136,6 +1533,106 @@ async function initializeApp() {
         if (list) {
             list.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">无法连接到数据库，请检查网络连接或稍后重试</div>';
         }
+    }
+}
+
+// 启动时自动建立 RB 数据库（如果不存在）
+async function loadRBOnStartup() {
+    try {
+        const hasLocalData = await hasLocalRBData();
+        if (hasLocalData) {
+            console.log('RB本地数据库已存在，使用离线数据');
+            showRBStatusHint('rb-ready');
+            return;
+        }
+        
+        console.log('RB本地数据库不存在，从Parts-RB读取CSV文件建立...');
+        
+        // 从 Parts-RB 读取 6 个 CSV 文件
+        const csvFiles = [
+            { name: 'colors.csv', store: RB_STORES.COLORS, schemaKey: 'colors', label: '颜色' },
+            { name: 'parts.csv', store: RB_STORES.PARTS, schemaKey: 'parts', label: '零件' },
+            { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, schemaKey: 'part_categories', label: '类别' },
+            { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
+            { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
+            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' }
+        ];
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const file of csvFiles) {
+            try {
+                const csvText = await fetchRBFile(file.name);
+                if (!csvText) {
+                    failCount++;
+                    continue;
+                }
+                const { data } = parseRBCSV(csvText);
+                const typedData = convertRBData(file.schemaKey, data);
+                await importRBData(file.store, typedData);
+                successCount++;
+            } catch (error) {
+                console.error(`加载 ${file.name} 失败:`, error);
+                failCount++;
+            }
+        }
+
+        if (successCount === csvFiles.length) {
+            console.log('RB数据库建立成功');
+            showRBStatusHint('rb-ready');
+        } else {
+            console.warn(`RB数据库部分加载: 成功${successCount}, 失败${failCount}`);
+            showRBStatusHint('rb-partial');
+        }
+    } catch (error) {
+        console.error('启动时建立RB数据库失败:', error);
+        showRBStatusHint('rb-failed');
+    }
+}
+
+// 显示 RB 状态提示
+async function showRBStatusHint(status) {
+    const hint = document.getElementById('rb-status-hint');
+    if (!hint) return;
+    
+    try {
+        const stats = await getRBStats();
+        const totalCount = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
+        
+        const messages = {
+            'rb-ready': { 
+                text: `✓ RB数据库已就绪 (共 ${totalCount} 条数据)`, 
+                color: '#4CAF50' 
+            },
+            'rb-partial': { 
+                text: `⚠ RB数据库部分加载 (${totalCount} 条)，请点击"更新RB"`, 
+                color: '#FF9800' 
+            },
+            'rb-failed': { 
+                text: '✗ RB数据库加载失败，请点击"更新RB"', 
+                color: '#f44336' 
+            },
+            'rb-empty': {
+                text: 'ℹ RB数据库为空，请点击"更新RB"建立',
+                color: '#9E9E9E'
+            }
+        };
+        
+        // 如果状态是 ready 但没有数据，显示空状态
+        if (status === 'rb-ready' && totalCount === 0) {
+            hint.textContent = messages['rb-empty'].text;
+            hint.style.color = messages['rb-empty'].color;
+        } else {
+            const msg = messages[status];
+            if (msg) {
+                hint.textContent = msg.text;
+                hint.style.color = msg.color;
+            }
+        }
+        hint.style.display = 'block';
+    } catch (e) {
+        console.error('获取RB状态失败:', e);
     }
 }
 
@@ -1290,6 +1787,191 @@ function reloadApp() {
     }
 }
 
+// 更新 RB 数据库（从 Parts-RB 读取 CSV，更新离线数据库）
+async function updateRB() {
+    if (!confirm('确定要从 Parts-RB 读取最新的 CSV 数据吗？\n这将更新本地 RB 数据库。')) {
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">更新RB数据库</span>
+            </div>
+            <div class="modal-body">
+                <div id="rb-progress" style="padding: 20px 0;">
+                    <div class="rb-progress-bar" style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; margin: 10px 0;">
+                        <div id="rb-progress-fill" style="background: #00BCD4; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="rb-progress-text" style="font-size: 14px; color: #666; margin-top: 10px;">准备更新...</div>
+                    <div id="rb-progress-detail" style="font-size: 12px; color: #999; margin-top: 5px;"></div>
+                </div>
+                <div id="rb-result" style="display: none;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const updateProgress = (percent, text, detail) => {
+        document.getElementById('rb-progress-fill').style.width = Math.round(percent * 100) + '%';
+        if (text) document.getElementById('rb-progress-text').textContent = text;
+        if (detail) document.getElementById('rb-progress-detail').textContent = detail;
+    };
+
+    try {
+        // 1. 从 Parts-RB 读取 6 个 CSV 文件
+        updateProgress(0.05, '从Parts-RB仓库读取CSV文件...', '');
+        
+        const csvFiles = [
+            { name: 'colors.csv', store: RB_STORES.COLORS, schemaKey: 'colors', label: '颜色' },
+            { name: 'parts.csv', store: RB_STORES.PARTS, schemaKey: 'parts', label: '零件' },
+            { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, schemaKey: 'part_categories', label: '类别' },
+            { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
+            { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
+            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' }
+        ];
+
+        let successCount = 0;
+        let failCount = 0;
+        const importResults = {};
+
+        for (let i = 0; i < csvFiles.length; i++) {
+            const file = csvFiles[i];
+            const progress = 0.1 + (i / csvFiles.length) * 0.5;
+            
+            updateProgress(progress, `读取 ${file.label} (${i + 1}/${csvFiles.length})...`, file.name);
+
+            try {
+                const csvText = await fetchRBFile(file.name);
+                if (!csvText) {
+                    failCount++;
+                    importResults[file.schemaKey] = false;
+                    updateProgress(progress, `${file.label} - 读取失败`, '');
+                    continue;
+                }
+
+                const { data } = parseRBCSV(csvText);
+                const typedData = convertRBData(file.schemaKey, data);
+                await importRBData(file.store, typedData);
+                importResults[file.schemaKey] = true;
+                successCount++;
+                updateProgress(progress, `${file.label} - 导入成功`, `${typedData.length}条`);
+                
+            } catch (error) {
+                console.error(`处理 ${file.name} 失败:`, error);
+                failCount++;
+                importResults[file.schemaKey] = false;
+            }
+        }
+
+        // 显示结果
+        updateProgress(1, '更新完成！', '');
+        
+        const stats = await getRBStats();
+        let statsHtml = '';
+        if (stats) {
+            statsHtml = '<div style="font-size: 12px; color: #666; margin: 10px 0;">';
+            statsHtml += `<div>颜色: ${stats.rb_colors || 0} 条</div>`;
+            statsHtml += `<div>零件: ${stats.rb_parts || 0} 条</div>`;
+            statsHtml += `<div>类别: ${stats.rb_part_categories || 0} 条</div>`;
+            statsHtml += `<div>元素: ${stats.rb_elements || 0} 条</div>`;
+            statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
+            statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
+            statsHtml += '</div>';
+        }
+
+        setTimeout(() => {
+            const resultDiv = document.getElementById('rb-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">
+                        ${failCount === 0 ? '✓ 更新成功' : `⚠ 成功 ${successCount} 个，失败 ${failCount} 个`}
+                    </div>
+                    ${statsHtml}
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+            showRBStatusHint('rb-ready');
+        }, 500);
+        
+    } catch (error) {
+        console.error('更新RB失败:', error);
+        updateProgress(1, '更新失败', error.message);
+        
+        setTimeout(() => {
+            const resultDiv = document.getElementById('rb-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px; color: #f44336;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✗ 更新失败</div>
+                    <div style="font-size: 12px; margin: 10px 0;">${error.message}</div>
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 500);
+    }
+}
+
+// 导出 RB 数据库到文件
+async function exportRB() {
+    if (!confirm('确定要导出 RB 数据库吗？\n将保存为 JSON 文件到"文件"App。')) {
+        return;
+    }
+
+    try {
+        const jsonData = await exportRBDatabaseToJSON();
+        
+        // 显示进度
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width: 350px; text-align: center;">
+                <div class="modal-header">
+                    <span class="modal-title">导出RB数据库</span>
+                </div>
+                <div class="modal-body">
+                    <div style="padding: 20px;">
+                        <div style="font-size: 14px; color: #666;">正在导出...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
+        // 创建下载
+        const blob = new Blob([JSON.stringify(jsonData)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+        a.download = `rb_database_${timestamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 500);
+        
+        // 显示成功
+        setTimeout(() => {
+            overlay.querySelector('.modal-body').innerHTML = `
+                <div style="padding: 20px;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✓ 导出成功</div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                        文件已保存到"文件"App
+                    </div>
+                    <button class="btn-save" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 300);
+        
+    } catch (error) {
+        console.error('导出RB失败:', error);
+        alert('导出失败: ' + error.message);
+    }
+}
+
 async function loadStats() {
     try {
         const repos = await getRepositories();
@@ -1318,104 +2000,6 @@ async function loadStats() {
     }
 }
 
-async function readRB() {
-    if (!confirm('确定要从Gitee Parts-RB仓库读取零件基础信息到本地数据库吗？\n这将覆盖现有的RB数据。')) {
-        return;
-    }
-
-    const files = [
-        { name: 'colors.csv', store: RB_STORES.COLORS, label: '颜色数据' },
-        { name: 'parts.csv', store: RB_STORES.PARTS, label: '零件基础数据' },
-        { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, label: '零件类别数据' },
-        { name: 'elements.csv', store: RB_STORES.ELEMENTS, label: '元素数据' },
-        { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, label: '库存零件数据' },
-        { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, label: '零件关系数据' }
-    ];
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-    overlay.innerHTML = `
-        <div class="modal-content" style="max-width: 400px; text-align: center;">
-            <div class="modal-header">
-                <span class="modal-title">读取RB数据</span>
-            </div>
-            <div class="modal-body">
-                <div id="rb-progress" style="padding: 20px 0;">
-                    <div class="rb-progress-bar" style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; margin: 10px 0;">
-                        <div id="rb-progress-fill" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
-                    </div>
-                    <div id="rb-progress-text" style="font-size: 14px; color: #666; margin-top: 10px;">准备读取...</div>
-                    <div id="rb-progress-detail" style="font-size: 12px; color: #999; margin-top: 5px;"></div>
-                </div>
-                <div id="rb-result" style="display: none;"></div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const progress = Math.round((i / files.length) * 100);
-        
-        document.getElementById('rb-progress-fill').style.width = progress + '%';
-        document.getElementById('rb-progress-text').textContent = `正在读取 ${file.label} (${i + 1}/${files.length})...`;
-        document.getElementById('rb-progress-detail').textContent = file.name;
-
-        try {
-            const csvText = await fetchRBFile(file.name);
-            if (!csvText) {
-                failCount++;
-                document.getElementById('rb-progress-detail').textContent = `${file.name} - 读取失败`;
-                continue;
-            }
-
-            const { data } = parseRBCSV(csvText);
-            const schemaKey = RB_STORE_KEYS[file.store];
-            const typedData = convertRBData(schemaKey, data);
-
-            await importRBData(file.store, typedData);
-            successCount++;
-            document.getElementById('rb-progress-detail').textContent = `${file.name} - 导入成功 (${typedData.length}条)`;
-            
-        } catch (error) {
-            console.error(`处理 ${file.name} 失败:`, error);
-            failCount++;
-            document.getElementById('rb-progress-detail').textContent = `${file.name} - 导入失败`;
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    // 完成
-    document.getElementById('rb-progress-fill').style.width = '100%';
-    document.getElementById('rb-progress-text').textContent = '读取完成！';
-    
-    const resultDiv = document.getElementById('rb-result');
-    resultDiv.style.display = 'block';
-    
-    const stats = await getRBStats();
-    let statsHtml = '';
-    if (stats) {
-        statsHtml = '<div style="font-size: 12px; color: #666; margin: 10px 0;">';
-        statsHtml += `<div>颜色: ${stats.rb_colors || 0} 条</div>`;
-        statsHtml += `<div>零件: ${stats.rb_parts || 0} 条</div>`;
-        statsHtml += `<div>类别: ${stats.rb_part_categories || 0} 条</div>`;
-        statsHtml += `<div>元素: ${stats.rb_elements || 0} 条</div>`;
-        statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
-        statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
-        statsHtml += '</div>';
-    }
-
-    resultDiv.innerHTML = `
-        <div style="padding: 15px; margin-top: 10px;">
-            <div style="font-size: 16px; margin-bottom: 10px;">
-                ${failCount === 0 ? '✓ 全部成功' : `⚠ 成功 ${successCount} 个，失败 ${failCount} 个`}
-            </div>
-            ${statsHtml}
-            <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
-        </div>
-    `;
-}
+// 将函数暴露到全局
+window.updateRB = updateRB;
+window.exportRB = exportRB;

@@ -5,9 +5,9 @@
 }
 
 :root {
-    --P: 30px;
-    --card-width: 90px;
-    --card-height: 60px;
+    --P: 46px;
+    --card-width: 92px;
+    --card-height: 64px;
     --grid-width: 300px;
     --primary-color: #F2CD37;
     --secondary-color: #2196F3;
@@ -49,9 +49,13 @@ body {
 }
 
 .logo img {
-    height: 40px;
-    width: 40px;
-    border-radius: 8px;
+    height: 92px !important;
+    width: 92px !important;
+    max-height: 92px !important;
+    max-width: 92px !important;
+    object-fit: contain;
+    border-radius: 0;
+    border: none;
 }
 
 .title h1 {
@@ -62,42 +66,64 @@ body {
 
 .bb-area {
     background-color: var(--primary-color);
-    padding: 10px 0;
+    padding: 0 4px;
+    height: 84px;
+    display: flex;
+    align-items: center;
 }
 
 .bb-area .nav {
     display: flex;
     justify-content: center;
-    gap: 8px;
+    gap: 3px;
     flex-wrap: nowrap;
-    overflow-x: auto;
-    padding: 5px;
+    padding: 0;
+    width: 100%;
 }
 
 .bb-area .nav button {
-    width: calc(2 * var(--P));
-    height: calc(1.5 * var(--P));
+    width: 92px;
+    height: 64.4px;
     flex-shrink: 0;
-    font-size: 12px;
-    padding: 5px;
-    border: 2px solid #B8860B;
-    border-radius: 8px;
+    font-size: 11px;
+    padding: 4px 2px 0 2px;
+    border: none;
+    border-radius: 0;
     cursor: pointer;
     color: white;
     font-weight: bold;
     display: flex;
     align-items: center;
     justify-content: center;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.4);
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: transparent;
 }
 
-.bb-area .nav button.repo-btn { background-color: #2196F3; }
-.bb-area .nav button.part-btn { background-color: #FF9800; }
-.bb-area .nav button.search-btn { background-color: #4CAF50; }
-.bb-area .nav button.settings-btn { background-color: #FF9800; }
+.bb-area .nav button.repo-btn {
+    background-image: url('../icons/blue2.png');
+}
+.bb-area .nav button.part-btn {
+    background-image: url('../icons/orange2.png');
+}
+.bb-area .nav button.search-btn {
+    background-image: url('../icons/green2.png');
+}
+.bb-area .nav button.settings-btn {
+    background-image: url('../icons/red2.png');
+}
 
 .bb-area .nav button.active {
-    box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
-    transform: scale(1.05);
+    font-size: 15px;
+}
+
+.bb-area .nav button:active {
+    filter: brightness(0.9);
 }
 
 .cc-area {
@@ -129,12 +155,23 @@ body {
 .repository-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     margin-bottom: 15px;
 }
 
+.header-left {
+    display: flex;
+    flex-direction: column;
+}
+
+.header-title-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
 .repository-header h2 {
-    font-size: 20px;
+    font-size: 26px;
     font-weight: bold;
     margin: 0;
 }
@@ -142,7 +179,8 @@ body {
 .repository-stats {
     font-size: 14px;
     color: var(--gray-color);
-    margin-top: 5px;
+    margin: 0;
+    padding-bottom: 2px;
 }
 
 .add-repository-btn {
@@ -172,52 +210,69 @@ body {
     background-color: white;
     border: 2px solid var(--secondary-color);
     border-radius: 8px;
-    padding: 5px;
     cursor: pointer;
-    text-align: center;
     vertical-align: top;
-    transition: all 0.2s;
+    transition: background-color 0.2s;
+    position: relative;
+    padding: 0;
 }
 
-.repository-card:hover {
+.repository-card:hover:not(.selected) {
     transform: scale(1.05);
 }
 
 .repository-card.selected {
-    background-color: rgba(33, 150, 243, 0.1);
-    border-color: var(--secondary-color);
+    background-color: #F2CD37 !important;
 }
 
-.repository-card h3 {
-    margin: 0;
-    font-size: 12px;
+.repository-card.selected .repo-card-name {
+    color: #333;
+}
+
+.repository-card.selected .repo-id {
+    color: #000;
+}
+
+.repository-card.selected .repo-box-count .count {
+    color: #D32F2F;
+}
+
+.repository-card.selected .repo-box-count .unit {
+    color: #000;
+}
+
+.repo-card-name {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    text-align: center;
+    font-size: 15px;
     font-weight: bold;
-    flex: 1;
-    text-align: left;
-}
-
-.repo-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .repo-delete-btn {
-    width: 20px;
-    height: 20px;
-    font-size: 16px;
-    background-color: #F44336;
-    color: white;
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+    background: none;
+    color: #555;
     border: none;
-    border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     line-height: 1;
-    opacity: 0.7;
+    opacity: 0.6;
     transition: opacity 0.2s;
 }
 
@@ -225,14 +280,32 @@ body {
     opacity: 1;
 }
 
-.repo-info {
-    font-size: 10px;
-    color: var(--gray-color);
-    margin-top: 5px;
+.repo-card-footer {
+    position: absolute;
+    bottom: 2px;
+    left: 4px;
+    right: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
 }
 
-.repo-id { color: #666; }
-.repo-box-count { color: #2196F3; }
+.repo-id {
+    font-size: 9px;
+    color: #000;
+}
+
+.repo-box-count {
+    font-size: 9px;
+}
+
+.repo-box-count .count {
+    color: #F44336;
+}
+
+.repo-box-count .unit {
+    color: #000;
+}
 
 .box-management {
     display: none;
@@ -244,19 +317,29 @@ body {
 .box-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: stretch;
     margin-bottom: 15px;
 }
 
+.box-header-left {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 68px;
+}
+
 .box-header h2 {
-    font-size: 20px;
+    font-size: 26px;
     font-weight: bold;
     margin: 0;
 }
 
 .box-management-buttons {
     display: flex;
+    flex-direction: column;
     gap: 8px;
+    justify-content: space-between;
+    height: 68px;
 }
 
 .add-box-btn { background: #007AFF; color: white; }
@@ -268,73 +351,115 @@ body {
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
+    white-space: nowrap;
 }
 
 .box-stats {
     font-size: 14px;
     color: var(--gray-color);
-    margin-bottom: 15px;
+    margin: 0;
+    padding-top: 4px;
 }
 
 .box-grid-wrapper {
-    overflow-x: auto;
+    overflow: visible;
 }
 
 .box-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
+    gap: 8px;
 }
 
 .box-card {
+    position: relative;
+    height: 60px;
     background-color: white;
     border: 2px solid var(--warning-color);
     border-radius: 8px;
-    padding: 10px;
     cursor: pointer;
-    text-align: center;
-    transition: all 0.2s;
+    transition: background-color 0.2s;
+    padding: 0;
 }
 
-.box-card:hover {
+.box-card:hover:not(.selected) {
     transform: scale(1.05);
 }
 
 .box-card.selected {
-    background-color: rgba(255, 152, 0, 0.1);
-    border-color: var(--warning-color);
+    background-color: #F2CD37 !important;
 }
 
-.box-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-}
-
-.box-card h4 {
-    margin: 0;
+.box-edit-input {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    text-align: center;
     font-size: 12px;
     font-weight: bold;
-    flex: 1;
-    text-align: left;
+    color: #333;
+    border: 1px solid var(--secondary-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+    outline: none;
+    background: white;
+}
+
+.repo-edit-input {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    text-align: center;
+    font-size: 15px;
+    font-weight: bold;
+    color: #333;
+    border: 1px solid var(--secondary-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+    outline: none;
+    background: white;
+}
+
+.box-card.editing, .repository-card.editing {
+    border-color: var(--secondary-color);
+}
+
+.box-card-name {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .box-delete-btn {
-    width: 20px;
-    height: 20px;
-    font-size: 16px;
-    background-color: #F44336;
-    color: white;
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+    background: none;
+    color: #555;
     border: none;
-    border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     line-height: 1;
-    opacity: 0.7;
+    opacity: 0.6;
     transition: opacity 0.2s;
 }
 
@@ -342,10 +467,31 @@ body {
     opacity: 1;
 }
 
-.box-info {
-    font-size: 10px;
-    color: var(--gray-color);
-    margin-top: 5px;
+.box-card-footer {
+    position: absolute;
+    bottom: 2px;
+    left: 4px;
+    right: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.box-id {
+    font-size: 9px;
+    color: #000;
+}
+
+.box-part-count {
+    font-size: 9px;
+}
+
+.box-part-count .count {
+    color: #F44336;
+}
+
+.box-part-count .unit {
+    color: #000;
 }
 
 .no-repository-selected {
@@ -361,41 +507,50 @@ body {
 }
 
 .part-header {
-    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 12px;
 }
 
 .part-header h2 {
-    font-size: 20px;
+    font-size: 26px;
     font-weight: bold;
     margin: 0;
+    white-space: nowrap;
 }
 
-.part-header-buttons {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.part-stats {
+.part-header .part-stats {
     font-size: 14px;
     color: var(--gray-color);
+    margin-bottom: 2px;
 }
 
-.add-part-btn { background: #2196F3; color: white; }
-.transfer-part-btn { background: #4CAF50; color: white; }
-.back-btn { background: #F44336; color: white; }
+.part-action-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 15px;
+}
 
-.add-part-btn, .transfer-part-btn, .back-btn {
+.action-btn {
+    flex: 1;
+    color: white;
     border: none;
-    padding: 8px 16px;
+    aspect-ratio: 3 / 2;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
-    margin-right: 5px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
+
+.action-btn:nth-child(1) { background: #F44336; }
+.action-btn:nth-child(2) { background: #FF9800; }
+.action-btn:nth-child(3) { background: #4CAF50; }
+.action-btn:nth-child(4) { background: #2196F3; }
 
 .part-grid-wrapper {
     overflow-x: auto;
@@ -677,9 +832,290 @@ body {
 .btn-primary { background: #2196F3; color: white; }
 .btn-secondary { background: #9E9E9E; color: white; }
 
+/* 添加零件表单样式 */
+.add-part-modal {
+    max-width: 500px !important;
+}
+
+.add-part-body {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.form-section {
+    margin-bottom: 16px;
+}
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.form-label {
+    font-size: 14px;
+    color: #34495e;
+    white-space: nowrap;
+    min-width: 80px;
+}
+
+.form-input {
+    flex: 1;
+    min-width: 120px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    height: 36px;
+    box-sizing: border-box;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+/* 零件型号输入框包装器 */
+.part-number-input-wrapper,
+.part-name-input-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 150px;
+}
+
+.part-number-input-wrapper .form-input,
+.part-name-input-wrapper .form-input {
+    width: 100%;
+}
+
+/* 联想建议样式 - 型号 */
+.part-number-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    margin-top: 2px;
+}
+
+.part-number-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.15s;
+}
+
+.part-number-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.part-number-suggestion-item:hover {
+    background-color: #f8f9fa;
+}
+
+.suggestion-num {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    min-width: 80px;
+}
+
+.suggestion-name {
+    font-size: 12px;
+    color: #666;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 联想建议样式 - 名称 */
+.part-name-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    margin-top: 2px;
+    padding: 10px;
+}
+
+.suggestion-group {
+    margin-bottom: 12px;
+}
+
+.suggestion-group:last-child {
+    margin-bottom: 0;
+}
+
+.suggestion-group-key {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #34495e;
+    margin-bottom: 6px;
+    padding-left: 4px;
+}
+
+.suggestion-group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.part-name-suggestion-word {
+    padding: 6px 12px;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.part-name-suggestion-word:hover {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
+}
+
+/* 零件名称提示 */
+.part-name-hint {
+    font-size: 12px;
+    color: #888;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 状态按钮 */
+.status-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-label {
+    font-size: 12px;
+    color: #34495e;
+}
+
+.status-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    background: #f5f5f5;
+    color: #333;
+    transition: all 0.15s;
+}
+
+.status-btn.active {
+    background: #2196F3;
+    color: white;
+    border-color: #2196F3;
+}
+
+#status-new.active {
+    background: #27ae60;
+    border-color: #27ae60;
+}
+
+#status-used.active {
+    background: #3498db;
+    border-color: #3498db;
+}
+
+/* 数量行 */
+.quantity-weight-row {
+    display: flex;
+    gap: 20px;
+}
+
+.quantity-weight-row > div {
+    flex: 1;
+}
+
+/* 零件信息预览 */
+.part-info-preview {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 10px;
+}
+
+.part-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.preview-label {
+    font-size: 12px;
+    color: #666;
+    min-width: 60px;
+}
+
+.preview-value {
+    font-size: 14px;
+    color: #333;
+    font-weight: 500;
+}
+
+/* 零件行布局调整 */
+.part-number-row {
+    align-items: flex-start;
+}
+
+.part-number-row .form-label {
+    margin-top: 8px;
+}
+
+.part-number-row .btn-secondary {
+    flex-shrink: 0;
+}
+
+.part-number-row .status-group {
+    margin-left: auto;
+}
+
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .form-row {
+        flex-wrap: wrap;
+    }
+    
+    .part-number-row .status-group {
+        margin-left: 0;
+        width: 100%;
     }
 }
 
