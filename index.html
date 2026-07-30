@@ -5,16 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#F2CD37">
     <meta name="description" content="乐高零件管理系统">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>乐高零件管理系统</title>
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026073105">
+    <link rel="stylesheet" href="css/style.css?v=2026073106">
     
-    <script src="js/api.js?v=2026073105"></script>
-    <script src="js/store.js?v=2026073105"></script>
-    <script src="js/rb-db.js?v=2026073105"></script>
-    <script src="js/ui.js?v=2026073105"></script>
+    <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
+    <script>
+    if (typeof RB_STORES === 'undefined') {
+        window.RB_STORES = {
+            COLORS: 'rb_colors',
+            ELEMENTS: 'rb_elements',
+            INVENTORY_PARTS: 'rb_inventory_parts',
+            PART_CATEGORIES: 'rb_part_categories',
+            PART_RELATIONSHIPS: 'rb_part_relationships',
+            PARTS: 'rb_parts'
+        };
+    }
+    if (typeof RB_STORE_KEYS === 'undefined') {
+        window.RB_STORE_KEYS = {
+            'rb_colors': 'colors',
+            'rb_parts': 'parts',
+            'rb_part_categories': 'part_categories',
+            'rb_elements': 'elements',
+            'rb_inventory_parts': 'inventory_parts',
+            'rb_part_relationships': 'part_relationships'
+        };
+    }
+    </script>
+    
+    <script src="js/api.js?v=2026073106"></script>
+    <script src="js/store.js?v=2026073106"></script>
+    <script src="js/rb-db.js?v=2026073106"></script>
+    <script src="js/ui.js?v=2026073106"></script>
 </head>
 <body>
     <div class="container">
@@ -199,9 +226,17 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js')
+                // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
+                navigator.serviceWorker.register('service-worker.js?v=v45', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
+                        // 如果有旧SW在控制页面，强制重新加载以应用新版本
+                        if (navigator.serviceWorker.controller) {
+                            console.log('检测到旧SW控制，等待新版本激活...');
+                            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                                window.location.reload();
+                            });
+                        }
                     })
                     .catch(error => {
                         console.log('Service Worker注册失败:', error);
@@ -211,6 +246,20 @@
 
         window.onerror = function(message, source, lineno, colno, error) {
             console.error('全局错误:', message, '文件:', source, '行:', lineno);
+            // 如果检测到RB_STORES缺失（旧SW缓存问题），强制刷新
+            if (message && message.includes('RB_STORES')) {
+                console.warn('检测到RB_STORES缺失，尝试硬刷新...');
+                setTimeout(() => {
+                    if ('caches' in window) {
+                        caches.keys().then(keys => {
+                            keys.forEach(key => caches.delete(key));
+                            window.location.href = window.location.pathname + '?v=' + Date.now();
+                        });
+                    } else {
+                        window.location.href = window.location.pathname + '?v=' + Date.now();
+                    }
+                }, 500);
+            }
             return true;
         };
 
