@@ -92,7 +92,7 @@ async function fetchJSONFile(fileName) {
 
 async function fetchRBFile(fileName) {
     try {
-        // 方式1: 使用Gitee API + Token（适用于私有仓库）
+        // 使用Gitee API + Token获取文件（CORS代理已全部失效，仅保留此方式）
         const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
         if (token) {
             const apiUrl = `https://gitee.com/api/v5/repos/legoping/parts-rb/contents/${fileName}?ref=main`;
@@ -102,24 +102,18 @@ async function fetchRBFile(fileName) {
             if (apiResponse.ok) {
                 const data = await apiResponse.json();
                 if (data.content) {
-                    return decodeURIComponent(escape(atob(data.content)));
+                    // 使用TextDecoder替代escape+decodeURIComponent，大幅提升大文件(14MB+)解码性能
+                    const binaryString = atob(data.content);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    return new TextDecoder('utf-8').decode(bytes);
                 }
             }
         }
         
-        // 方式2: 使用CORS代理直接访问raw文件（回退方案）
-        const rawUrl = `${GITEE_RB_RAW_URL}/${fileName}`;
-        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(rawUrl)}`;
-        
-        const response = await fetch(proxyUrl);
-        if (response.ok) {
-            const text = await response.text();
-            if (text && !text.includes('404') && !text.includes('未找到')) {
-                return text;
-            }
-        }
-        
-        throw new Error('无法访问文件');
+        throw new Error('无法访问Gitee文件: ' + fileName);
     } catch (error) {
         console.error(`加载RB文件失败: ${fileName}`, error);
         return null;

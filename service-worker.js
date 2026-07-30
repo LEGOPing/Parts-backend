@@ -1,12 +1,7 @@
-const CACHE_NAME = 'lego-parts-v41';
+const CACHE_NAME = 'lego-parts-v44';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
-    './css/style.css',
-    './js/api.js',
-    './js/ui.js',
-    './js/store.js',
-    './js/rb-db.js',
     './manifest.json',
     './icons/icon-192x192.png',
     './icons/icon-512x512.png',
@@ -47,6 +42,7 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
     
+    // POST/PATCH/DELETE requests or API calls: always go to network
     if (request.method === 'POST' || 
         request.method === 'PATCH' || 
         request.method === 'DELETE' ||
@@ -59,28 +55,48 @@ self.addEventListener('fetch', (event) => {
     }
     
     if (request.method === 'GET') {
-        event.respondWith(
-            caches.match(request).then((cachedResponse) => {
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-                
-                return fetch(request).then((networkResponse) => {
-                    if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+        // JS/CSS files: network-first strategy to ensure updates (fix RB_STORES caching issue)
+        const isDynamicResource = (url.pathname.endsWith('.js') || url.pathname.endsWith('.css'));
+        
+        if (isDynamicResource) {
+            event.respondWith(
+                fetch(request).then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseToCache = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, responseToCache);
+                        });
                         return networkResponse;
                     }
-                    
-                    const responseToCache = networkResponse.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(request, responseToCache);
-                    });
-                    
-                    return networkResponse;
+                    return caches.match(request);
                 }).catch(() => {
-                    console.log('Fetch failed, returning offline fallback');
-                    return caches.match('./index.html');
-                });
-            })
-        );
+                    return caches.match(request);
+                })
+            );
+        } else {
+            // Static assets (images, etc.): cache-first strategy
+            event.respondWith(
+                caches.match(request).then((cachedResponse) => {
+                    if (cachedResponse) {
+                        return cachedResponse;
+                    }
+                    
+                    return fetch(request).then((networkResponse) => {
+                        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                            return networkResponse;
+                        }
+                        
+                        const responseToCache = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, responseToCache);
+                        });
+                        
+                        return networkResponse;
+                    }).catch(() => {
+                        return caches.match('./index.html');
+                    });
+                })
+            );
+        }
     }
 });

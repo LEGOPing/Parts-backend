@@ -64,9 +64,14 @@ function openRBDatabase() {
     });
 }
 
-function clearStore(storeName) {
+async function clearStore(storeName) {
+    await openRBDatabase();
     return new Promise((resolve, reject) => {
         const db = rbDbInstance;
+        if (!db) {
+            reject(new Error('RB数据库未初始化'));
+            return;
+        }
         const transaction = db.transaction(storeName, 'readwrite');
         const store = transaction.objectStore(storeName);
         const request = store.clear();
@@ -78,6 +83,10 @@ function clearStore(storeName) {
 
 // 分批插入 - 避免大数据量导致浏览器崩溃
 async function batchInsertChunks(storeName, data, chunkSize = 5000) {
+    await openRBDatabase();
+    if (!rbDbInstance) {
+        throw new Error('RB数据库未初始化');
+    }
     const chunks = [];
     for (let i = 0; i < data.length; i += chunkSize) {
         chunks.push(data.slice(i, i + chunkSize));
