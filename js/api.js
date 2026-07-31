@@ -248,39 +248,43 @@ async function fetchAllColors() {
 
     if (!colors || !colors[0] || !colors[0].rgb) {
         result = [
-            { id: 1, name: '黑色', rgb: '#1a1a1a' },
-            { id: 2, name: '深灰色', rgb: '#4a4a4a' },
-            { id: 3, name: '浅灰色', rgb: '#9a9a9a' },
-            { id: 4, name: '白色', rgb: '#ffffff' },
-            { id: 5, name: '红色', rgb: '#c41e3a' },
-            { id: 6, name: '橙色', rgb: '#ff7f00' },
-            { id: 7, name: '黄色', rgb: '#ffd700' },
-            { id: 8, name: '黄绿色', rgb: '#9acd32' },
-            { id: 9, name: '绿色', rgb: '#228b22' },
-            { id: 10, name: '深蓝色', rgb: '#191970' },
-            { id: 11, name: '蓝色', rgb: '#0066cc' },
-            { id: 12, name: '亮蓝色', rgb: '#00bfff' },
-            { id: 13, name: '紫色', rgb: '#8b008b' },
-            { id: 14, name: '深粉色', rgb: '#ff1493' },
-            { id: 15, name: '粉色', rgb: '#ff69b4' },
-            { id: 16, name: '棕色', rgb: '#8b4513' },
-            { id: 17, name: '米色', rgb: '#f5f5dc' },
-            { id: 18, name: '金色', rgb: '#ffd700' },
-            { id: 19, name: '银色', rgb: '#c0c0c0' },
-            { id: 20, name: '透明', rgb: '#e0e0e0' },
-            { id: 21, name: '深蓝色', rgb: '#000080' },
-            { id: 22, name: '浅蓝色', rgb: '#87ceeb' },
-            { id: 23, name: '深绿色', rgb: '#006400' },
-            { id: 24, name: '浅绿色', rgb: '#98fb98' },
-            { id: 25, name: '深红色', rgb: '#8b0000' },
-            { id: 26, name: '珊瑚色', rgb: '#ff7f50' },
-            { id: 27, name: '紫罗兰', rgb: '#ee82ee' },
-            { id: 28, name: '靛蓝色', rgb: '#4b0082' },
-            { id: 29, name: '青绿色', rgb: '#20b2aa' },
-            { id: 30, name: '柠檬色', rgb: '#fffacd' }
+            { id: 1, name: 'Black', rgb: '#1a1a1a' },
+            { id: 2, name: 'Dark Gray', rgb: '#4a4a4a' },
+            { id: 3, name: 'Light Gray', rgb: '#9a9a9a' },
+            { id: 4, name: 'White', rgb: '#ffffff' },
+            { id: 5, name: 'Red', rgb: '#c41e3a' },
+            { id: 6, name: 'Orange', rgb: '#ff7f00' },
+            { id: 7, name: 'Yellow', rgb: '#ffd700' },
+            { id: 8, name: 'Yellow Green', rgb: '#9acd32' },
+            { id: 9, name: 'Green', rgb: '#228b22' },
+            { id: 10, name: 'Dark Blue', rgb: '#191970' },
+            { id: 11, name: 'Blue', rgb: '#0066cc' },
+            { id: 12, name: 'Light Blue', rgb: '#00bfff' },
+            { id: 13, name: 'Purple', rgb: '#8b008b' },
+            { id: 14, name: 'Dark Pink', rgb: '#ff1493' },
+            { id: 15, name: 'Pink', rgb: '#ff69b4' },
+            { id: 16, name: 'Brown', rgb: '#8b4513' },
+            { id: 17, name: 'Beige', rgb: '#f5f5dc' },
+            { id: 18, name: 'Gold', rgb: '#ffd700' },
+            { id: 19, name: 'Silver', rgb: '#c0c0c0' },
+            { id: 20, name: 'Transparent', rgb: '#e0e0e0' },
+            { id: 21, name: 'Dark Blue', rgb: '#000080' },
+            { id: 22, name: 'Light Blue', rgb: '#87ceeb' },
+            { id: 23, name: 'Dark Green', rgb: '#006400' },
+            { id: 24, name: 'Light Green', rgb: '#98fb98' },
+            { id: 25, name: 'Dark Red', rgb: '#8b0000' },
+            { id: 26, name: 'Coral', rgb: '#ff7f50' },
+            { id: 27, name: 'Violet', rgb: '#ee82ee' },
+            { id: 28, name: 'Indigo', rgb: '#4b0082' },
+            { id: 29, name: 'Teal', rgb: '#20b2aa' },
+            { id: 30, name: 'Lemon', rgb: '#fffacd' }
         ];
     } else {
-        result = colors;
+        // 优先使用英文名称字段
+        result = colors.map(c => ({
+            ...c,
+            name: c.name_en || c.en_name || c.english_name || c.name
+        }));
     }
 
     cachedColors = result;
