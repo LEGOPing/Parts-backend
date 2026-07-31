@@ -273,7 +273,17 @@ async function saveRepositoryName(card, id, name) {
 async function addRepository() {
     console.log('addRepository called');
     try {
-        const newRepo = await createRepository('新仓库');
+        // 生成唯一名称，避免与现有仓库名称冲突
+        const existingRepos = await getRepositories();
+        const existingNames = existingRepos.map(r => r.name);
+        let newName = '新仓库';
+        let counter = 1;
+        while (existingNames.includes(newName)) {
+            newName = `新仓库${counter}`;
+            counter++;
+        }
+        
+        const newRepo = await createRepository(newName);
         if (newRepo) {
             await loadRepositories();
             setTimeout(() => {
@@ -1385,7 +1395,10 @@ function editPartQuantityFromDetail(partId, currentQuantity) {
 async function deletePartConfirm(partId) {
     if (!confirm('确定要删除这个零件吗？')) return;
     
-    const success = await deletePart(partId);
+    // 确保 partId 为数字
+    const numericPartId = parseInt(partId);
+    
+    const success = await deletePart(numericPartId);
     if (success) {
         // 关闭详情弹窗
         const overlay = document.querySelector('.modal-overlay.active');
@@ -1394,7 +1407,6 @@ async function deletePartConfirm(partId) {
         if (selectedBox) {
             await loadParts(selectedBox.id);
         }
-        alert('零件已删除');
     } else {
         alert('删除零件失败');
     }
@@ -1792,8 +1804,18 @@ async function initializeDatabase() {
             console.warn('警告：仍有仓库未被删除:', repos.map(r => r.name));
         }
         
-        // 创建唯一的临时仓库
-        await createRepository('临时仓库');
+        // 创建唯一的临时仓库（指定ID为0）
+        try {
+            await supabaseRequest('repositories', {
+                method: 'POST',
+                body: { id: 0, name: '临时仓库' }
+            });
+            console.log('已创建临时仓库，ID: 0');
+        } catch (e) {
+            // 如果指定ID失败，回退到普通创建
+            console.warn('指定ID创建失败，回退到普通创建:', e.message);
+            await createRepository('临时仓库');
+        }
         
         alert('数据库初始化成功！已创建默认仓库"临时仓库"');
         loadRepositories();

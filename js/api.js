@@ -515,10 +515,12 @@ async function updatePart(partId, data) {
 
 async function deletePart(partId) {
     try {
-        await supabaseRequest('parts', {
+        const result = await supabaseRequest('parts', {
             method: 'DELETE',
-            filters: { id: partId }
+            filters: { id: partId },
+            select: 'id'
         });
+        console.log('删除零件结果:', result);
         return true;
     } catch (error) {
         console.error('删除零件失败:', error.message);
