@@ -87,6 +87,18 @@ async function loadRepositories() {
         // 重新获取仓库列表
         repos = await getRepositories();
         
+        // 清理旧的"待定盒子"仓库（如果存在）
+        const oldPendingRepo = repos.find(r => r.name === '待定盒子');
+        if (oldPendingRepo) {
+            try {
+                await deleteRepository(oldPendingRepo.id);
+                console.log('已清理旧的"待定盒子"仓库');
+                repos = await getRepositories();
+            } catch (e) {
+                console.error('清理"待定盒子"仓库失败:', e);
+            }
+        }
+        
         // 按name去重（保留第一个）
         const seen = new Set();
         repos = repos.filter(r => {
@@ -168,7 +180,7 @@ async function loadRepositories() {
             
             if (!isTemp) {
                 setupLongPress(card, () => {
-                    if (repo.name !== '待定盒子') {
+                    if (repo.name !== '临时仓库') {
                         startEditRepository(card, repo);
                     }
                 });
@@ -379,7 +391,7 @@ async function loadBoxes(repoId) {
         });
         
         setupLongPress(card, () => {
-            if (box.name !== '待定零件') {
+            if (box.name !== '临时盒子') {
                 startEditBox(card, box);
             }
         });
@@ -1703,14 +1715,38 @@ async function initializeDatabase() {
     }
     
     try {
-        const repos = await getRepositories();
-        for (const repo of repos) {
-            await deleteRepository(repo.id);
+        // 先删除所有零件
+        const allParts = await supabaseRequest('parts', { select: 'id' });
+        if (allParts && allParts.length > 0) {
+            for (const part of allParts) {
+                try { await deletePart(part.id); } catch (e) {}
+            }
         }
         
-        await createRepository('待定盒子');
+        // 再删除所有盒子
+        const allBoxes = await supabaseRequest('boxes', { select: 'id' });
+        if (allBoxes && allBoxes.length > 0) {
+            for (const box of allBoxes) {
+                try { await deleteBox(box.id); } catch (e) {}
+            }
+        }
         
-        alert('数据库初始化成功！已创建默认仓库"待定盒子"');
+        // 最后删除所有仓库
+        let repos = await getRepositories();
+        for (const repo of repos) {
+            try { await deleteRepository(repo.id); } catch (e) {}
+        }
+        
+        // 验证是否清空
+        repos = await getRepositories();
+        if (repos.length > 0) {
+            console.warn('警告：仍有仓库未被删除:', repos.map(r => r.name));
+        }
+        
+        // 创建唯一的临时仓库
+        await createRepository('临时仓库');
+        
+        alert('数据库初始化成功！已创建默认仓库"临时仓库"');
         loadRepositories();
     } catch (error) {
         console.error('初始化数据库失败:', error);
