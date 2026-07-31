@@ -1140,14 +1140,22 @@ async function loadColorGrid() {
         const colorCard = document.createElement('div');
         colorCard.className = 'color-card';
         colorCard.dataset.id = color.id;
-        colorCard.style.borderColor = color.rgb;
+        
+        // 确保rgb值有#前缀
+        const rgbValue = color.rgb.startsWith('#') ? color.rgb : '#' + color.rgb;
+        colorCard.style.backgroundColor = rgbValue;
+        
+        // 计算文字颜色（基于背景亮度）
+        const hex = rgbValue.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        const textColor = brightness > 128 ? '#000' : '#fff';
 
         colorCard.innerHTML = `
-            <div class="color-preview" style="background-color: ${color.rgb}; border: 1px solid ${color.rgb === '#ffffff' ? '#ccc' : color.rgb}">
-                <div class="color-check" style="display: none;">✓</div>
-            </div>
-            <div class="color-name">${color.name}</div>
-            <div class="color-id">ID: ${color.id}</div>
+            <div class="color-card-id" style="color: ${textColor}">${color.id}</div>
+            <div class="color-card-name" style="color: ${textColor}">${color.name}</div>
         `;
 
         colorCard.addEventListener('click', () => {
@@ -1162,10 +1170,10 @@ async function loadColorGrid() {
 function filterColors(searchText) {
     const cards = document.querySelectorAll('.color-card');
     cards.forEach(card => {
-        const name = card.querySelector('.color-name').textContent.toLowerCase();
-        const id = card.querySelector('.color-id').textContent;
+        const name = card.querySelector('.color-card-name').textContent.toLowerCase();
+        const id = card.querySelector('.color-card-id').textContent;
         const match = name.includes(searchText.toLowerCase()) || id.includes(searchText);
-        card.style.display = match ? 'block' : 'none';
+        card.style.display = match ? 'flex' : 'none';
     });
 }
 
