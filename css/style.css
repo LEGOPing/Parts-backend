@@ -842,6 +842,54 @@ body {
     overflow-y: auto;
 }
 
+/* 添加零件-标题栏（标题+取消按钮） */
+.add-part-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.add-part-modal .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #34495e;
+}
+
+/* 取消按钮：红色底色，右对齐 */
+.add-part-modal .btn-cancel {
+    background: #f44336;
+    color: white;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* 保存按钮：蓝色底色，右对齐 */
+.add-part-modal .btn-save {
+    background: #2196F3;
+    color: white;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* 状态+保存按钮行 */
+.add-part-modal .status-save-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.add-part-modal .status-save-row .btn-save {
+    margin-left: auto;
+}
+
 .form-section {
     margin-bottom: 16px;
 }
@@ -1100,10 +1148,6 @@ body {
     flex-shrink: 0;
 }
 
-.part-number-row .status-group {
-    margin-left: auto;
-}
-
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -1111,11 +1155,6 @@ body {
     
     .form-row {
         flex-wrap: wrap;
-    }
-    
-    .part-number-row .status-group {
-        margin-left: 0;
-        width: 100%;
     }
 }
 
