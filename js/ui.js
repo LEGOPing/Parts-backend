@@ -152,7 +152,18 @@ async function loadRepositories() {
         const boxCounts = {};
         await Promise.all(uniqueRepos.map(async repo => {
             const boxes = await getBoxes(repo.id);
-            boxCounts[repo.id] = boxes.length;
+            // 去重：与 loadBoxes() 保持一致
+            const seenIds = new Set();
+            const seenBoxNums = new Set();
+            const uniqueBoxes = boxes.filter(box => {
+                if (seenIds.has(box.id)) return false;
+                const key = `${box.box_number}_${box.name}`;
+                if (seenBoxNums.has(key)) return false;
+                seenIds.add(box.id);
+                seenBoxNums.add(key);
+                return true;
+            });
+            boxCounts[repo.id] = uniqueBoxes.length;
         }));
         
         uniqueRepos.forEach(repo => {
@@ -342,10 +353,17 @@ async function loadBoxes(repoId) {
     const grid = document.getElementById('boxes-list');
     grid.innerHTML = '';
     
-    // 去重：相同box_number的盒子只保留一个
-    const uniqueBoxes = boxes.filter((box, index, self) => 
-        index === self.findIndex(b => b.box_number === box.box_number)
-    );
+    // 去重：按id去重，同时按box_number+name去重
+    const seenIds = new Set();
+    const seenBoxNums = new Set();
+    const uniqueBoxes = boxes.filter(box => {
+        if (seenIds.has(box.id)) return false;
+        const key = `${box.box_number}_${box.name}`;
+        if (seenBoxNums.has(key)) return false;
+        seenIds.add(box.id);
+        seenBoxNums.add(key);
+        return true;
+    });
     
     document.getElementById('box-count').textContent = uniqueBoxes.length;
     
