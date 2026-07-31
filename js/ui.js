@@ -740,7 +740,7 @@ function initAddPartSuggestions() {
             return;
         }
         
-        const suggestions = await searchPartsByNumber(query, 15);
+        const suggestions = await searchPartsByNumber(query, 30);
         
         if (suggestions.length === 0) {
             hidePartNumSuggestions();

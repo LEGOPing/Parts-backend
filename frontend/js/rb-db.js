@@ -473,7 +473,7 @@ function smartTokenize(text) {
 }
 
 // 搜索零件型号联想（返回型号+名称）
-async function searchPartsByNumber(query, limit = 20) {
+async function searchPartsByNumber(query, limit = 30) {
     try {
         const db = await openRBDatabase();
         const parts = await getAll(RB_STORES.PARTS);
