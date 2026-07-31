@@ -474,16 +474,8 @@ async function deleteBoxConfirm(id) {
 
 async function loadParts(boxId) {
     const parts = await getParts(boxId);
-    // 优先从 RB 数据库获取颜色，回退到 colors.json
-    let colors = [];
-    try {
-        colors = await getAllColors();
-    } catch (e) {
-        console.warn('从RB数据库获取颜色失败，使用colors.json');
-    }
-    if (!colors || colors.length === 0) {
-        colors = await fetchAllColors();
-    }
+    // 只从 RB 数据库获取颜色
+    const colors = await getAllColors();
     const colorMap = {};
     colors.forEach(c => colorMap[c.id] = c);
     
