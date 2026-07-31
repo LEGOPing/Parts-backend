@@ -1100,6 +1100,12 @@ function showColorPicker() {
         return;
     }
 
+    const partNum = document.getElementById('new-part-num').value.trim();
+    if (!partNum) {
+        alert('请先输入零件型号');
+        return;
+    }
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
 
@@ -1108,43 +1114,68 @@ function showColorPicker() {
 
     sheet.innerHTML = `
         <div class="modal-header">
-            <span class="modal-title">选择颜色</span>
+            <span class="modal-title">选择颜色 (${partNum})</span>
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         </div>
         <div class="modal-body">
             <div class="color-search-bar">
-                <input type="text" id="color-search-input" placeholder="搜索颜色名称..." />
+                <input type="text" id="color-search-input" placeholder="搜索颜色名称或ID..." />
             </div>
-            <div class="color-grid" id="color-grid"></div>
+            <div class="color-grid" id="color-grid">
+                <div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">加载颜色中...</div>
+            </div>
         </div>
     `;
 
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
-    loadColorGrid();
+    loadColorGrid(partNum);
 
     document.getElementById('color-search-input').addEventListener('input', function(e) {
         filterColors(e.target.value);
     });
 }
 
-async function loadColorGrid() {
-    const colors = await fetchAllColors();
+async function loadColorGrid(partNum) {
     const grid = document.getElementById('color-grid');
+
+    // 从RB数据库查询该零件的所有颜色
+    const partColors = await getPartColors(partNum);
+
+    if (!partColors || partColors.length === 0) {
+        grid.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">该零件在RB数据库中未找到颜色记录<br>请直接输入颜色ID</div>';
+        return;
+    }
+
+    // 获取每个颜色的详细信息（从colors表）
+    const colorIds = [...new Set(partColors.map(pc => pc.color_id))];
+    const colors = [];
+    for (const colorId of colorIds) {
+        const colorInfo = await getColorById(colorId);
+        if (colorInfo) {
+            colors.push(colorInfo);
+        }
+    }
+
+    if (colors.length === 0) {
+        grid.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">未找到颜色信息</div>';
+        return;
+    }
+
     grid.innerHTML = '';
 
     colors.forEach(color => {
         const colorCard = document.createElement('div');
         colorCard.className = 'color-card';
         colorCard.dataset.id = color.id;
-        
+
         // 确保rgb值有#前缀
-        const rgbValue = color.rgb.startsWith('#') ? color.rgb : '#' + color.rgb;
+        const rgbValue = color.rgb && color.rgb.startsWith('#') ? color.rgb : '#' + (color.rgb || 'FFFFFF');
         colorCard.style.backgroundColor = rgbValue;
-        
+
         // 计算文字颜色（基于背景亮度）
         const hex = rgbValue.replace('#', '');
         const r = parseInt(hex.substr(0, 2), 16);
