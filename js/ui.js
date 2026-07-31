@@ -471,7 +471,7 @@ async function loadParts(boxId) {
     
     document.getElementById('part-count').textContent = parts.length;
     
-    parts.forEach(part => {
+    parts.forEach(async (part) => {
         const card = document.createElement('div');
         card.className = 'part-card';
         card.dataset.id = part.id;
@@ -482,7 +482,7 @@ async function loadParts(boxId) {
         card.innerHTML = `
             <div class="part-num">${part.part_num}</div>
             <div class="part-image">
-                <img src="https://cdn.rebrickable.com/media/parts/${part.part_num}_${part.color_id}.jpg" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">
+                <div class="no-image" style="display:flex;">加载中...</div>
             </div>
             <div class="part-name">${part.name}</div>
             <div class="part-color">${colorName}</div>
@@ -491,6 +491,15 @@ async function loadParts(boxId) {
                 <span class="part-quantity">${part.quantity}</span>
             </div>
         `;
+        
+        // 异步加载图片
+        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+        const imageContainer = card.querySelector('.part-image');
+        if (imgUrl) {
+            imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+        } else {
+            imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
+        }
         
         card.addEventListener('click', () => {
             showPartDetail(part);
