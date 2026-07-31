@@ -2,6 +2,7 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
+const BACKEND_URL = 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
@@ -26,19 +27,20 @@ function supabaseHeaders(extra = {}) {
 }
 
 async function executeSQL(query) {
+    // 调用后端 API 重置序列
     try {
-        const url = `${API_BASE}/sql`;
-        const response = await fetch(url, {
+        const response = await fetch(`${BACKEND_URL}/api/settings/reset-sequences`, {
             method: 'POST',
-            headers: supabaseHeaders(),
-            body: JSON.stringify({ query })
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
         if (!response.ok) {
-            throw new Error(`SQL执行失败: HTTP ${response.status}`);
+            throw new Error(`重置序列失败: HTTP ${response.status}`);
         }
         return await response.json();
     } catch (error) {
-        console.error('SQL执行失败:', error.message);
+        console.error('重置序列失败:', error.message);
         throw error;
     }
 }

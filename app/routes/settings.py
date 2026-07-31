@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import os
 import shutil
 import subprocess
-from app.database import get_db, engine
+from app.database import get_db, engine, is_postgres
 from app.models import Base
-from app.backup import backup_database, backup_to_gitee, upload_to_cos, is_postgres, get_db_url
+from app.backup import backup_database, backup_to_gitee, upload_to_cos, get_db_url
 
 router = APIRouter()
 
@@ -78,3 +79,27 @@ def restore_database(backup_file: str, db: Session = Depends(get_db)):
 def initialize_database():
     Base.metadata.create_all(bind=engine)
     return {"message": "数据库初始化成功"}
+
+@router.post("/reset-sequences")
+def reset_sequences(db: Session = Depends(get_db)):
+    """重置所有表的自增序列，从0开始"""
+    if not is_postgres:
+        # SQLite 不支持序列重置，删除数据后会自动重置
+        return {"message": "SQLite 数据库会在删除数据后自动重置 ID"}
+    
+    try:
+        # PostgreSQL: 重置序列从0开始
+        sequences = [
+            "repositories_id_seq",
+            "boxes_id_seq",
+            "parts_id_seq"
+        ]
+        
+        for seq in sequences:
+            db.execute(text(f"ALTER SEQUENCE {seq} RESTART WITH 0"))
+        
+        db.commit()
+        return {"message": "序列重置成功"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"重置序列失败: {str(e)}")
