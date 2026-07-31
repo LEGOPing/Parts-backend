@@ -273,8 +273,9 @@ async function saveRepositoryName(card, id, name) {
 async function addRepository() {
     console.log('addRepository called');
     try {
-        // 生成唯一名称，避免与现有仓库名称冲突
         const existingRepos = await getRepositories();
+        
+        // 生成唯一名称，避免与现有仓库名称冲突
         const existingNames = existingRepos.map(r => r.name);
         let newName = '新仓库';
         let counter = 1;
@@ -283,7 +284,11 @@ async function addRepository() {
             counter++;
         }
         
-        const newRepo = await createRepository(newName);
+        // 计算下一个ID：最大ID + 1
+        const maxId = existingRepos.reduce((max, r) => Math.max(max, r.id), -1);
+        const nextId = maxId + 1;
+        
+        const newRepo = await createRepository(newName, nextId);
         if (newRepo) {
             await loadRepositories();
             setTimeout(() => {

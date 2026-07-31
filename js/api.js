@@ -337,11 +337,15 @@ async function getRepositoryById(repoId) {
     }
 }
 
-async function createRepository(name) {
+async function createRepository(name, id = null) {
     try {
+        const body = { name: name || '新仓库' };
+        if (id !== null) {
+            body.id = id;
+        }
         const results = await supabaseRequest('repositories', {
             method: 'POST',
-            body: { name: name || '新仓库' }
+            body: body
         });
         if (results && results.length > 0) {
             return results[0];
