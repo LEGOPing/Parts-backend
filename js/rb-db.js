@@ -382,7 +382,7 @@ async function hasLocalRBData() {
 // 零件名称缓存
 let partNamesCache = null;
 let partNamesCacheTime = 0;
-const CACHE_EXPIRY = 3600000; // 1小时缓存
+// 注：CACHE_EXPIRY 已在 api.js 中定义
 
 // 获取所有零件名称（带缓存）
 async function getAllPartNames() {
