@@ -25,6 +25,24 @@ function supabaseHeaders(extra = {}) {
     };
 }
 
+async function executeSQL(query) {
+    try {
+        const url = `${API_BASE}/sql`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: supabaseHeaders(),
+            body: JSON.stringify({ query })
+        });
+        if (!response.ok) {
+            throw new Error(`SQL执行失败: HTTP ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('SQL执行失败:', error.message);
+        throw error;
+    }
+}
+
 async function supabaseRequest(table, options = {}) {
     try {
         let url = `${API_BASE}/${table}`;

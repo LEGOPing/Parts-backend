@@ -1737,6 +1737,18 @@ async function initializeDatabase() {
             try { await deleteRepository(repo.id); } catch (e) {}
         }
         
+        // 重置所有自增序列
+        try {
+            await executeSQL(`
+                ALTER SEQUENCE repositories_id_seq RESTART WITH 0;
+                ALTER SEQUENCE boxes_id_seq RESTART WITH 0;
+                ALTER SEQUENCE parts_id_seq RESTART WITH 0;
+            `);
+            console.log('序列已重置');
+        } catch (e) {
+            console.warn('重置序列失败（ID可能不从0开始）:', e.message);
+        }
+        
         // 验证是否清空
         repos = await getRepositories();
         if (repos.length > 0) {
