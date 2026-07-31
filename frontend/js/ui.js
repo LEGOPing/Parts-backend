@@ -645,10 +645,7 @@ function showAddPartSheet() {
     sheet.innerHTML = `
         <div class="modal-header">
             <span class="modal-title">添加零件</span>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
-                <button class="btn-save" onclick="saveNewPart(this)">保存</button>
-            </div>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
         </div>
         <div class="modal-body add-part-body">
             <div class="form-section">
@@ -660,11 +657,6 @@ function showAddPartSheet() {
                     </div>
                     <span class="part-name-hint" id="part-name-hint"></span>
                     <button class="btn-secondary" onclick="showPartSelector()" style="padding: 8px 10px; font-size: 12px;">选择零件</button>
-                    <div class="status-group">
-                        <span class="status-label">状态：</span>
-                        <button id="status-new" class="status-btn active" onclick="togglePartNewStatus(true)">新品</button>
-                        <button id="status-used" class="status-btn" onclick="togglePartNewStatus(false)">旧品</button>
-                    </div>
                 </div>
             </div>
             <div class="form-section">
@@ -687,6 +679,14 @@ function showAddPartSheet() {
                         <label class="form-label">零件数量：</label>
                         <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
                     </div>
+                </div>
+                <div class="form-row status-save-row">
+                    <div class="status-group">
+                        <span class="status-label">状态：</span>
+                        <button id="status-new" class="status-btn active" onclick="togglePartNewStatus(true)">新品</button>
+                        <button id="status-used" class="status-btn" onclick="togglePartNewStatus(false)">旧品</button>
+                    </div>
+                    <button class="btn-save" onclick="saveNewPart(this)">保存</button>
                 </div>
             </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
