@@ -1189,9 +1189,9 @@ async function loadColorGrid(partNum) {
             <div class="color-card-name" style="color: ${textColor}">${color.name}</div>
         `;
 
-        colorCard.addEventListener('click', () => {
+        colorCard.addEventListener('click', (e) => {
             document.getElementById('new-part-color').value = color.id;
-            document.querySelector('.modal-overlay.active').remove();
+            e.target.closest('.modal-overlay').remove();
         });
 
         grid.appendChild(colorCard);
