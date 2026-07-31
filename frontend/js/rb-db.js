@@ -228,6 +228,17 @@ async function getColorById(colorId) {
     }
 }
 
+// 获取所有颜色
+async function getAllColors() {
+    try {
+        const db = await openRBDatabase();
+        return await getAll(RB_STORES.COLORS);
+    } catch (error) {
+        console.error('获取所有颜色失败:', error);
+        return [];
+    }
+}
+
 // 根据 ID 查询类别
 async function getCategoryById(categoryId) {
     try {
