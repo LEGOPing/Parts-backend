@@ -1382,6 +1382,24 @@ function editPartQuantityFromDetail(partId, currentQuantity) {
     editPartQuantity(part);
 }
 
+async function deletePartConfirm(partId) {
+    if (!confirm('确定要删除这个零件吗？')) return;
+    
+    const success = await deletePart(partId);
+    if (success) {
+        // 关闭详情弹窗
+        const overlay = document.querySelector('.modal-overlay.active');
+        if (overlay) overlay.remove();
+        // 刷新零件列表
+        if (selectedBox) {
+            await loadParts(selectedBox.id);
+        }
+        alert('零件已删除');
+    } else {
+        alert('删除零件失败');
+    }
+}
+
 function goBackToRepositories() {
     setSelectedBox(null);
     const btn = document.querySelector('.repo-btn');
