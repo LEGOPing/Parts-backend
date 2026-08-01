@@ -1362,12 +1362,19 @@ body {
     justify-content: space-between;
 }
 
-/* 第三/四/五行：均衡间距（等分剩余空间），内容下对齐使状态图标与型号文字底部对齐 */
+/* 第三/四/五行：行高占比1，内容下对齐使状态图标与型号文字底部对齐 */
 .pd-model-row,
 .pd-name-row,
 .pd-color-row {
     flex: 1 1 0;
     align-items: flex-end;
+}
+
+/* 第四/五/六行：上缩4px，使3-4/4-5/5-6间距从6px降为2px */
+.pd-name-row,
+.pd-color-row,
+.pd-actions {
+    margin-top: -4px;
 }
 
 .pd-color-left {
@@ -1410,10 +1417,10 @@ body {
 .qty-orange { color: #FF9800; }
 .qty-green { color: #4CAF50; }
 
-/* 第六行：按钮（与第五行间距按1.5倍：6px gap + 3px margin = 9px） */
+/* 第六行：按钮（行高占比1.5） */
 .pd-actions {
+    flex: 1.5 1 0;
     justify-content: space-between;
-    margin-top: 3px;
 }
 
 .pd-btn-group {
