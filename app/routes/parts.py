@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 import re
@@ -121,11 +121,11 @@ def _extract_weight_from_html(html: str):
     return None
 
 
-@router.get("/weight/{part_number}")
-def get_part_weight_from_bricklink(part_number: str):
+@router.get("/weight")
+def get_part_weight_from_bricklink(part_number: str = Query(..., description="零件型号，如3001")):
     """根据零件型号从 Bricklink 查询单个零件重量（克）。
 
-    端点：GET /api/parts/weight/{part_number}
+    端点：GET /api/parts/weight?part_number=3001
     返回：{"part_number": "3001", "weight": 2.08} 或 {"part_number": "...", "weight": null, "error": "..."}
     """
     clean_num = "".join(c for c in part_number if c.isalnum())
