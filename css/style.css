@@ -797,6 +797,12 @@ body {
     z-index: 1000;
 }
 
+/* 编辑数量弹窗：浮于零件详情页之上，使用更浅遮罩以便详情页可见 */
+.quantity-edit-overlay {
+    background: rgba(0, 0, 0, 0.2);
+    z-index: 1001;
+}
+
 .modal-content {
     background: white;
     padding: 20px;
