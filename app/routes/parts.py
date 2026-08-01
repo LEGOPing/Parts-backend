@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+import re
+import urllib.request
+import urllib.error
+import logging
 from app.database import get_db
 from app.models.part import Part
 from app.schemas.part import PartCreate, PartUpdate, Part as PartSchema
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=PartSchema)
 def create_part(part: PartCreate, db: Session = Depends(get_db)):
@@ -83,3 +88,84 @@ def batch_create_parts(parts: List[PartCreate], db: Session = Depends(get_db)):
     for part in created_parts:
         db.refresh(part)
     return created_parts
+
+
+def _extract_weight_from_html(html: str):
+    """从 Bricklink HTML 内容中提取单个零件重量（克）。
+
+    算法参考 tem/partwall_pythonista.py 与 tem/AddPartView.swift：
+    先查找 "Weight:"/"Weight：" 关键字后的数字，再回退到 "数字 g" 模式。
+    """
+    patterns = ["Weight：", "Weight:", "weight：", "weight:"]
+    for pattern in patterns:
+        idx = html.find(pattern)
+        if idx != -1:
+            segment = html[idx:idx + 100]
+            m = re.search(r"(\d+(?:\.\d+)?)", segment)
+            if m:
+                try:
+                    w = float(m.group(1))
+                    if w > 0:
+                        return round(w, 4)
+                except ValueError:
+                    pass
+    # 回退：查找 "数字 g" 模式
+    m = re.search(r"(\d+(?:\.\d+)?)\s*g", html)
+    if m:
+        try:
+            w = float(m.group(1))
+            if w > 0:
+                return round(w, 4)
+        except ValueError:
+            pass
+    return None
+
+
+@router.get("/weight/{part_number}")
+def get_part_weight_from_bricklink(part_number: str):
+    """根据零件型号从 Bricklink 查询单个零件重量（克）。
+
+    端点：GET /api/parts/weight/{part_number}
+    返回：{"part_number": "3001", "weight": 2.08} 或 {"part_number": "...", "weight": null, "error": "..."}
+    """
+    clean_num = "".join(c for c in part_number if c.isalnum())
+    if not clean_num:
+        raise HTTPException(status_code=400, detail="零件型号无效")
+
+    url = f"https://www.bricklink.com/v2/catalog/catalogitem.page?P={clean_num}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive",
+    }
+
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            logger.info(f"Bricklink 重量查询 (尝试 {attempt}/3): {clean_num}")
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status != 200:
+                    last_error = f"HTTP {resp.status}"
+                    continue
+                data = resp.read()
+                encoding = "utf-8"
+                try:
+                    html = data.decode(encoding)
+                except UnicodeDecodeError:
+                    html = data.decode("latin-1", errors="ignore")
+            weight = _extract_weight_from_html(html)
+            if weight is not None:
+                logger.info(f"Bricklink 重量查询成功: {clean_num} = {weight}g")
+                return {"part_number": clean_num, "weight": weight}
+            last_error = "未在页面中找到重量数据"
+        except urllib.error.HTTPError as e:
+            last_error = f"HTTP {e.code}"
+            if e.code == 404:
+                return {"part_number": clean_num, "weight": None, "error": "Bricklink 上未找到该零件"}
+        except Exception as e:
+            last_error = str(e)
+            logger.warning(f"Bricklink 重量查询失败 (尝试 {attempt}): {e}")
+
+    return {"part_number": clean_num, "weight": None, "error": last_error or "查询失败"}

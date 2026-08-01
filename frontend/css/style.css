@@ -1425,6 +1425,70 @@ body {
     flex: 1;
 }
 
+/* 称重计算按钮：紧贴零件数量输入框右侧 */
+.btn-weight-calc {
+    background: #27ae60;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: 8px;
+    height: 36px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.btn-weight-calc:hover {
+    background: #229954;
+}
+
+/* 称重计算弹窗 */
+.weight-calc-modal {
+    max-width: 460px !important;
+}
+
+.weight-calc-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.weight-calc-modal .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #34495e;
+}
+
+.weight-calc-modal .btn-cancel {
+    background: #f44336;
+    color: white;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.weight-calc-modal .btn-save {
+    background: #27ae60;
+    color: white;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.weight-calc-modal .form-row {
+    align-items: center;
+}
+
 /* 零件信息预览 */
 .part-info-preview {
     background: #f8f9fa;
