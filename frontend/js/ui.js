@@ -577,7 +577,7 @@ function setupLongPress(element, callback) {
 
 function editPartQuantity(part) {
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
+    overlay.className = 'modal-overlay active quantity-edit-overlay';
 
     const sheet = document.createElement('div');
     sheet.className = 'modal-content quantity-edit-modal';
@@ -586,7 +586,7 @@ function editPartQuantity(part) {
         <div class="modal-header">
             <span class="modal-title">编辑数量</span>
             <div class="modal-actions">
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">返回</button>
             </div>
         </div>
         <div class="modal-body">
@@ -596,7 +596,7 @@ function editPartQuantity(part) {
                 <button class="quantity-btn increase" onclick="changeQuantity(1)">+</button>
             </div>
             <div class="quantity-edit-footer">
-                <button class="btn-save" onclick="savePartQuantity('${part.id}')">保存</button>
+                <button class="btn-save" onclick="savePartQuantity('${part.id}', this)">保存</button>
             </div>
         </div>
     `;
@@ -614,11 +614,18 @@ function editPartQuantity(part) {
     window.changeQuantity = changeQuantity;
 }
 
-function savePartQuantity(partId) {
+async function savePartQuantity(partId, btn) {
     const quantity = window.currentEditQuantity;
-    if (quantity >= 0) {
-        updatePartQuantity(partId, quantity);
-        document.querySelector('.modal-overlay.active').remove();
+    if (quantity < 0) return;
+
+    const success = await updatePartQuantity(partId, quantity);
+    if (success) {
+        // 仅移除编辑数量弹窗，保留底下的零件详情页
+        btn.closest('.modal-overlay').remove();
+        // 更新零件详情页显示的数量
+        updateDetailQuantityDisplay(quantity);
+    } else {
+        alert('保存失败');
     }
 }
 
@@ -627,6 +634,21 @@ async function updatePartQuantity(partId, quantity) {
     if (success && selectedBox) {
         await loadParts(selectedBox.id);
     }
+    return success;
+}
+
+// 更新零件详情页中显示的数量与颜色
+function updateDetailQuantityDisplay(quantity) {
+    const detailModal = document.querySelector('.part-detail-modal');
+    if (!detailModal) return;
+    const qtyEl = detailModal.querySelector('.pd-qty-val');
+    if (!qtyEl) return;
+    qtyEl.textContent = quantity;
+    qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
+    let cls = 'qty-red';
+    if (quantity >= 50) cls = 'qty-green';
+    else if (quantity >= 10) cls = 'qty-orange';
+    qtyEl.classList.add(cls);
 }
 
 function showAddPartSheet() {
@@ -1422,7 +1444,7 @@ async function showPartDetail(part) {
 }
 
 function editPartQuantityFromDetail(partId, currentQuantity) {
-    document.querySelector('.modal-overlay.active').remove();
+    // 不关闭零件详情页，让编辑数量弹窗浮于其上
     const part = { id: partId, quantity: currentQuantity };
     editPartQuantity(part);
 }
