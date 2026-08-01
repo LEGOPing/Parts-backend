@@ -126,7 +126,13 @@
                 </div>
                 
                 <div id="search-tab" class="tab-content search-tab">
-                    <h2>零件搜索</h2>
+                    <div class="search-header">
+                        <h2>零件搜索</h2>
+                        <div class="search-actions">
+                            <button onclick="resetSearchFilters()" class="btn-reset">重置</button>
+                            <button onclick="handleAdvancedSearch()" class="btn-search">搜索</button>
+                        </div>
+                    </div>
                     <div class="search-filters">
                         <div class="filter-row">
                             <div class="filter-group">
@@ -154,10 +160,6 @@
                                     <option value="false">旧品</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="search-actions">
-                            <button onclick="handleAdvancedSearch()" class="btn-search">搜索</button>
-                            <button onclick="resetSearchFilters()" class="btn-reset">重置</button>
                         </div>
                     </div>
                     <div class="search-results" id="search-results"></div>
