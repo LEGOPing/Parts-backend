@@ -721,8 +721,10 @@ function showAddPartSheet() {
                 <div class="quantity-weight-row">
                     <div>
                         <label class="form-label">零件数量：</label>
-                        <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
-                        <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
+                        <div class="quantity-input-row">
+                            <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
+                            <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
+                        </div>
                     </div>
                 </div>
                 <div class="form-row status-save-row">
@@ -1197,6 +1199,13 @@ async function fetchPartWeightForCalculator() {
 
     // 清理零件型号：只保留字母和数字
     const cleanPartNum = partNum.replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanPartNum) {
+        if (messageEl) {
+            messageEl.style.color = '#e74c3c';
+            messageEl.textContent = '零件型号无效';
+        }
+        return;
+    }
 
     if (messageEl) {
         messageEl.style.color = '#7f8c8d';
@@ -1212,7 +1221,27 @@ async function fetchPartWeightForCalculator() {
     }
 
     try {
-        const response = await fetch(`${BACKEND_URL}/api/parts/weight/${encodeURIComponent(cleanPartNum)}`);
+        const url = `${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanPartNum)}`;
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            let errMsg = `请求失败 (HTTP ${response.status})`;
+            try {
+                const errData = await response.json();
+                if (errData && errData.detail) {
+                    errMsg = errData.detail;
+                } else if (errData && errData.error) {
+                    errMsg = errData.error;
+                }
+            } catch (_) {
+                // 响应不是 JSON，使用默认错误信息
+                if (response.status === 404) {
+                    errMsg = '后端接口未部署，请联系管理员更新';
+                }
+            }
+            throw new Error(errMsg);
+        }
+
         const data = await response.json();
 
         if (data.weight !== null && data.weight !== undefined && data.weight > 0) {
@@ -1229,7 +1258,6 @@ async function fetchPartWeightForCalculator() {
                 messageEl.style.color = '#e74c3c';
                 messageEl.textContent = data.error || `未找到 ${cleanPartNum} 的重量数据，可手动输入单个重量后计算`;
             }
-            // 允许手动输入单个重量作为回退
             if (unitWeightInput) {
                 unitWeightInput.readOnly = false;
                 unitWeightInput.placeholder = '获取失败，可手动输入（克）';
@@ -1238,7 +1266,11 @@ async function fetchPartWeightForCalculator() {
     } catch (error) {
         if (messageEl) {
             messageEl.style.color = '#e74c3c';
-            messageEl.textContent = `查询失败：${error.message}，可手动输入单个重量后计算`;
+            let msg = error.message || '未知错误';
+            if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+                msg = '网络连接失败，请检查后端服务是否正常';
+            }
+            messageEl.textContent = `查询失败：${msg}，可手动输入单个重量后计算`;
         }
         if (unitWeightInput) {
             unitWeightInput.readOnly = false;

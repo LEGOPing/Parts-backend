@@ -1425,18 +1425,29 @@ body {
     flex: 1;
 }
 
+/* 数量输入框与称重计算按钮并排 */
+.quantity-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quantity-input-row .form-input {
+    flex: 1;
+    min-width: 0;
+}
+
 /* 称重计算按钮：紧贴零件数量输入框右侧 */
 .btn-weight-calc {
     background: #27ae60;
     color: white;
     border: none;
     border-radius: 4px;
-    padding: 8px 12px;
+    padding: 0 12px;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    margin-left: 8px;
     height: 36px;
     box-sizing: border-box;
     flex-shrink: 0;
