@@ -60,13 +60,29 @@ HEADERS = {
 
 # 跳过前缀：这些类型零件在 Bricklink 上没有重量数据，直接跳过不抓取
 SKIP_PREFIXES = ("Sticker Sheet", "Trading Card", "Pen")
+# 跳过后缀：Rebrickable 的 pr/pat 后缀是印刷件/图案件编号，Bricklink 上不存在
+SKIP_SUFFIXES = ("pr", "pat")
 
 
-def should_skip_by_name(name):
-    """判断零件名称是否应跳过（无重量数据的类型）"""
-    if not name:
-        return False
-    return name.startswith(SKIP_PREFIXES)
+def should_skip(part_num, name):
+    """判断零件是否应跳过（无重量数据或在 Bricklink 上不存在）。
+
+    跳过条件：
+    1. name 以 Sticker Sheet/Trading Card/Pen 开头（无重量数据）
+    2. part_num 含 pr/pat 后缀（Rebrickable 印刷件编号，Bricklink 上不存在）
+    """
+    if name and name.startswith(SKIP_PREFIXES):
+        return True
+    # 检查 pr/pat 后缀：编号中含 "pr数字" 或 "pat数字"（如 01586pr0001）
+    lower_num = part_num.lower()
+    for suffix in SKIP_SUFFIXES:
+        idx = lower_num.find(suffix)
+        if idx > 0 and idx + len(suffix) < len(lower_num):
+            # 后缀后必须紧跟数字（如 pr0001）
+            after = lower_num[idx + len(suffix):]
+            if after and after[0].isdigit():
+                return True
+    return False
 
 
 def log(msg):
@@ -129,6 +145,7 @@ def fetch_weight(part_num, max_attempts=3):
     """从 Bricklink 抓取单个零件重量，返回 (weight, error)。
 
     weight 为 None 时表示抓取失败或未找到，error 描述失败原因。
+    Bricklink 的 404 返回 HTTP 200 + "Page Not Found" 页面，需在内容里检测。
     """
     clean_num = "".join(c for c in part_num if c.isalnum())
     if not clean_num:
@@ -148,6 +165,9 @@ def fetch_weight(part_num, max_attempts=3):
                     html = data.decode("utf-8")
                 except UnicodeDecodeError:
                     html = data.decode("latin-1", errors="ignore")
+            # Bricklink 404 页面特征：页面短 + 含 "Page Not Found"
+            if "Page Not Found" in html or len(html) < 20000:
+                return None, "Bricklink 上不存在该零件"
             weight = extract_weight_from_html(html)
             if weight is not None:
                 return weight, None
@@ -157,7 +177,7 @@ def fetch_weight(part_num, max_attempts=3):
         except urllib.error.HTTPError as e:
             last_error = f"HTTP {e.code}"
             if e.code == 404:
-                return None, "Bricklink 上未找到该零件"
+                return None, "Bricklink 上不存在该零件"
         except Exception as e:
             last_error = str(e)
         # 重试前等待（退避）
@@ -212,11 +232,18 @@ def main():
     log(f"已加载结果：{len(weights)} 个；失败记录：{len(failed)} 个")
 
     if args.retry_failed:
-        # 仅重试失败记录（name 信息不可用，不按名称跳过）
-        todo = [(pn, "") for pn in failed.keys()]
-        log(f"重试模式：共 {len(todo)} 个失败零件待重试")
+        # 仅重试失败记录（跳过"不存在"的零件，这些是 Bricklink 上确实没有的）
+        todo = []
+        skipped_not_exist = 0
+        for pn, info in failed.items():
+            err = info.get("error", "") if isinstance(info, dict) else str(info)
+            if "不存在" in err:
+                skipped_not_exist += 1
+            else:
+                todo.append((pn, ""))
+        log(f"重试模式：{len(todo)} 个待重试，{skipped_not_exist} 个不存在零件已跳过")
         if not todo:
-            log("没有失败记录可重试，退出")
+            log("没有可重试的记录，退出")
             return
         retry_mode = True
     else:
@@ -241,12 +268,12 @@ def main():
         for pn, name in all_parts:
             if pn in weights:
                 already_done += 1
-            elif should_skip_by_name(name):
+            elif should_skip(pn, name):
                 skipped_no_weight += 1
                 skipped_parts.add(pn)
             else:
                 todo.append((pn, name))
-        log(f"待抓取：{len(todo)} 个（已成功 {already_done} 个，跳过 {skipped_no_weight} 个无重量类型）")
+        log(f"待抓取：{len(todo)} 个（已成功 {already_done} 个，跳过 {skipped_no_weight} 个无重量/不存在类型）")
 
         # 清理 failed.json 中已被跳过类型的历史记录
         if skipped_parts:
@@ -254,7 +281,7 @@ def main():
             for pn in removed:
                 failed.pop(pn, None)
             if removed:
-                log(f"已从失败记录中清理 {len(removed)} 个无重量类型零件")
+                log(f"已从失败记录中清理 {len(removed)} 个无重量/不存在类型零件")
                 save_json(FAILED_JSON, failed)
 
         retry_mode = False
