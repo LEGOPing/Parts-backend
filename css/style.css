@@ -803,6 +803,100 @@ body {
     z-index: 1001;
 }
 
+/* 编辑数量弹窗（三行布局，行高比1:2:1） */
+.quantity-edit-modal {
+    background: white;
+    border-radius: 12px;
+    width: min(92vw, 320px);
+    height: min(92vw, 320px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.qe-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 第一行：返回(左) + 标题(中) + 保存(右) */
+.qe-row1 {
+    flex: 1 1 0;
+    position: relative;
+}
+
+.qe-title {
+    font-size: 23px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.qe-back-btn,
+.qe-save-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.qe-back-btn {
+    left: 12px;
+    background: #e74c3c;
+}
+
+.qe-save-btn {
+    right: 12px;
+    background: #27ae60;
+}
+
+/* 第二行：数量（35px粗体居中，颜色随数量变化） */
+.qe-row2 {
+    flex: 2 1 0;
+}
+
+.qe-quantity {
+    font-size: 35px;
+    font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 第三行：圆形加减按钮，直径46px，间距46px */
+.qe-row3 {
+    flex: 1 1 0;
+    gap: 46px;
+}
+
+.qe-circle-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: none;
+    color: white;
+    font-size: 23px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.qe-minus-btn {
+    background: #e74c3c;
+}
+
+.qe-plus-btn {
+    background: #27ae60;
+}
+
 .modal-content {
     background: white;
     padding: 20px;

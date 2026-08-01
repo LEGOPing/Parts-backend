@@ -580,24 +580,24 @@ function editPartQuantity(part) {
     overlay.className = 'modal-overlay active quantity-edit-overlay';
 
     const sheet = document.createElement('div');
-    sheet.className = 'modal-content quantity-edit-modal';
+    sheet.className = 'quantity-edit-modal';
+
+    let qtyCls = 'qty-red';
+    if (part.quantity >= 50) qtyCls = 'qty-green';
+    else if (part.quantity >= 10) qtyCls = 'qty-orange';
 
     sheet.innerHTML = `
-        <div class="modal-header">
-            <span class="modal-title">编辑数量</span>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">返回</button>
-            </div>
+        <div class="qe-row qe-row1">
+            <button class="qe-back-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
+            <span class="qe-title">编辑数量</span>
+            <button class="qe-save-btn" onclick="savePartQuantity('${part.id}', this)">保存</button>
         </div>
-        <div class="modal-body">
-            <div class="quantity-edit-container">
-                <button class="quantity-btn decrease" onclick="changeQuantity(-1)">−</button>
-                <div class="quantity-display" id="quantity-display">${part.quantity}</div>
-                <button class="quantity-btn increase" onclick="changeQuantity(1)">+</button>
-            </div>
-            <div class="quantity-edit-footer">
-                <button class="btn-save" onclick="savePartQuantity('${part.id}', this)">保存</button>
-            </div>
+        <div class="qe-row qe-row2">
+            <div class="qe-quantity ${qtyCls}" id="quantity-display">${part.quantity}</div>
+        </div>
+        <div class="qe-row qe-row3">
+            <button class="qe-circle-btn qe-minus-btn" onclick="changeQuantity(-1)">−</button>
+            <button class="qe-circle-btn qe-plus-btn" onclick="changeQuantity(1)">+</button>
         </div>
     `;
 
@@ -608,7 +608,13 @@ function editPartQuantity(part) {
 
     function changeQuantity(delta) {
         window.currentEditQuantity = Math.max(0, window.currentEditQuantity + delta);
-        document.getElementById('quantity-display').textContent = window.currentEditQuantity;
+        const display = document.getElementById('quantity-display');
+        display.textContent = window.currentEditQuantity;
+        display.classList.remove('qty-red', 'qty-orange', 'qty-green');
+        let cls = 'qty-red';
+        if (window.currentEditQuantity >= 50) cls = 'qty-green';
+        else if (window.currentEditQuantity >= 10) cls = 'qty-orange';
+        display.classList.add(cls);
     }
 
     window.changeQuantity = changeQuantity;
