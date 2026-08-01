@@ -630,6 +630,8 @@ async function savePartQuantity(partId, btn) {
         btn.closest('.modal-overlay').remove();
         // 更新零件详情页显示的数量
         updateDetailQuantityDisplay(quantity);
+        // 更新搜索结果卡片中对应零件的数量
+        updateSearchResultQuantity(partId, quantity);
     } else {
         alert('保存失败');
     }
@@ -648,6 +650,20 @@ function updateDetailQuantityDisplay(quantity) {
     const detailModal = document.querySelector('.part-detail-modal');
     if (!detailModal) return;
     const qtyEl = detailModal.querySelector('.pd-qty-val');
+    if (!qtyEl) return;
+    qtyEl.textContent = quantity;
+    qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
+    let cls = 'qty-red';
+    if (quantity >= 50) cls = 'qty-green';
+    else if (quantity >= 10) cls = 'qty-orange';
+    qtyEl.classList.add(cls);
+}
+
+// 更新搜索结果卡片中对应零件的数量
+function updateSearchResultQuantity(partId, quantity) {
+    const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+    if (!card) return;
+    const qtyEl = card.querySelector('.src-qty');
     if (!qtyEl) return;
     qtyEl.textContent = quantity;
     qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
@@ -1435,6 +1451,7 @@ async function renderSearchResults(parts) {
     parts.forEach(part => {
         const card = document.createElement('div');
         card.className = 'search-result-card';
+        card.dataset.partId = part.id;
 
         const color = colorMap[part.color_id];
         const colorName = color ? color.name : '未知颜色';
@@ -1673,6 +1690,9 @@ async function executeDeletePart(partId) {
         if (selectedBox) {
             await loadParts(selectedBox.id);
         }
+        // 从搜索结果中移除该零件卡片
+        const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+        if (card) card.remove();
     } else {
         if (errorEl) errorEl.textContent = '删除零件失败';
     }
