@@ -58,6 +58,16 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
+# 跳过前缀：这些类型零件在 Bricklink 上没有重量数据，直接跳过不抓取
+SKIP_PREFIXES = ("Sticker Sheet", "Trading Card", "Pen")
+
+
+def should_skip_by_name(name):
+    """判断零件名称是否应跳过（无重量数据的类型）"""
+    if not name:
+        return False
+    return name.startswith(SKIP_PREFIXES)
+
 
 def log(msg):
     """带时间戳的日志输出"""
@@ -156,16 +166,17 @@ def fetch_weight(part_num, max_attempts=3):
     return None, last_error or "查询失败"
 
 
-def read_part_nums(csv_path):
-    """从 parts.csv 读取所有 part_num（保持顺序）"""
-    part_nums = []
+def read_parts(csv_path):
+    """从 parts.csv 读取所有 (part_num, name)，保持顺序"""
+    parts = []
     with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             pn = (row.get("part_num") or "").strip()
+            name = (row.get("name") or "").strip()
             if pn:
-                part_nums.append(pn)
-    return part_nums
+                parts.append((pn, name))
+    return parts
 
 
 def format_eta(seconds):
@@ -201,31 +212,51 @@ def main():
     log(f"已加载结果：{len(weights)} 个；失败记录：{len(failed)} 个")
 
     if args.retry_failed:
-        # 仅重试失败记录
-        todo = list(failed.keys())
+        # 仅重试失败记录（name 信息不可用，不按名称跳过）
+        todo = [(pn, "") for pn in failed.keys()]
         log(f"重试模式：共 {len(todo)} 个失败零件待重试")
         if not todo:
             log("没有失败记录可重试，退出")
             return
-        # 重试时从失败记录中移除（成功后再加回 weights；失败时更新 attempts）
         retry_mode = True
     else:
-        # 正常模式：从 parts.csv 读取所有 part_num
-        all_parts = read_part_nums(PARTS_CSV)
+        # 正常模式：从 parts.csv 读取所有 (part_num, name)
+        all_parts = read_parts(PARTS_CSV)
         log(f"parts.csv 共 {len(all_parts)} 个零件")
 
         # 起始 part_num 过滤
         if args.start:
             try:
-                idx = all_parts.index(args.start)
+                idx = next(i for i, (pn, _) in enumerate(all_parts) if pn == args.start)
                 all_parts = all_parts[idx:]
                 log(f"从 {args.start} 开始，剩余 {len(all_parts)} 个")
-            except ValueError:
+            except StopIteration:
                 log(f"警告：起始 part_num {args.start} 未找到，从头开始")
 
-        # 过滤已成功的（断点续传）
-        todo = [p for p in all_parts if p not in weights]
-        log(f"待抓取：{len(todo)} 个（已跳过 {len(all_parts) - len(todo)} 个已成功的）")
+        # 过滤已成功的（断点续传）+ 跳过无重量类型
+        todo = []
+        skipped_no_weight = 0
+        already_done = 0
+        skipped_parts = set()
+        for pn, name in all_parts:
+            if pn in weights:
+                already_done += 1
+            elif should_skip_by_name(name):
+                skipped_no_weight += 1
+                skipped_parts.add(pn)
+            else:
+                todo.append((pn, name))
+        log(f"待抓取：{len(todo)} 个（已成功 {already_done} 个，跳过 {skipped_no_weight} 个无重量类型）")
+
+        # 清理 failed.json 中已被跳过类型的历史记录
+        if skipped_parts:
+            removed = [pn for pn in list(failed.keys()) if pn in skipped_parts]
+            for pn in removed:
+                failed.pop(pn, None)
+            if removed:
+                log(f"已从失败记录中清理 {len(removed)} 个无重量类型零件")
+                save_json(FAILED_JSON, failed)
+
         retry_mode = False
 
         if not todo:
@@ -242,7 +273,7 @@ def main():
     total = len(todo)
     start_time = time.time()
 
-    for i, part_num in enumerate(todo, 1):
+    for i, (part_num, name) in enumerate(todo, 1):
         # 抓取前等待（第一个不等待）
         if i > 1:
             delay = random.uniform(args.min_delay, args.max_delay)
