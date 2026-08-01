@@ -1410,9 +1410,10 @@ body {
 .qty-orange { color: #FF9800; }
 .qty-green { color: #4CAF50; }
 
-/* 第六行：按钮 */
+/* 第六行：按钮（与第五行间距按1.5倍：6px gap + 3px margin = 9px） */
 .pd-actions {
     justify-content: space-between;
+    margin-top: 3px;
 }
 
 .pd-btn-group {
