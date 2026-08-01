@@ -2,16 +2,17 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-const BACKEND_URL = 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
+// 本地开发（localhost）走本机 FastAPI，可利用本机 IP 抓取 Bricklink 重量；
+// 生产环境走 CloudBase 云托管（依赖 Supabase part_weights 缓存）。
+const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? `http://${location.hostname}:8000`
+    : 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
 const GITEE_RB_RAW_URL = 'https://gitee.com/legoping/parts-rb/raw/main';
 const CORS_PROXY = 'https://corsproxy.io/?url=';
-
-// Supabase Edge Function：查询 Bricklink 零件重量
-const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/get-part-weight`;
 
 const RB_DATABASE_FILE = 'rb_database.json';
 const DEFAULT_GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0';
@@ -720,7 +721,8 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
     }
 }
 
-// 通过 Supabase Edge Function 从 Bricklink 查询零件重量（克）
+// 查询单个零件重量（克）：优先读 Supabase 缓存，未命中由 FastAPI 从 Bricklink 抓取并回写。
+// 本地开发走本机 FastAPI（本机 IP 可成功抓取）；生产走 CloudBase（依赖缓存）。
 // 返回 { part_number, weight } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
@@ -729,25 +731,20 @@ async function fetchBricklinkPartWeight(partNumber) {
     }
 
     try {
-        const response = await fetch(`${EDGE_FUNCTION_URL}?part_number=${encodeURIComponent(cleanNum)}`, {
-            headers: {
-                'apikey': SUPABASE_ANON_KEY
-            }
-        });
+        const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
 
         if (!response.ok) {
             let errMsg = `请求失败 (HTTP ${response.status})`;
             try {
                 const errData = await response.json();
-                if (errData && errData.error) errMsg = errData.error;
+                if (errData && errData.detail) errMsg = errData.detail;
             } catch (_) {}
             return { part_number: cleanNum, weight: null, error: errMsg };
         }
 
-        const data = await response.json();
-        return data;
+        return await response.json();
     } catch (e) {
-        return { part_number: cleanNum, weight: null, error: `Edge Function 请求失败: ${e.message}` };
+        return { part_number: cleanNum, weight: null, error: `后端请求失败: ${e.message}` };
     }
 }
 
