@@ -726,7 +726,7 @@ body {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    background-color: var(--light-gray-color);
+    background-color: #fff;
     border-right: 1px solid #eee;
 }
 
@@ -764,7 +764,7 @@ body {
     padding: 0 2px;
 }
 
-/* 右侧：剩余空间，三行（字体 14） */
+/* 右侧：剩余空间，四行（字体 14），垂直居中，行间距 0 */
 .src-right {
     flex: 1 1 0;
     min-width: 0;
@@ -772,7 +772,7 @@ body {
     flex-direction: column;
     justify-content: center;
     padding: 4px 8px;
-    gap: 2px;
+    gap: 0;
 }
 
 .src-row {
@@ -807,29 +807,37 @@ body {
     display: none;
 }
 
-/* 第二行：颜色（左）+ 新旧状态圆形图标（右） */
+/* 第二行：颜色名称，可水平滚动 */
 .src-row2 {
-    justify-content: space-between;
-}
-
-.src-color-wrap {
-    display: flex;
-    align-items: center;
-    min-width: 0;
     overflow: hidden;
-}
-
-.src-color-id {
-    color: var(--secondary-color);
-    font-weight: bold;
-    margin-right: 4px;
 }
 
 .src-color-name {
     color: var(--black-color);
     white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1 1 0;
+    min-width: 0;
+    scrollbar-width: none;
+}
+
+.src-color-name::-webkit-scrollbar {
+    display: none;
+}
+
+/* 第三行：仓库（左）+ 新旧状态圆形图标（右） */
+.src-row3 {
+    justify-content: space-between;
+}
+
+.src-repo {
+    color: var(--black-color);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .src-status {
@@ -843,21 +851,18 @@ body {
 .src-status.new { background-color: #4CAF50; }
 .src-status.used { background-color: #FF9800; }
 
-/* 第三行：仓库、盒子（左对齐）+ 数量（右对齐，预留 5 位数字） */
-.src-row3 {
+/* 第四行：盒子（左）+ 数量（右，预留 5 位数字） */
+.src-row4 {
     justify-content: flex-start;
-    gap: 4px;
-    flex-wrap: nowrap;
-    overflow: hidden;
 }
 
-.src-repo,
 .src-box {
     color: var(--black-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 30%;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .src-qty-wrap {
