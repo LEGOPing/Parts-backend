@@ -642,21 +642,37 @@ body {
 }
 
 .search-tab {
-    padding: 15px;
+    padding: 8px;
+}
+
+/* 标题行：标题左对齐 + 按钮右对齐（搜索在最右） */
+.search-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.search-header h2 {
+    margin: 0;
 }
 
 .search-filters {
     background: #f9f9f9;
-    padding: 15px;
+    padding: 8px;
     border-radius: 8px;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
 }
 
 .filter-row {
     display: flex;
-    gap: 15px;
-    margin-bottom: 10px;
+    gap: 8px;
+    margin-bottom: 6px;
     flex-wrap: wrap;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
 }
 
 .filter-group {
@@ -711,8 +727,7 @@ body {
 
 .search-actions {
     display: flex;
-    gap: 10px;
-    margin-top: 15px;
+    gap: 8px;
 }
 
 .btn-search { background: #2196F3; color: white; }
@@ -720,14 +735,13 @@ body {
 
 .btn-search, .btn-reset {
     border: none;
-    padding: 10px 20px;
+    padding: 6px 16px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
 }
 
 .search-results {
-    margin-top: 15px;
     display: flex;
     flex-direction: column;
     gap: 8px;
