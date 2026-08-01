@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080109">
+    <link rel="stylesheet" href="css/style.css?v=2026080110">
     
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -227,7 +227,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
-                navigator.serviceWorker.register('service-worker.js?v=v65', { updateViaCache: 'none' })
+                navigator.serviceWorker.register('service-worker.js?v=v66', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
                         // 如果有旧SW在控制页面，强制重新加载以应用新版本

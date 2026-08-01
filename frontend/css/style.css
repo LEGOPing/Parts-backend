@@ -858,7 +858,7 @@ body {
 
 /* 第二行：数量（35px粗体居中，颜色随数量变化） */
 .qe-row2 {
-    flex: 2 1 0;
+    flex: 1.4 1 0;
 }
 
 .qe-quantity {
@@ -868,15 +868,15 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
-/* 第三行：圆形加减按钮，直径36px，间距46px */
+/* 第三行：圆形加减按钮，直径46px，间距46px */
 .qe-row3 {
-    flex: 1 1 0;
+    flex: 1.2 1 0;
     gap: 46px;
 }
 
 .qe-circle-btn {
-    width: 36px;
-    height: 36px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
     border: none;
     color: white;
