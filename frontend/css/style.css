@@ -1379,7 +1379,7 @@ body {
 
 .pd-color-left {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -1399,7 +1399,7 @@ body {
 
 .pd-qty {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     flex-shrink: 0;
     margin-left: 8px;
 }
@@ -1417,10 +1417,11 @@ body {
 .qty-orange { color: #FF9800; }
 .qty-green { color: #4CAF50; }
 
-/* 第六行：按钮（行高占比1.5） */
+/* 第六行：按钮（行高占比1.5，下对齐） */
 .pd-actions {
     flex: 1.5 1 0;
     justify-content: space-between;
+    align-items: flex-end;
 }
 
 .pd-btn-group {
