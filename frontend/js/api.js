@@ -10,11 +10,8 @@ const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
 const GITEE_RB_RAW_URL = 'https://gitee.com/legoping/parts-rb/raw/main';
 const CORS_PROXY = 'https://corsproxy.io/?url=';
 
-// Bricklink 重量查询用的 CORS 代理列表（按优先级）
-const BRICKLINK_PROXIES = [
-    'https://proxy.cors.sh/',
-    'https://api.allorigins.win/raw?url='
-];
+// Supabase Edge Function：查询 Bricklink 零件重量
+const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/get-part-weight`;
 
 const RB_DATABASE_FILE = 'rb_database.json';
 const DEFAULT_GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0';
@@ -723,30 +720,7 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
     }
 }
 
-// 从 HTML 中提取单个零件重量（克），算法参考 tem/AddPartView.swift
-function extractWeightFromHtml(html) {
-    const patterns = [/Weight：/, /Weight:/, /weight：/, /weight:/i];
-    for (const pattern of patterns) {
-        const match = html.match(pattern);
-        if (match && match.index !== undefined) {
-            const segment = html.substring(match.index, match.index + 100);
-            const numMatch = segment.match(/(\d+(?:\.\d+)?)/);
-            if (numMatch) {
-                const w = parseFloat(numMatch[1]);
-                if (w > 0) return Math.round(w * 10000) / 10000;
-            }
-        }
-    }
-    // 回退：匹配 "数字 g"
-    const fallback = html.match(/(\d+(?:\.\d+)?)\s*g/);
-    if (fallback) {
-        const w = parseFloat(fallback[1]);
-        if (w > 0) return Math.round(w * 10000) / 10000;
-    }
-    return null;
-}
-
-// 通过 CORS 代理从 Bricklink 查询零件重量（克）
+// 通过 Supabase Edge Function 从 Bricklink 查询零件重量（克）
 // 返回 { part_number, weight } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
@@ -754,40 +728,27 @@ async function fetchBricklinkPartWeight(partNumber) {
         return { part_number: '', weight: null, error: '零件型号无效' };
     }
 
-    const targetUrl = `https://www.bricklink.com/v2/catalog/catalogitem.page?P=${cleanNum}`;
-    let lastError = '';
-
-    for (const proxy of BRICKLINK_PROXIES) {
-        try {
-            // allorigins 需要 encodeURIComponent，proxy.cors.sh 直接拼接
-            const proxyUrl = proxy.includes('allorigins')
-                ? proxy + encodeURIComponent(targetUrl)
-                : proxy + targetUrl;
-
-            const response = await fetch(proxyUrl, {
-                headers: proxy.includes('cors.sh')
-                    ? { 'x-cors-api-key': 'temp_demo' }
-                    : {}
-            });
-
-            if (!response.ok) {
-                lastError = `${proxy} HTTP ${response.status}`;
-                continue;
+    try {
+        const response = await fetch(`${EDGE_FUNCTION_URL}?part_number=${encodeURIComponent(cleanNum)}`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY
             }
+        });
 
-            const html = await response.text();
-            const weight = extractWeightFromHtml(html);
-            if (weight !== null) {
-                return { part_number: cleanNum, weight: weight };
-            }
-            lastError = `${proxy} 未找到重量数据`;
-        } catch (e) {
-            lastError = `${proxy} 请求失败: ${e.message}`;
-            console.warn(lastError);
+        if (!response.ok) {
+            let errMsg = `请求失败 (HTTP ${response.status})`;
+            try {
+                const errData = await response.json();
+                if (errData && errData.error) errMsg = errData.error;
+            } catch (_) {}
+            return { part_number: cleanNum, weight: null, error: errMsg };
         }
-    }
 
-    return { part_number: cleanNum, weight: null, error: lastError || '查询失败' };
+        const data = await response.json();
+        return data;
+    } catch (e) {
+        return { part_number: cleanNum, weight: null, error: `Edge Function 请求失败: ${e.message}` };
+    }
 }
 
 // 重置 Supabase 自增序列（通过 RPC 函数，无需 CloudBase 后端）

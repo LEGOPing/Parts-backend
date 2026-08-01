@@ -1,0 +1,5 @@
+// Supabase Edge Function config for get-part-weight
+// 允许匿名调用（称重查询不需要认证）
+{
+  "verify_jwt": false
+}
