@@ -722,6 +722,7 @@ function showAddPartSheet() {
                     <div>
                         <label class="form-label">零件数量：</label>
                         <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
+                        <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
                     </div>
                 </div>
                 <div class="form-row status-save-row">
@@ -1124,6 +1125,179 @@ async function saveNewPart(button) {
             await loadParts(selectedBox.id);
         }
     }
+}
+
+// 称重计算：弹出窗口输入总重量，根据零件型号从 Bricklink 查询单个零件重量后计算数量
+function showWeightCalculator() {
+    const partNumInput = document.getElementById('new-part-num');
+    const partNum = partNumInput ? partNumInput.value.trim() : '';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'weight-calc-overlay';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content weight-calc-modal';
+
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">称重计算</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label class="form-label">零件型号：</label>
+                <input type="text" id="weight-calc-part-num" class="form-input" value="${partNum}" placeholder="请输入零件型号" />
+                <button class="btn-secondary" id="weight-calc-fetch-btn" onclick="fetchPartWeightForCalculator()" style="padding: 8px 10px; font-size: 12px; white-space: nowrap;">获取重量</button>
+            </div>
+            <div class="form-row">
+                <label class="form-label">单个重量：</label>
+                <input type="text" id="weight-calc-unit-weight" class="form-input" placeholder="点击"获取重量"自动填入（克）" readonly />
+            </div>
+            <div class="form-row">
+                <label class="form-label">总重量(克)：</label>
+                <input type="number" id="weight-calc-total-weight" class="form-input" placeholder="请输入称重总重量（克）" step="0.01" />
+            </div>
+            <div class="form-row status-save-row">
+                <div id="weight-calc-message" style="flex:1; font-size:12px; color:#27ae60;"></div>
+                <button class="btn-save" onclick="calculateWeightQuantity()">计算并填入数量</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    // 回车触发计算
+    document.getElementById('weight-calc-total-weight').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            calculateWeightQuantity();
+        }
+    });
+}
+
+// 从后端查询 Bricklink 零件重量
+async function fetchPartWeightForCalculator() {
+    const partNumInput = document.getElementById('weight-calc-part-num');
+    const unitWeightInput = document.getElementById('weight-calc-unit-weight');
+    const messageEl = document.getElementById('weight-calc-message');
+    const fetchBtn = document.getElementById('weight-calc-fetch-btn');
+
+    if (!partNumInput) return;
+
+    const partNum = partNumInput.value.trim();
+    if (!partNum) {
+        if (messageEl) {
+            messageEl.style.color = '#e74c3c';
+            messageEl.textContent = '请输入零件型号';
+        }
+        return;
+    }
+
+    // 清理零件型号：只保留字母和数字
+    const cleanPartNum = partNum.replace(/[^a-zA-Z0-9]/g, '');
+
+    if (messageEl) {
+        messageEl.style.color = '#7f8c8d';
+        messageEl.textContent = `正在从 Bricklink 查询 ${cleanPartNum} 的重量...`;
+    }
+    if (unitWeightInput) {
+        unitWeightInput.value = '';
+        unitWeightInput.placeholder = '查询中...';
+    }
+    if (fetchBtn) {
+        fetchBtn.disabled = true;
+        fetchBtn.textContent = '查询中...';
+    }
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/parts/weight/${encodeURIComponent(cleanPartNum)}`);
+        const data = await response.json();
+
+        if (data.weight !== null && data.weight !== undefined && data.weight > 0) {
+            if (unitWeightInput) {
+                unitWeightInput.value = data.weight;
+                unitWeightInput.placeholder = '克';
+            }
+            if (messageEl) {
+                messageEl.style.color = '#27ae60';
+                messageEl.textContent = `获取成功：${cleanPartNum} = ${data.weight}g`;
+            }
+        } else {
+            if (messageEl) {
+                messageEl.style.color = '#e74c3c';
+                messageEl.textContent = data.error || `未找到 ${cleanPartNum} 的重量数据，可手动输入单个重量后计算`;
+            }
+            // 允许手动输入单个重量作为回退
+            if (unitWeightInput) {
+                unitWeightInput.readOnly = false;
+                unitWeightInput.placeholder = '获取失败，可手动输入（克）';
+            }
+        }
+    } catch (error) {
+        if (messageEl) {
+            messageEl.style.color = '#e74c3c';
+            messageEl.textContent = `查询失败：${error.message}，可手动输入单个重量后计算`;
+        }
+        if (unitWeightInput) {
+            unitWeightInput.readOnly = false;
+            unitWeightInput.placeholder = '获取失败，可手动输入（克）';
+        }
+    } finally {
+        if (fetchBtn) {
+            fetchBtn.disabled = false;
+            fetchBtn.textContent = '获取重量';
+        }
+    }
+}
+
+// 根据总重量和单个重量计算数量，并填入添加零件页面的数量输入框
+function calculateWeightQuantity() {
+    const unitWeightInput = document.getElementById('weight-calc-unit-weight');
+    const totalWeightInput = document.getElementById('weight-calc-total-weight');
+    const messageEl = document.getElementById('weight-calc-message');
+
+    const unitWeight = parseFloat(unitWeightInput ? unitWeightInput.value : '');
+    const totalWeight = parseFloat(totalWeightInput ? totalWeightInput.value : '');
+
+    if (isNaN(totalWeight) || totalWeight <= 0) {
+        if (messageEl) {
+            messageEl.style.color = '#e74c3c';
+            messageEl.textContent = '请输入有效的总重量';
+        }
+        return;
+    }
+
+    if (isNaN(unitWeight) || unitWeight <= 0) {
+        if (messageEl) {
+            messageEl.style.color = '#e74c3c';
+            messageEl.textContent = '请先获取或输入单个零件重量';
+        }
+        return;
+    }
+
+    const quantity = Math.round(totalWeight / unitWeight);
+    const finalQuantity = Math.max(1, quantity);
+
+    // 填入添加零件页面的数量输入框
+    const quantityInput = document.getElementById('new-part-quantity');
+    if (quantityInput) {
+        quantityInput.value = finalQuantity;
+        // 触发 change 事件以便其他逻辑感知
+        quantityInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (messageEl) {
+        messageEl.style.color = '#27ae60';
+        messageEl.textContent = `计算完成：${totalWeight}g ÷ ${unitWeight}g = ${finalQuantity} 个`;
+    }
+
+    // 1.2 秒后关闭弹窗
+    setTimeout(() => {
+        const overlay = document.getElementById('weight-calc-overlay');
+        if (overlay) overlay.remove();
+    }, 1200);
 }
 
 function showPartSelector() {
