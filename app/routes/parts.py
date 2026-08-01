@@ -7,6 +7,7 @@ import urllib.error
 import logging
 from app.database import get_db
 from app.models.part import Part
+from app.models.part_weight import PartWeight
 from app.schemas.part import PartCreate, PartUpdate, Part as PartSchema
 
 router = APIRouter()
@@ -32,6 +33,71 @@ def get_parts(box_id: int = None, db: Session = Depends(get_db)):
     if box_id:
         return db.query(Part).filter(Part.box_id == box_id).all()
     return db.query(Part).all()
+
+@router.get("/weight")
+def get_part_weight_from_bricklink(
+    part_number: str = Query(..., description="零件型号，如3001"),
+    db: Session = Depends(get_db),
+):
+    """根据零件型号查询单个零件重量（克）。
+
+    优先读 Supabase part_weights 缓存；未命中则从 Bricklink 抓取并回写缓存。
+    本地 FastAPI 走本机 IP 抓取（可成功），生产环境依赖缓存。
+
+    端点：GET /api/parts/weight?part_number=3001
+    返回：{"part_number": "3001", "weight": 2.08} 或 {"part_number": "...", "weight": null, "error": "..."}
+    """
+    clean_num = "".join(c for c in part_number if c.isalnum())
+    if not clean_num:
+        raise HTTPException(status_code=400, detail="零件型号无效")
+
+    # 1. 优先读 Supabase 重量缓存
+    cached = db.query(PartWeight).filter(PartWeight.part_num == clean_num).first()
+    if cached and cached.weight:
+        logger.info(f"重量缓存命中: {clean_num} = {cached.weight}g")
+        return {"part_number": clean_num, "weight": cached.weight}
+
+    # 2. 缓存未命中，从 Bricklink 抓取（本机 IP）
+    url = f"https://www.bricklink.com/v2/catalog/catalogitem.page?P={clean_num}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive",
+    }
+
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            logger.info(f"Bricklink 重量查询 (尝试 {attempt}/3): {clean_num}")
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status != 200:
+                    last_error = f"HTTP {resp.status}"
+                    continue
+                data = resp.read()
+                encoding = "utf-8"
+                try:
+                    html = data.decode(encoding)
+                except UnicodeDecodeError:
+                    html = data.decode("latin-1", errors="ignore")
+            weight = _extract_weight_from_html(html)
+            if weight is not None:
+                logger.info(f"Bricklink 重量查询成功: {clean_num} = {weight}g")
+                # 3. 回写 Supabase 缓存（upsert by part_num 主键）
+                db.merge(PartWeight(part_num=clean_num, weight=weight))
+                db.commit()
+                return {"part_number": clean_num, "weight": weight}
+            last_error = "未在页面中找到重量数据"
+        except urllib.error.HTTPError as e:
+            last_error = f"HTTP {e.code}"
+            if e.code == 404:
+                return {"part_number": clean_num, "weight": None, "error": "Bricklink 上未找到该零件"}
+        except Exception as e:
+            last_error = str(e)
+            logger.warning(f"Bricklink 重量查询失败 (尝试 {attempt}): {e}")
+
+    return {"part_number": clean_num, "weight": None, "error": last_error or "查询失败"}
 
 @router.get("/{part_id}", response_model=PartSchema)
 def get_part(part_id: int, db: Session = Depends(get_db)):
@@ -121,51 +187,4 @@ def _extract_weight_from_html(html: str):
     return None
 
 
-@router.get("/weight")
-def get_part_weight_from_bricklink(part_number: str = Query(..., description="零件型号，如3001")):
-    """根据零件型号从 Bricklink 查询单个零件重量（克）。
 
-    端点：GET /api/parts/weight?part_number=3001
-    返回：{"part_number": "3001", "weight": 2.08} 或 {"part_number": "...", "weight": null, "error": "..."}
-    """
-    clean_num = "".join(c for c in part_number if c.isalnum())
-    if not clean_num:
-        raise HTTPException(status_code=400, detail="零件型号无效")
-
-    url = f"https://www.bricklink.com/v2/catalog/catalogitem.page?P={clean_num}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Connection": "keep-alive",
-    }
-
-    last_error = None
-    for attempt in range(1, 4):
-        try:
-            logger.info(f"Bricklink 重量查询 (尝试 {attempt}/3): {clean_num}")
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                if resp.status != 200:
-                    last_error = f"HTTP {resp.status}"
-                    continue
-                data = resp.read()
-                encoding = "utf-8"
-                try:
-                    html = data.decode(encoding)
-                except UnicodeDecodeError:
-                    html = data.decode("latin-1", errors="ignore")
-            weight = _extract_weight_from_html(html)
-            if weight is not None:
-                logger.info(f"Bricklink 重量查询成功: {clean_num} = {weight}g")
-                return {"part_number": clean_num, "weight": weight}
-            last_error = "未在页面中找到重量数据"
-        except urllib.error.HTTPError as e:
-            last_error = f"HTTP {e.code}"
-            if e.code == 404:
-                return {"part_number": clean_num, "weight": None, "error": "Bricklink 上未找到该零件"}
-        except Exception as e:
-            last_error = str(e)
-            logger.warning(f"Bricklink 重量查询失败 (尝试 {attempt}): {e}")
-
-    return {"part_number": clean_num, "weight": None, "error": last_error or "查询失败"}

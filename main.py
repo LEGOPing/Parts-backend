@@ -21,6 +21,7 @@ from app.backup import auto_backup
 from app.models.repository import Repository
 from app.models.box import Box
 from app.models.part import Part
+from app.models.part_weight import PartWeight
 
 logger.info("Creating database tables...")
 try:
