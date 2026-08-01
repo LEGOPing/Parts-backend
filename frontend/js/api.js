@@ -390,7 +390,7 @@ async function getBoxes(repoId) {
             select: 'id,box_number,name,repository_id',
             order: 'box_number'
         };
-        if (repoId) {
+        if (repoId != null) {
             options.filters = { repository_id: repoId };
         }
         return await supabaseRequest('boxes', options);
@@ -465,7 +465,7 @@ async function getParts(boxId) {
             select: 'id,part_num,name,color_id,is_new,quantity,box_id',
             order: 'part_num'
         };
-        if (boxId) {
+        if (boxId != null) {
             options.filters = { box_id: boxId };
         }
         return await supabaseRequest('parts', options);
