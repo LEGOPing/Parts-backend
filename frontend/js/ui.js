@@ -1293,6 +1293,101 @@ function filterColors(searchText) {
 
 
 
+// 搜索页颜色选择器（参照添加零件的颜色选择方法）
+function showSearchColorPicker() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content color-picker-modal';
+
+    const partNum = document.getElementById('search-part-num').value.trim();
+    const title = partNum ? `选择颜色 (${partNum})` : '选择颜色';
+
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">${title}</span>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="color-search-bar">
+                <input type="text" id="color-search-input" placeholder="搜索颜色名称或ID..." />
+            </div>
+            <div class="color-grid" id="color-grid">
+                <div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">加载颜色中...</div>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    loadSearchColorGrid(partNum);
+
+    document.getElementById('color-search-input').addEventListener('input', function(e) {
+        filterColors(e.target.value);
+    });
+}
+
+async function loadSearchColorGrid(partNum) {
+    const grid = document.getElementById('color-grid');
+    let colors = [];
+
+    // 若有型号，先按零件可用颜色加载
+    if (partNum) {
+        const partColors = await getPartColors(partNum);
+        if (partColors && partColors.length > 0) {
+            const colorIds = [...new Set(partColors.map(pc => pc.color_id))];
+            for (const colorId of colorIds) {
+                const colorInfo = await getColorById(colorId);
+                if (colorInfo) colors.push(colorInfo);
+            }
+        }
+    }
+
+    // 若无型号或该型号无颜色记录，加载全部颜色
+    if (colors.length === 0) {
+        colors = await getAllColors();
+    }
+
+    if (!colors || colors.length === 0) {
+        grid.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">未找到颜色信息<br>请直接输入颜色ID</div>';
+        return;
+    }
+
+    grid.innerHTML = '';
+
+    colors.forEach(color => {
+        const colorCard = document.createElement('div');
+        colorCard.className = 'color-card';
+        colorCard.dataset.id = color.id;
+
+        const rgbValue = color.rgb && color.rgb.startsWith('#') ? color.rgb : '#' + (color.rgb || 'FFFFFF');
+        colorCard.style.backgroundColor = rgbValue;
+
+        const hex = rgbValue.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        const textColor = brightness > 128 ? '#000' : '#fff';
+
+        colorCard.innerHTML = `
+            <div class="color-card-id" style="color: ${textColor}">${color.id}</div>
+            <div class="color-card-name" style="color: ${textColor}">${color.name}</div>
+        `;
+
+        colorCard.addEventListener('click', (e) => {
+            document.getElementById('search-color-id').value = color.id;
+            e.target.closest('.modal-overlay').remove();
+        });
+
+        grid.appendChild(colorCard);
+    });
+}
+
 async function handleAdvancedSearch() {
     const params = {
         part_num: document.getElementById('search-part-num').value,
