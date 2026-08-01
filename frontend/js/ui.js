@@ -1314,38 +1314,93 @@ function resetSearchFilters() {
     document.getElementById('search-results').innerHTML = '';
 }
 
-function renderSearchResults(parts) {
+async function renderSearchResults(parts) {
     const results = document.getElementById('search-results');
     results.innerHTML = '';
-    
+
     if (parts.length === 0) {
         results.innerHTML = '<div class="no-search-results"><p>没有找到匹配的零件</p></div>';
         return;
     }
-    
+
+    // 一次性获取所有盒子、仓库、颜色信息，构建查找映射
+    const [boxes, repos, colors] = await Promise.all([
+        getBoxes(null),
+        getRepositories(),
+        getAllColors()
+    ]);
+
+    const boxMap = {};
+    (boxes || []).forEach(b => { boxMap[b.id] = b; });
+    const repoMap = {};
+    (repos || []).forEach(r => { repoMap[r.id] = r; });
+    const colorMap = {};
+    (colors || []).forEach(c => { colorMap[c.id] = c; });
+
     parts.forEach(part => {
-        const item = document.createElement('div');
-        item.className = 'search-result-item';
-        
-        getColorName(part.color_id).then(colorName => {
-            item.innerHTML = `
-                <div class="search-result-num">${part.part_num}</div>
-                <div class="search-result-info">
-                    <div class="search-result-name">${part.name}</div>
-                    <div class="search-result-meta">
-                        <span class="search-result-color">${colorName || '未知颜色'}</span>
-                        <span class="search-result-status ${part.is_new ? 'new' : 'used'}">${part.is_new ? '新' : '旧'}</span>
-                    </div>
+        const card = document.createElement('div');
+        card.className = 'search-result-card';
+
+        const color = colorMap[part.color_id];
+        const colorName = color ? color.name : '未知颜色';
+
+        // 仓库与盒子名称
+        const box = boxMap[part.box_id];
+        const repo = box ? repoMap[box.repository_id] : null;
+        const repoName = repo ? repo.name : '未知仓库';
+        const boxName = box ? box.name : '未知盒子';
+
+        // 数量颜色：少于10红色，10-50橙色，50以上绿色
+        const qty = part.quantity;
+        let qtyClass = 'qty-red';
+        if (qty >= 50) qtyClass = 'qty-green';
+        else if (qty >= 10) qtyClass = 'qty-orange';
+
+        card.innerHTML = `
+            <div class="src-left">
+                <div class="src-image">
+                    <div class="src-img-loading">加载中...</div>
                 </div>
-                <div class="search-result-quantity">${part.quantity}</div>
-            `;
+                <div class="src-part-num">${part.part_num}</div>
+            </div>
+            <div class="src-right">
+                <div class="src-row src-row1">
+                    <span class="src-label">名称：</span>
+                    <span class="src-name" title="${part.name || ''}">${part.name || ''}</span>
+                </div>
+                <div class="src-row src-row2">
+                    <div class="src-color-wrap">
+                        <span class="src-label">颜色：</span>
+                        <span class="src-color-id">${part.color_id}</span>
+                        <span class="src-color-name">${colorName}</span>
+                    </div>
+                    <span class="src-status ${part.is_new ? 'new' : 'used'}" title="${part.is_new ? '新品' : '旧品'}"></span>
+                </div>
+                <div class="src-row src-row3">
+                    <span class="src-label">仓库：</span><span class="src-repo">${repoName}</span>
+                    <span class="src-label">盒子：</span><span class="src-box">${boxName}</span>
+                    <span class="src-qty-wrap">
+                        <span class="src-label">数量：</span><span class="src-qty ${qtyClass}">${qty}</span>
+                    </span>
+                </div>
+            </div>
+        `;
+
+        // 异步加载图片
+        getPartImageUrl(part.part_num, part.color_id).then(imgUrl => {
+            const imageContainer = card.querySelector('.src-image');
+            if (imgUrl) {
+                imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name || ''}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=src-no-image>暂无</div>'">`;
+            } else {
+                imageContainer.innerHTML = '<div class="src-no-image">暂无</div>';
+            }
         });
-        
-        item.addEventListener('click', () => {
+
+        card.addEventListener('click', () => {
             showPartDetail(part);
         });
-        
-        results.appendChild(item);
+
+        results.appendChild(card);
     });
 }
 
