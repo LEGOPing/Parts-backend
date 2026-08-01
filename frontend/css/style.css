@@ -807,8 +807,8 @@ body {
 .quantity-edit-modal {
     background: white;
     border-radius: 12px;
-    width: min(92vw, 320px);
-    height: min(92vw, 320px);
+    width: min(92vw, 280px);
+    height: 168px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -868,15 +868,15 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
-/* 第三行：圆形加减按钮，直径46px，间距46px */
+/* 第三行：圆形加减按钮，直径36px，间距46px */
 .qe-row3 {
     flex: 1 1 0;
     gap: 46px;
 }
 
 .qe-circle-btn {
-    width: 46px;
-    height: 46px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: none;
     color: white;
