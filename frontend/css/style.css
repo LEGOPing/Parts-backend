@@ -1362,6 +1362,14 @@ body {
     justify-content: space-between;
 }
 
+/* 第三/四/五行：均衡间距（等分剩余空间），内容下对齐使状态图标与型号文字底部对齐 */
+.pd-model-row,
+.pd-name-row,
+.pd-color-row {
+    flex: 1 1 0;
+    align-items: flex-end;
+}
+
 .pd-color-left {
     display: flex;
     align-items: center;
@@ -1405,7 +1413,6 @@ body {
 /* 第六行：按钮 */
 .pd-actions {
     justify-content: space-between;
-    margin-top: auto;
 }
 
 .pd-btn-group {
