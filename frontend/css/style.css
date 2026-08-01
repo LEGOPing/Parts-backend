@@ -1245,9 +1245,9 @@ body {
 
 /* ============ 零件详情弹窗（正方形 1:1） ============ */
 .part-detail-modal {
-    width: min(92vw, 360px);
-    height: min(92vw, 360px);
-    max-width: 360px;
+    width: min(92vw, 380px);
+    height: min(92vw, 380px);
+    max-width: 380px;
     padding: 12px;
     box-sizing: border-box;
     display: flex;
@@ -1274,16 +1274,16 @@ body {
 
 /* 第二行：图片 */
 .pd-image-row {
-    height: 150px;
+    height: 168px;
     justify-content: center;
     align-items: center;
-    background: #f5f5f5;
+    background: transparent;
     border-radius: 8px;
     overflow: hidden;
 }
 
 .pd-image {
-    max-height: 150px;
+    max-height: 168px;
     max-width: 100%;
     object-fit: contain;
 }
@@ -1301,6 +1301,7 @@ body {
 .pd-left {
     color: #333;
     font-size: 14px;
+    font-weight: 700;
 }
 
 .pd-model {
@@ -1337,6 +1338,7 @@ body {
 .pd-label {
     color: #333;
     font-size: 14px;
+    font-weight: 700;
     flex-shrink: 0;
 }
 
@@ -1390,6 +1392,10 @@ body {
 .pd-qty-val {
     font-size: 14px;
     font-weight: bold;
+    display: inline-block;
+    min-width: 5ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
 .qty-red { color: #f44336; }
