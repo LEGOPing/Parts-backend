@@ -1208,7 +1208,7 @@ async function fetchPartWeightForCalculator() {
 
     if (messageEl) {
         messageEl.style.color = '#7f8c8d';
-        messageEl.textContent = `正在通过 CORS 代理从 Bricklink 查询 ${cleanPartNum} 的重量...`;
+        messageEl.textContent = `正在查询 ${cleanPartNum} 的重量...`;
     }
     if (unitWeightInput) {
         unitWeightInput.value = '';
