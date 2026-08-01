@@ -671,6 +671,36 @@ body {
     margin-bottom: 5px;
 }
 
+/* 颜色ID筛选组的标题行：标签左对齐 + 选色按钮右对齐 */
+.filter-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.filter-group-header label {
+    margin-bottom: 0;
+}
+
+/* 选色按钮：高度18px，右边与输入框右边线对齐 */
+.btn-color-pick {
+    height: 18px;
+    padding: 0 8px;
+    border: 1px solid var(--secondary-color);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--secondary-color);
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.btn-color-pick:active {
+    background: var(--secondary-color);
+    color: #fff;
+}
+
 .filter-group input, .filter-group select {
     width: 100%;
     padding: 8px;
