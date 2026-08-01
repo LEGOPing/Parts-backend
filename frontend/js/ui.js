@@ -1179,7 +1179,7 @@ function showWeightCalculator() {
     });
 }
 
-// 从后端查询 Bricklink 零件重量
+// 从 Bricklink 查询零件重量（通过 CORS 代理，无需后端）
 async function fetchPartWeightForCalculator() {
     const partNumInput = document.getElementById('weight-calc-part-num');
     const unitWeightInput = document.getElementById('weight-calc-unit-weight');
@@ -1197,7 +1197,6 @@ async function fetchPartWeightForCalculator() {
         return;
     }
 
-    // 清理零件型号：只保留字母和数字
     const cleanPartNum = partNum.replace(/[^a-zA-Z0-9]/g, '');
     if (!cleanPartNum) {
         if (messageEl) {
@@ -1209,7 +1208,7 @@ async function fetchPartWeightForCalculator() {
 
     if (messageEl) {
         messageEl.style.color = '#7f8c8d';
-        messageEl.textContent = `正在从 Bricklink 查询 ${cleanPartNum} 的重量...`;
+        messageEl.textContent = `正在通过 CORS 代理从 Bricklink 查询 ${cleanPartNum} 的重量...`;
     }
     if (unitWeightInput) {
         unitWeightInput.value = '';
@@ -1221,28 +1220,7 @@ async function fetchPartWeightForCalculator() {
     }
 
     try {
-        const url = `${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanPartNum)}`;
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            let errMsg = `请求失败 (HTTP ${response.status})`;
-            try {
-                const errData = await response.json();
-                if (errData && errData.detail) {
-                    errMsg = errData.detail;
-                } else if (errData && errData.error) {
-                    errMsg = errData.error;
-                }
-            } catch (_) {
-                // 响应不是 JSON，使用默认错误信息
-                if (response.status === 404) {
-                    errMsg = '后端接口未部署，请联系管理员更新';
-                }
-            }
-            throw new Error(errMsg);
-        }
-
-        const data = await response.json();
+        const data = await fetchBricklinkPartWeight(cleanPartNum);
 
         if (data.weight !== null && data.weight !== undefined && data.weight > 0) {
             if (unitWeightInput) {
@@ -1266,11 +1244,7 @@ async function fetchPartWeightForCalculator() {
     } catch (error) {
         if (messageEl) {
             messageEl.style.color = '#e74c3c';
-            let msg = error.message || '未知错误';
-            if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
-                msg = '网络连接失败，请检查后端服务是否正常';
-            }
-            messageEl.textContent = `查询失败：${msg}，可手动输入单个重量后计算`;
+            messageEl.textContent = `查询失败：${error.message}，可手动输入单个重量后计算`;
         }
         if (unitWeightInput) {
             unitWeightInput.readOnly = false;
@@ -2278,13 +2252,9 @@ async function initializeDatabase() {
             try { await deleteRepository(repo.id); } catch (e) {}
         }
         
-        // 重置所有自增序列
+        // 重置所有自增序列（通过 Supabase RPC，无需 CloudBase 后端）
         try {
-            await executeSQL(`
-                ALTER SEQUENCE repositories_id_seq RESTART WITH 0;
-                ALTER SEQUENCE boxes_id_seq RESTART WITH 0;
-                ALTER SEQUENCE parts_id_seq RESTART WITH 0;
-            `);
+            await resetSequencesViaSupabase();
             console.log('序列已重置');
         } catch (e) {
             console.warn('重置序列失败（ID可能不从0开始）:', e.message);

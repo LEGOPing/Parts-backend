@@ -84,3 +84,20 @@ INSERT INTO colors (color_name, rgb, bricklink_id) VALUES
     ('金色', '#D4B16A', 212),
     ('银色', '#A0A5A9', 199)
 ON CONFLICT DO NOTHING;
+
+-- ============================================
+-- 重置自增序列函数（供前端 RPC 调用，替代 CloudBase 后端）
+-- SECURITY DEFINER: 以函数所有者(postgres)身份执行，使 anon key 也能调用
+-- ============================================
+CREATE OR REPLACE FUNCTION reset_sequences()
+RETURNS void AS $$
+BEGIN
+    ALTER SEQUENCE repositories_id_seq RESTART WITH 1;
+    ALTER SEQUENCE boxes_id_seq RESTART WITH 1;
+    ALTER SEQUENCE parts_id_seq RESTART WITH 1;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 允许 anon 和 authenticated 角色调用
+GRANT EXECUTE ON FUNCTION reset_sequences() TO anon;
+GRANT EXECUTE ON FUNCTION reset_sequences() TO authenticated;
