@@ -1242,3 +1242,233 @@ body {
 .color-card:active {
     transform: scale(0.95);
 }
+
+/* ============ 零件详情弹窗（正方形 1:1） ============ */
+.part-detail-modal {
+    width: min(92vw, 360px);
+    height: min(92vw, 360px);
+    max-width: 360px;
+    padding: 12px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.pd-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    flex-shrink: 0;
+}
+
+/* 第一行：标题 */
+.pd-title {
+    justify-content: center;
+    font-size: 23px;
+    font-weight: 600;
+    color: #34495e;
+    line-height: 1.3;
+}
+
+/* 第二行：图片 */
+.pd-image-row {
+    height: 150px;
+    justify-content: center;
+    align-items: center;
+    background: #f5f5f5;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.pd-image {
+    max-height: 150px;
+    max-width: 100%;
+    object-fit: contain;
+}
+
+.pd-no-image {
+    color: #999;
+    font-size: 14px;
+}
+
+/* 第三行：型号 + 新旧状态 */
+.pd-model-row {
+    justify-content: space-between;
+}
+
+.pd-left {
+    color: #333;
+    font-size: 14px;
+}
+
+.pd-model {
+    font-weight: 600;
+}
+
+/* 圆形新旧图标 */
+.pd-status {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.pd-status-new {
+    background: #4CAF50;
+}
+
+.pd-status-used {
+    background: #9E9E9E;
+}
+
+/* 第四行：名称 */
+.pd-name-row {
+    overflow: hidden;
+}
+
+.pd-label {
+    color: #333;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.pd-scroll {
+    overflow-x: auto;
+    white-space: nowrap;
+    color: #000;
+    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.pd-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* 第五行：颜色 + 数量 */
+.pd-color-row {
+    justify-content: space-between;
+}
+
+.pd-color-left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.pd-color-id {
+    color: #2196F3;
+    font-size: 14px;
+    font-weight: 600;
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.pd-color-name {
+    color: #000;
+}
+
+.pd-qty {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.pd-qty-val {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.qty-red { color: #f44336; }
+.qty-orange { color: #FF9800; }
+.qty-green { color: #4CAF50; }
+
+/* 第六行：按钮 */
+.pd-actions {
+    justify-content: space-between;
+    margin-top: auto;
+}
+
+.pd-btn-group {
+    display: flex;
+    gap: 6px;
+}
+
+.modal-content .pd-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #fff;
+    line-height: 1;
+}
+
+.pd-btn-close {
+    background: #f44336;
+}
+
+.pd-btn-delete {
+    background: #2196F3;
+}
+
+.pd-btn-edit {
+    background: #FF9800;
+}
+
+/* 删除密码确认弹窗 */
+.pd-password-modal {
+    width: min(92vw, 320px);
+    padding: 14px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pd-password-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pd-password-hint {
+    margin: 0;
+    font-size: 14px;
+    color: #555;
+    text-align: center;
+}
+
+.pd-password-input {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 16px;
+    text-align: center;
+    letter-spacing: 2px;
+}
+
+.pd-password-input:focus {
+    border-color: #2196F3;
+    outline: none;
+}
+
+.pd-password-error {
+    color: #f44336;
+    font-size: 12px;
+    text-align: center;
+    min-height: 16px;
+}

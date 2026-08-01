@@ -1336,53 +1336,83 @@ async function showPartDetail(part) {
     const sheet = document.createElement('div');
     sheet.className = 'modal-content part-detail-modal';
 
-    const colorInfo = await getColorInfo(part.color_id);
-    const colorName = colorInfo ? colorInfo.name : '未知颜色';
-    const colorRgb = colorInfo ? colorInfo.rgb : '#ccc';
+    // 从RB数据库获取零件名称
+    let rbName = part.name || '';
+    try {
+        const rbPart = await getPartByNum(part.part_num);
+        if (rbPart && rbPart.name) {
+            rbName = rbPart.name;
+        }
+    } catch (e) {
+        console.warn('获取RB零件名称失败:', e);
+    }
+
+    // 从RB数据库获取颜色名称（回退到本地颜色）
+    let rbColorName = '未知颜色';
+    try {
+        const rbColor = await getColorById(part.color_id);
+        if (rbColor && rbColor.name) {
+            rbColorName = rbColor.name;
+        } else {
+            const colorInfo = await getColorInfo(part.color_id);
+            if (colorInfo && colorInfo.name) {
+                rbColorName = colorInfo.name;
+            }
+        }
+    } catch (e) {
+        console.warn('获取RB颜色名称失败:', e);
+    }
+
+    // 从RB数据库获取图片URL
+    let imgUrl = null;
+    try {
+        imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+    } catch (e) {
+        console.warn('获取RB图片URL失败:', e);
+    }
+
+    // 数量颜色：少于10红色，10-50橙色，50以上绿色
+    const qty = part.quantity;
+    let qtyColorClass = 'qty-red';
+    if (qty >= 50) {
+        qtyColorClass = 'qty-green';
+    } else if (qty >= 10) {
+        qtyColorClass = 'qty-orange';
+    }
+
+    const isNew = part.is_new;
 
     sheet.innerHTML = `
-        <div class="modal-header">
-            <span class="modal-title">零件详情</span>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+        <div class="pd-row pd-title">零件详情</div>
+        <div class="pd-row pd-image-row">
+            ${imgUrl
+                ? `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>暂无图片</div>'">`
+                : `<div class="pd-no-image">暂无图片</div>`}
+        </div>
+        <div class="pd-row pd-model-row">
+            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span></span>
+            <span class="pd-status ${isNew ? 'pd-status-new' : 'pd-status-used'}">${isNew ? '新' : '旧'}</span>
+        </div>
+        <div class="pd-row pd-name-row">
+            <span class="pd-label">名称：</span>
+            <span class="pd-scroll">${rbName}</span>
+        </div>
+        <div class="pd-row pd-color-row">
+            <div class="pd-color-left">
+                <span class="pd-label">颜色：</span>
+                <span class="pd-color-id">${part.color_id}</span>
+                <span class="pd-scroll pd-color-name">${rbColorName}</span>
+            </div>
+            <div class="pd-qty">
+                <span class="pd-label">数量：</span>
+                <span class="pd-qty-val ${qtyColorClass}">${qty}</span>
             </div>
         </div>
-        <div class="modal-body">
-            <div class="part-detail-container">
-                <div class="part-detail-image">
-                    <img src="https://cdn.rebrickable.com/media/parts/${part.part_num}_${part.color_id}.jpg" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">
-                </div>
-                <div class="part-detail-info">
-                    <div class="part-detail-row">
-                        <span class="part-detail-label">型号</span>
-                        <span class="part-detail-value">${part.part_num}</span>
-                    </div>
-                    <div class="part-detail-row">
-                        <span class="part-detail-label">名称</span>
-                        <span class="part-detail-value">${part.name}</span>
-                    </div>
-                    <div class="part-detail-row">
-                        <span class="part-detail-label">颜色</span>
-                        <span class="part-detail-value">
-                            <span class="color-preview-small" style="background-color: ${colorRgb};"></span>
-                            ${colorName} (ID: ${part.color_id})
-                        </span>
-                    </div>
-                    <div class="part-detail-row">
-                        <span class="part-detail-label">状态</span>
-                        <span class="part-detail-value">
-                            <span class="status-badge ${part.is_new ? 'new' : 'used'}">${part.is_new ? '新品' : '旧品'}</span>
-                        </span>
-                    </div>
-                    <div class="part-detail-row">
-                        <span class="part-detail-label">数量</span>
-                        <span class="part-detail-value quantity-large">${part.quantity}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="part-detail-actions">
-                <button class="btn-edit-quantity" onclick="editPartQuantityFromDetail('${part.id}', ${part.quantity})">编辑数量</button>
-                <button class="btn-delete-part" onclick="deletePartConfirm('${part.id}')">删除零件</button>
+        <div class="pd-row pd-actions">
+            <button class="pd-btn pd-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            <div class="pd-btn-group">
+                <button class="pd-btn pd-btn-delete" onclick="deletePartConfirm('${part.id}')">删除零件</button>
+                <button class="pd-btn pd-btn-edit" onclick="editPartQuantityFromDetail('${part.id}', ${part.quantity})">编辑数量</button>
             </div>
         </div>
     `;
@@ -1398,13 +1428,67 @@ function editPartQuantityFromDetail(partId, currentQuantity) {
 }
 
 async function deletePartConfirm(partId) {
-    if (!confirm('确定要删除这个零件吗？')) return;
-    
+    // 关闭可能存在的旧密码弹窗
+    const oldPw = document.querySelector('.pd-password-overlay');
+    if (oldPw) oldPw.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active pd-password-overlay';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content pd-password-modal';
+
+    sheet.innerHTML = `
+        <div class="pd-row pd-title">删除确认</div>
+        <div class="pd-password-body">
+            <p class="pd-password-hint">请输入密码以确认删除零件</p>
+            <input type="password" id="pd-delete-password" class="pd-password-input" placeholder="请输入密码" autocomplete="off" />
+            <div class="pd-password-error" id="pd-password-error"></div>
+        </div>
+        <div class="pd-row pd-actions">
+            <button class="pd-btn pd-btn-close" onclick="this.closest('.modal-overlay').remove()">取消</button>
+            <div class="pd-btn-group">
+                <button class="pd-btn pd-btn-delete" onclick="executeDeletePart('${partId}')">确认删除</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    const input = document.getElementById('pd-delete-password');
+    if (input) {
+        input.focus();
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                executeDeletePart(partId);
+            }
+        });
+    }
+}
+
+async function executeDeletePart(partId) {
+    const input = document.getElementById('pd-delete-password');
+    const errorEl = document.getElementById('pd-password-error');
+    if (!input) return;
+
+    const password = input.value;
+    if (password !== '22332468') {
+        if (errorEl) errorEl.textContent = '密码错误，请重新输入';
+        input.value = '';
+        input.focus();
+        return;
+    }
+
     // 确保 partId 为数字
     const numericPartId = parseInt(partId);
-    
+
     const success = await deletePart(numericPartId);
     if (success) {
+        // 关闭密码弹窗
+        const pwOverlay = document.querySelector('.pd-password-overlay');
+        if (pwOverlay) pwOverlay.remove();
         // 关闭详情弹窗
         const overlay = document.querySelector('.modal-overlay.active');
         if (overlay) overlay.remove();
@@ -1413,7 +1497,7 @@ async function deletePartConfirm(partId) {
             await loadParts(selectedBox.id);
         }
     } else {
-        alert('删除零件失败');
+        if (errorEl) errorEl.textContent = '删除零件失败';
     }
 }
 
