@@ -522,8 +522,16 @@ body {
 
 .part-header .part-stats {
     font-size: 14px;
-    color: var(--gray-color);
     margin-bottom: 2px;
+}
+
+.part-header .part-stats #part-count {
+    color: #f44336;
+    font-weight: bold;
+}
+
+.part-header .part-stats .part-stats-unit {
+    color: var(--dark-gray-color);
 }
 
 .repo-name-badge {
@@ -541,6 +549,7 @@ body {
 
 .repo-name-badge .repo-icon {
     font-size: 14px;
+    display: none;
 }
 
 .part-action-buttons {
