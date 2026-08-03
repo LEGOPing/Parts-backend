@@ -724,90 +724,6 @@ function setupLongPress(element, callback) {
     element.addEventListener('touchend', end);
 }
 
-function editPartQuantity(part) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active quantity-edit-overlay';
-
-    const sheet = document.createElement('div');
-    sheet.className = 'quantity-edit-modal';
-
-    let qtyCls = 'qty-red';
-    if (part.quantity >= 50) qtyCls = 'qty-green';
-    else if (part.quantity >= 10) qtyCls = 'qty-orange';
-
-    sheet.innerHTML = `
-        <div class="qe-row qe-row1">
-            <button class="qe-back-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
-            <span class="qe-title">编辑数量</span>
-            <button class="qe-save-btn" onclick="savePartQuantity('${part.id}', this)">保存</button>
-        </div>
-        <div class="qe-row qe-row2">
-            <div class="qe-quantity ${qtyCls}" id="quantity-display">${part.quantity}</div>
-        </div>
-        <div class="qe-row qe-row3">
-            <button class="qe-circle-btn qe-minus-btn" onclick="changeQuantity(-1)">−</button>
-            <button class="qe-circle-btn qe-plus-btn" onclick="changeQuantity(1)">+</button>
-        </div>
-    `;
-
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-
-    window.currentEditQuantity = part.quantity;
-
-    function changeQuantity(delta) {
-        window.currentEditQuantity = Math.max(0, window.currentEditQuantity + delta);
-        const display = document.getElementById('quantity-display');
-        display.textContent = window.currentEditQuantity;
-        display.classList.remove('qty-red', 'qty-orange', 'qty-green');
-        let cls = 'qty-red';
-        if (window.currentEditQuantity >= 50) cls = 'qty-green';
-        else if (window.currentEditQuantity >= 10) cls = 'qty-orange';
-        display.classList.add(cls);
-    }
-
-    window.changeQuantity = changeQuantity;
-}
-
-async function savePartQuantity(partId, btn) {
-    const quantity = window.currentEditQuantity;
-    if (quantity < 0) return;
-
-    const success = await updatePartQuantity(partId, quantity);
-    if (success) {
-        // 仅移除编辑数量弹窗，保留底下的零件详情页
-        btn.closest('.modal-overlay').remove();
-        // 更新零件详情页显示的数量
-        updateDetailQuantityDisplay(quantity);
-        // 更新搜索结果卡片中对应零件的数量
-        updateSearchResultQuantity(partId, quantity);
-    } else {
-        alert('保存失败');
-    }
-}
-
-async function updatePartQuantity(partId, quantity) {
-    const success = await updatePart(partId, { quantity: quantity });
-    if (success && selectedBox) {
-        await loadParts(selectedBox.id);
-    }
-    return success;
-}
-
-// 更新零件详情页中显示的数量与颜色
-function updateDetailQuantityDisplay(quantity) {
-    const detailModal = document.querySelector('.part-detail-modal');
-    if (!detailModal) return;
-    const qtyEl = detailModal.querySelector('.pd-qty-val');
-    if (!qtyEl) return;
-    qtyEl.textContent = quantity;
-    qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
-    let cls = 'qty-red';
-    if (quantity >= 50) cls = 'qty-green';
-    else if (quantity >= 10) cls = 'qty-orange';
-    qtyEl.classList.add(cls);
-}
-
 // 更新搜索结果卡片中对应零件的数量
 function updateSearchResultQuantity(partId, quantity) {
     const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
@@ -1938,7 +1854,6 @@ async function showPartDetail(part) {
     let hasCustomImage = false;
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
-        // 检查是否有自定义图片
         hasCustomImage = !!getCustomImageUrl(part.part_num, part.color_id);
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
@@ -1964,21 +1879,22 @@ async function showPartDetail(part) {
         imageHtml = `<div class="pd-no-image">暂无图片</div>`;
     }
 
-    // 图片操作按钮
-    let imageActionsHtml = '';
-    if (!imgUrl) {
-        imageActionsHtml = `<button class="pd-btn pd-btn-search" style="background:#4CAF50;margin-top:4px;" onclick="addCustomImage('${part.part_num}', ${part.color_id})">添加图片</button>`;
-    } else if (hasCustomImage) {
-        imageActionsHtml = `<button class="pd-btn pd-btn-edit" style="margin-top:4px;" onclick="manageCustomImage('${part.part_num}', ${part.color_id})">管理图片</button>`;
-    }
+    // 图片变更按钮文本
+    const imgBtnText = imgUrl ? (hasCustomImage ? '管理图片' : '变更图片') : '添加图片';
 
     sheet.innerHTML = `
-        <div class="pd-row pd-title">零件详情</div>
-        <div class="pd-row pd-image-row">
-            ${imageHtml}
+        <div class="pd-row pd-title-row">
+            <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            <span class="pd-title">零件详情</span>
+            <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
         </div>
-        <div class="pd-row" style="justify-content:center;flex-shrink:0;">
-            ${imageActionsHtml}
+        <div class="pd-row pd-image-row" id="pd-image-swipe">
+            <div class="pd-image-content">
+                ${imageHtml}
+            </div>
+            <div class="pd-image-action">
+                <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
+            </div>
         </div>
         <div class="pd-row pd-model-row">
             <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span></span>
@@ -1996,27 +1912,138 @@ async function showPartDetail(part) {
             </div>
             <div class="pd-qty">
                 <span class="pd-label">数量：</span>
-                <span class="pd-qty-val ${qtyColorClass}">${qty}</span>
+                <span class="pd-qty-val ${qtyColorClass}" id="pd-qty-val">${qty}</span>
             </div>
         </div>
         <div class="pd-row pd-actions">
-            <button class="pd-btn pd-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
-            <button class="pd-btn pd-btn-search" onclick="searchFromDetail('${part.part_num}', ${part.color_id}, '${safePartName}')">搜索</button>
-            <div class="pd-btn-group">
-                <button class="pd-btn pd-btn-delete" onclick="deletePartConfirm('${part.id}')">删除零件</button>
-                <button class="pd-btn pd-btn-edit" onclick="editPartQuantityFromDetail('${part.id}', ${part.quantity})">编辑数量</button>
+            <div class="pd-actions-left">
+                <button class="pd-btn pd-btn-search" onclick="searchFromDetail('${part.part_num}', ${part.color_id}, '${safePartName}')">搜索</button>
+                <button class="pd-btn pd-btn-save" id="pd-save-btn" data-part-id="${part.id}">保存</button>
+            </div>
+            <div class="pd-actions-right">
+                <button class="pd-circle-btn pd-minus-btn" id="pd-minus-btn">−</button>
+                <button class="pd-circle-btn pd-plus-btn" id="pd-plus-btn">+</button>
             </div>
         </div>
     `;
 
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
+
+    // 初始化数量调整
+    let currentQty = qty;
+    const qtyEl = sheet.querySelector('#pd-qty-val');
+    const saveBtn = sheet.querySelector('#pd-save-btn');
+    const partId = part.id;
+
+    function updateQtyDisplay() {
+        qtyEl.textContent = currentQty;
+        qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
+        let cls = 'qty-red';
+        if (currentQty >= 50) cls = 'qty-green';
+        else if (currentQty >= 10) cls = 'qty-orange';
+        qtyEl.classList.add(cls);
+    }
+
+    sheet.querySelector('#pd-minus-btn').addEventListener('click', () => {
+        currentQty = Math.max(0, currentQty - 1);
+        updateQtyDisplay();
+    });
+
+    sheet.querySelector('#pd-plus-btn').addEventListener('click', () => {
+        currentQty = currentQty + 1;
+        updateQtyDisplay();
+    });
+
+    // 保存按钮
+    saveBtn.addEventListener('click', async () => {
+        const success = await updatePart(partId, { quantity: currentQty });
+        if (success) {
+            overlay.remove();
+            if (selectedBox) {
+                await loadParts(selectedBox.id);
+            }
+            updateSearchResultQuantity(partId, currentQty);
+        } else {
+            alert('保存失败');
+        }
+    });
+
+    // 删除按钮长按2秒
+    const delBtn = sheet.querySelector('#pd-del-btn');
+    let delTimer = null;
+    const startDelLongPress = (e) => {
+        e.preventDefault();
+        delTimer = setTimeout(() => {
+            deletePartConfirm(partId);
+        }, 2000);
+    };
+    const cancelDelLongPress = () => {
+        if (delTimer) {
+            clearTimeout(delTimer);
+            delTimer = null;
+        }
+    };
+    delBtn.addEventListener('mousedown', startDelLongPress);
+    delBtn.addEventListener('mouseup', cancelDelLongPress);
+    delBtn.addEventListener('mouseleave', cancelDelLongPress);
+    delBtn.addEventListener('touchstart', startDelLongPress, { passive: false });
+    delBtn.addEventListener('touchend', cancelDelLongPress);
+
+    // 图片左滑显示变更按钮
+    const imageSwipe = sheet.querySelector('#pd-image-swipe');
+    const imageContent = imageSwipe.querySelector('.pd-image-content');
+    const imageAction = imageSwipe.querySelector('.pd-image-action');
+    const actionWidth = 90;
+    let startX = 0, currentX = 0, isSwiping = false, isOpen = false;
+
+    imageContent.style.transition = 'transform 0.25s ease';
+    imageAction.style.transition = 'transform 0.25s ease';
+
+    imageSwipe.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isSwiping = true;
+        imageContent.style.transition = 'none';
+        imageAction.style.transition = 'none';
+    }, { passive: true });
+
+    imageSwipe.addEventListener('touchmove', (e) => {
+        if (!isSwiping) return;
+        const dx = e.touches[0].clientX - startX;
+        let baseX = isOpen ? -actionWidth : 0;
+        currentX = Math.max(-actionWidth, Math.min(0, baseX + dx));
+        imageContent.style.transform = `translateX(${currentX}px)`;
+        imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
+    }, { passive: true });
+
+    imageSwipe.addEventListener('touchend', () => {
+        if (!isSwiping) return;
+        isSwiping = false;
+        imageContent.style.transition = 'transform 0.25s ease';
+        imageAction.style.transition = 'transform 0.25s ease';
+        if (currentX < -actionWidth / 2) {
+            isOpen = true;
+            imageContent.style.transform = `translateX(-${actionWidth}px)`;
+            imageAction.style.transform = `translateX(0)`;
+        } else {
+            isOpen = false;
+            imageContent.style.transform = 'translateX(0)';
+            imageAction.style.transform = `translateX(${actionWidth}px)`;
+        }
+    }, { passive: true });
+
+    // 初始化变更按钮位置（隐藏在右侧）
+    imageAction.style.transform = `translateX(${actionWidth}px)`;
 }
 
-function editPartQuantityFromDetail(partId, currentQuantity) {
-    // 不关闭零件详情页，让编辑数量弹窗浮于其上
-    const part = { id: partId, quantity: currentQuantity };
-    editPartQuantity(part);
+// 图片变更入口（根据是否有图片选择不同操作）
+function changePartImage(partNum, colorId) {
+    const hasCustom = !!getCustomImageUrl(partNum, colorId);
+    if (hasCustom) {
+        manageCustomImage(partNum, colorId);
+    } else {
+        addCustomImage(partNum, colorId);
+    }
 }
 
 async function searchFromDetail(partNum, colorId, partName) {
