@@ -1030,16 +1030,9 @@ function initAddPartSuggestions() {
             return;
         }
         
-        // 延迟1秒触发查询
+        // 延迟触发联想查询（不自动选择）
         partNumTimer = setTimeout(async () => {
             await showPartNumSuggestions(value);
-            
-            // 如果是精确匹配，自动填充信息
-            const part = await getPartByNum(value);
-            if (part) {
-                partNameInput.value = part.name || '';
-                updatePartInfoPreview();
-            }
         }, 800);
     });
     

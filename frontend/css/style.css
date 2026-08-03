@@ -1279,7 +1279,6 @@ body {
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
-    overflow: hidden;
 }
 
 .form-row {
@@ -1438,13 +1437,17 @@ body {
 
 /* 零件名称提示 */
 .part-name-hint {
+    position: absolute;
+    top: 38px;
+    left: 0;
+    right: 0;
     font-size: 12px;
     color: #888;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    display: block;
-    margin-top: 2px;
+    pointer-events: none;
+    z-index: 1;
 }
 
 /* 状态按钮 */
@@ -1516,7 +1519,7 @@ body {
 }
 
 /* 称重计算按钮：紧贴零件数量输入框右侧 */
-.btn-weight-calc {
+.add-part-modal .btn-weight-calc {
     background: #27ae60;
     color: white;
     border: none;
@@ -1531,7 +1534,7 @@ body {
     flex-shrink: 0;
 }
 
-.btn-weight-calc:hover {
+.add-part-modal .btn-weight-calc:hover {
     background: #229954;
 }
 
