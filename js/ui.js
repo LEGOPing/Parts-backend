@@ -709,8 +709,8 @@ function showAddPartSheet() {
                     <div class="part-number-input-wrapper">
                         <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" />
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
+                        <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
-                    <span class="part-name-hint" id="part-name-hint"></span>
                 </div>
             </div>
             <div class="form-section">
@@ -735,9 +735,9 @@ function showAddPartSheet() {
                         <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
                     </div>
                 </div>
-                <div class="form-row status-save-row">
+                <div class="quantity-weight-row">
+                    <label class="form-label">零件状态：</label>
                     <div class="status-group">
-                        <label class="form-label">零件状态：</label>
                         <button id="status-new" class="status-btn active" onclick="togglePartNewStatus(true)">新品</button>
                         <button id="status-used" class="status-btn" onclick="togglePartNewStatus(false)">旧品</button>
                     </div>
