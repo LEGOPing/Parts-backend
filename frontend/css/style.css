@@ -2083,3 +2083,270 @@ body {
     text-align: center;
     min-height: 16px;
 }
+
+/* ============ 批量导入弹窗 ============ */
+.csv-importer-modal {
+    width: 92%;
+    max-width: 500px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+/* 第一行：标题居中 + 返回按钮 */
+.csv-imp-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.csv-imp-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #34495e;
+    text-align: center;
+}
+
+.csv-imp-btn-back {
+    background: #FF9800;
+    color: white;
+    height: 36px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* 第二行：格式模版 + 导入文件 */
+.csv-imp-toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.csv-imp-btn-template {
+    flex: 1;
+    background: #2196F3;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.csv-imp-btn-import {
+    flex: 1;
+    background: #4CAF50;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* 内容区 */
+.csv-imp-body {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 100px;
+}
+
+.csv-imp-tip {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    padding: 30px 0;
+}
+
+.csv-imp-loading {
+    text-align: center;
+    color: #999;
+    font-size: 14px;
+    padding: 30px 0;
+}
+
+/* 确认表 - 零件卡片列表 */
+.csv-imp-confirm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.csv-imp-card {
+    display: flex;
+    gap: 10px;
+    padding: 8px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.csv-imp-card-img {
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.csv-imp-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.csv-imp-img-loading {
+    font-size: 11px;
+    color: #aaa;
+}
+
+.csv-imp-no-img {
+    font-size: 11px;
+    color: #ccc;
+}
+
+.csv-imp-card-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+}
+
+.csv-imp-card-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.csv-imp-card-label {
+    color: #888;
+    flex-shrink: 0;
+}
+
+.csv-imp-card-value {
+    color: #333;
+    word-break: break-all;
+}
+
+.csv-imp-qty {
+    font-weight: 600;
+    color: #2196F3;
+}
+
+.csv-imp-card-color-chip {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.csv-imp-card-status {
+    margin-left: auto;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.csv-imp-card-status.new {
+    background: #4CAF50;
+    color: white;
+}
+
+.csv-imp-card-status.used {
+    background: #FF9800;
+    color: white;
+}
+
+/* 确认/取消按钮 */
+.csv-imp-confirm-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+.csv-imp-btn-cancel {
+    flex: 1;
+    background: #9E9E9E;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.csv-imp-btn-confirm {
+    flex: 1;
+    background: #4CAF50;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* 导入结果 */
+.csv-imp-success,
+.csv-imp-error {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.csv-imp-success-icon {
+    font-size: 36px;
+    color: #4CAF50;
+    margin-bottom: 8px;
+}
+
+.csv-imp-error-icon {
+    font-size: 36px;
+    color: #f44336;
+    margin-bottom: 8px;
+}
+
+.csv-imp-error-list {
+    text-align: left;
+    max-height: 150px;
+    overflow-y: auto;
+    margin: 8px 0;
+    padding: 8px;
+    background: #fff3e0;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #e65100;
+}
+
+.csv-imp-btn-close {
+    background: #2196F3;
+    color: white;
+    height: 36px;
+    padding: 0 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 12px;
+}

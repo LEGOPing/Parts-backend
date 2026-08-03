@@ -2395,52 +2395,58 @@ function showCSVImporter() {
     sheet.className = 'modal-content csv-importer-modal';
 
     sheet.innerHTML = `
-        <div class="modal-header">
-            <span class="modal-title">批量导入零件</span>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
-            </div>
+        <div class="csv-imp-header">
+            <span class="csv-imp-title">批量导入零件</span>
+            <button class="csv-imp-btn-back" onclick="this.closest('.modal-overlay').remove()">返回</button>
         </div>
-        <div class="modal-body">
-            <div class="csv-importer-container">
-                <div class="csv-upload-area" id="csv-upload-area">
-                    <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
-                    <div class="csv-upload-icon">📁</div>
-                    <div class="csv-upload-text">点击或拖拽CSV文件到此处</div>
-                    <div class="csv-format-hint">支持格式: part_num,name,color_id,quantity,is_new</div>
-                </div>
-                <div class="csv-preview" id="csv-preview" style="display: none;">
-                    <h4>预览数据</h4>
-                    <div class="csv-preview-table" id="csv-preview-table"></div>
-                    <button class="btn-import-csv" onclick="confirmCSVImport()">确认导入</button>
-                </div>
-                <div class="import-status" id="import-status" style="display: none;"></div>
-            </div>
+        <div class="csv-imp-toolbar">
+            <button class="csv-imp-btn-template" onclick="downloadCSVTemplate()">格式模版</button>
+            <button class="csv-imp-btn-import" onclick="document.getElementById('csv-file-input').click()">导入文件</button>
+            <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
+        </div>
+        <div class="csv-imp-body" id="csv-imp-body">
+            <div class="csv-imp-tip">请先下载格式模版，按格式填写后导入</div>
         </div>
     `;
 
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
-    const uploadArea = document.getElementById('csv-upload-area');
     const fileInput = document.getElementById('csv-file-input');
-
-    uploadArea.addEventListener('click', () => fileInput.click());
-    uploadArea.addEventListener('dragover', (e) => e.preventDefault());
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const file = e.dataTransfer.files[0];
-        if (file && file.name.endsWith('.csv')) {
-            processCSVFile(file);
-        }
-    });
-
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
             processCSVFile(file);
         }
     });
+}
+
+// 生成并下载CSV模版
+function downloadCSVTemplate() {
+    const today = new Date();
+    const dateStr = today.getFullYear().toString() +
+        String(today.getMonth() + 1).padStart(2, '0') +
+        String(today.getDate()).padStart(2, '0');
+
+    // 生成序号（基于时间戳的后4位作为序号）
+    const seq = String(Date.now()).slice(-4);
+
+    const fileName = `零件${dateStr}-${seq}.csv`;
+
+    const csvContent = 'part_num,name,color_id,quantity,is_new\n' +
+        '3001,砖块 2x4,1,10,true\n' +
+        '3002,砖块 2x3,4,5,false\n' +
+        '3003,砖块 2x2,0,20,true\n';
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function parseCSVContent(content) {
@@ -2450,7 +2456,7 @@ function parseCSVContent(content) {
     for (let line of lines) {
         line = line.trim();
         if (!line) continue;
-        
+
         const row = parseCSVLine(line);
         rows.push(row);
     }
@@ -2480,11 +2486,11 @@ function parseCSVLine(line) {
 
 async function processCSVFile(file) {
     const reader = new FileReader();
-    
+
     reader.onload = async (e) => {
         const content = e.target.result;
         const rows = parseCSVContent(content);
-        
+
         if (rows.length < 2) {
             alert('CSV文件内容为空或格式不正确');
             return;
@@ -2492,7 +2498,7 @@ async function processCSVFile(file) {
 
         const headers = rows[0];
         const data = rows.slice(1);
-        
+
         const importData = data.map(row => {
             const item = {};
             headers.forEach((header, index) => {
@@ -2501,38 +2507,127 @@ async function processCSVFile(file) {
             return item;
         });
 
-        showCSVPreview(headers, importData);
+        await showImportConfirmation(importData);
     };
 
     reader.readAsText(file);
 }
 
-function showCSVPreview(headers, data) {
-    const preview = document.getElementById('csv-preview');
-    const uploadArea = document.getElementById('csv-upload-area');
-    const table = document.getElementById('csv-preview-table');
+// 显示带图片的确认表
+async function showImportConfirmation(data) {
+    const body = document.getElementById('csv-imp-body');
 
-    uploadArea.style.display = 'none';
-    preview.style.display = 'block';
+    // 显示加载中
+    body.innerHTML = '<div class="csv-imp-loading">正在加载零件信息...</div>';
 
-    let html = '<table><thead><tr>';
-    headers.forEach(h => {
-        html += `<th>${h}</th>`;
-    });
-    html += '</tr></thead><tbody>';
+    // 获取所有颜色信息
+    const colors = await getAllColors();
+    const colorMap = {};
+    (colors || []).forEach(c => { colorMap[c.id] = c; });
 
-    data.forEach(row => {
-        html += '<tr>';
-        headers.forEach(h => {
-            html += `<td>${row[h.trim().toLowerCase()] || ''}</td>`;
+    // 为每个零件匹配名称和图片
+    const enrichedData = [];
+    for (const item of data) {
+        const partNum = item.part_num || '';
+        const colorId = item.color_id || '';
+
+        // 从RB数据库获取零件名称
+        let partName = item.name || '';
+        if (!partName && partNum) {
+            try {
+                const rbPart = await getPartByNum(partNum);
+                if (rbPart && rbPart.name) {
+                    partName = rbPart.name;
+                }
+            } catch (e) {
+                console.warn('获取零件名称失败:', e);
+            }
+        }
+
+        // 获取颜色信息
+        const colorInfo = colorMap[colorId] || colorMap[parseInt(colorId)];
+        const colorName = colorInfo ? colorInfo.name : '未知';
+        const colorRgb = colorInfo && colorInfo.rgb ?
+            (colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + colorInfo.rgb) : '#FFFFFF';
+
+        enrichedData.push({
+            ...item,
+            name: partName,
+            color_name: colorName,
+            color_rgb: colorRgb,
+            part_num: partNum,
+            color_id: colorId
         });
-        html += '</tr>';
+    }
+
+    window.currentCSVData = enrichedData;
+
+    // 渲染确认表
+    let html = '<div class="csv-imp-confirm-list">';
+
+    enrichedData.forEach((item, idx) => {
+        const isNew = item.is_new === 'true' || item.is_new === 'True' || item.is_new === true;
+        const brightness = getColorBrightness(item.color_rgb);
+        const textColor = brightness > 128 ? '#000' : '#fff';
+
+        html += `
+            <div class="csv-imp-card" data-idx="${idx}">
+                <div class="csv-imp-card-img" id="csv-imp-img-${idx}">
+                    <div class="csv-imp-img-loading">加载中</div>
+                </div>
+                <div class="csv-imp-card-info">
+                    <div class="csv-imp-card-row">
+                        <span class="csv-imp-card-label">型号：</span>
+                        <span class="csv-imp-card-value">${item.part_num}</span>
+                    </div>
+                    <div class="csv-imp-card-row">
+                        <span class="csv-imp-card-label">名称：</span>
+                        <span class="csv-imp-card-value">${item.name || '未知'}</span>
+                    </div>
+                    <div class="csv-imp-card-row">
+                        <span class="csv-imp-card-label">颜色：</span>
+                        <span class="csv-imp-card-color-chip" style="background:${item.color_rgb};color:${textColor}">${item.color_name}</span>
+                    </div>
+                    <div class="csv-imp-card-row">
+                        <span class="csv-imp-card-label">数量：</span>
+                        <span class="csv-imp-card-value csv-imp-qty">${item.quantity || 0}</span>
+                        <span class="csv-imp-card-status ${isNew ? 'new' : 'used'}">${isNew ? '新品' : '旧品'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
     });
 
-    html += '</tbody></table>';
-    table.innerHTML = html;
+    html += '</div>';
+    html += '<div class="csv-imp-confirm-actions">';
+    html += '<button class="csv-imp-btn-cancel" onclick="showCSVImporter()">取消</button>';
+    html += '<button class="csv-imp-btn-confirm" onclick="confirmCSVImport()">确认导入</button>';
+    html += '</div>';
 
-    window.currentCSVData = data;
+    body.innerHTML = html;
+
+    // 异步加载每个零件的图片
+    enrichedData.forEach((item, idx) => {
+        getPartImageUrl(item.part_num, item.color_id).then(imgUrl => {
+            const imgContainer = document.getElementById(`csv-imp-img-${idx}`);
+            if (imgContainer) {
+                if (imgUrl) {
+                    imgContainer.innerHTML = `<img src="${imgUrl}" alt="${item.name || ''}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=csv-imp-no-img>暂无</div>'">`;
+                } else {
+                    imgContainer.innerHTML = '<div class="csv-imp-no-img">暂无</div>';
+                }
+            }
+        });
+    });
+}
+
+// 计算颜色亮度
+function getColorBrightness(hex) {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substr(0, 2), 16);
+    const g = parseInt(cleanHex.substr(2, 2), 16);
+    const b = parseInt(cleanHex.substr(4, 2), 16);
+    return (r * 299 + g * 587 + b * 114) / 1000;
 }
 
 async function confirmCSVImport() {
@@ -2543,22 +2638,18 @@ async function confirmCSVImport() {
         box_id: selectedBox.id
     }));
 
-    const status = document.getElementById('import-status');
-    const preview = document.getElementById('csv-preview');
-    
-    preview.style.display = 'none';
-    status.style.display = 'block';
-    status.innerHTML = '<div class="import-loading">正在导入...</div>';
+    const body = document.getElementById('csv-imp-body');
+    body.innerHTML = '<div class="csv-imp-loading">正在导入...</div>';
 
     const result = await batchCreateParts(data);
 
     if (result.success) {
-        status.innerHTML = `
-            <div class="import-success">
-                <div class="success-icon">✓</div>
+        body.innerHTML = `
+            <div class="csv-imp-success">
+                <div class="csv-imp-success-icon">✓</div>
                 <div>导入成功！</div>
                 <div>成功导入 ${result.count} 个零件</div>
-                <button class="btn-close-import" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                <button class="csv-imp-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         `;
         if (selectedBox) {
@@ -2566,21 +2657,21 @@ async function confirmCSVImport() {
         }
     } else {
         let errorHtml = `
-            <div class="import-error">
-                <div class="error-icon">✗</div>
+            <div class="csv-imp-error">
+                <div class="csv-imp-error-icon">✗</div>
                 <div>导入完成，但有部分失败</div>
                 <div>成功导入 ${result.count} 个零件</div>
-                <div class="error-list">
+                <div class="csv-imp-error-list">
         `;
         result.errors.forEach(e => {
             errorHtml += `<div>${e.part_num}: ${e.error}</div>`;
         });
         errorHtml += `
                 </div>
-                <button class="btn-close-import" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                <button class="csv-imp-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         `;
-        status.innerHTML = errorHtml;
+        body.innerHTML = errorHtml;
         if (selectedBox) {
             loadParts(selectedBox.id);
         }
