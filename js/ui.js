@@ -1884,7 +1884,7 @@ async function showPartDetail(part) {
 
     sheet.innerHTML = `
         <div class="pd-row pd-title-row">
-            <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
             <span class="pd-title">零件详情</span>
             <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
         </div>

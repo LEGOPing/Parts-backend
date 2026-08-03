@@ -1732,7 +1732,7 @@ body {
     border: none;
     border-radius: 6px;
     padding: 6px 14px;
-    background: #f44336;
+    background: #FF9800;
     color: white;
     font-size: 13px;
     cursor: pointer;
@@ -1896,6 +1896,11 @@ body {
     align-items: flex-end;
 }
 
+/* 第六行：行高占比2 */
+.pd-actions {
+    flex: 2 1 0;
+}
+
 /* 第四/五/六行：上缩4px */
 .pd-name-row,
 .pd-color-row,
@@ -1936,7 +1941,7 @@ body {
 }
 
 .pd-qty-val {
-    font-size: 14px;
+    font-size: 18px;
     font-weight: bold;
     display: inline-block;
     text-align: right;
@@ -1947,13 +1952,6 @@ body {
 .qty-red { color: #f44336; }
 .qty-orange { color: #FF9800; }
 .qty-green { color: #4CAF50; }
-
-/* 第六行：搜索+保存(左) / -+(右) */
-.pd-actions {
-    flex: 1.5 1 0;
-    justify-content: space-between;
-    align-items: flex-end;
-}
 
 .pd-actions-left {
     display: flex;
