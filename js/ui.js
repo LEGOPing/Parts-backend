@@ -2644,7 +2644,14 @@ async function confirmCSVImport() {
     }));
 
     const body = document.getElementById('csv-imp-body');
-    body.innerHTML = '<div class="csv-imp-loading">正在导入...</div>';
+    body.innerHTML = '<div class="csv-imp-loading">正在重置序列并导入...</div>';
+
+    // 先重置自增序列，避免主键冲突
+    try {
+        await resetSequencesViaSupabase();
+    } catch (e) {
+        console.warn('重置序列失败，可能影响批量导入:', e.message);
+    }
 
     const result = await batchCreateParts(data);
 
