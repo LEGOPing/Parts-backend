@@ -1206,7 +1206,7 @@ body {
     background: #f44336;
     color: white;
     padding: 0 12px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     border: none;
     border-radius: 4px;
@@ -1220,7 +1220,7 @@ body {
     background: #2196F3;
     color: white;
     padding: 0 12px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     border: none;
     border-radius: 4px;
@@ -1458,11 +1458,13 @@ body {
 /* 数量行 */
 .quantity-weight-row {
     display: flex;
-    gap: 20px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
 }
 
-.quantity-weight-row > div {
-    flex: 1;
+.quantity-weight-row > .form-label {
+    flex-shrink: 0;
 }
 
 /* 数量输入框与称重计算按钮并排 */
@@ -1470,6 +1472,7 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: 1;
 }
 
 .quantity-input-row .form-input {
