@@ -737,7 +737,7 @@ function showAddPartSheet() {
                 </div>
                 <div class="form-row status-save-row">
                     <div class="status-group">
-                        <span class="status-label">状态：</span>
+                        <label class="form-label">零件状态：</label>
                         <button id="status-new" class="status-btn active" onclick="togglePartNewStatus(true)">新品</button>
                         <button id="status-used" class="status-btn" onclick="togglePartNewStatus(false)">旧品</button>
                     </div>
