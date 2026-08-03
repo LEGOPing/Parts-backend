@@ -722,9 +722,11 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
 }
 
 // 查询单个零件重量（克）。
-// 策略：优先读 Supabase part_weights 缓存（零后端）；
-// 缓存未命中时，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）并回写缓存；
-// 非本机或抓取失败则返回"暂无重量数据"。完全不需要 CloudBase。
+// 策略（按用户指定顺序）：
+// 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）
+// 2. 其次尝试 Bricklink：优先读 Supabase part_weights 缓存（零后端）；
+//    缓存未命中时，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）并回写缓存；
+// 3. 以上都失败/出错，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
 // 返回 { part_number, weight } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
@@ -732,33 +734,48 @@ async function fetchBricklinkPartWeight(partNumber) {
         return { part_number: '', weight: null, error: '零件型号无效' };
     }
 
-    // 1. 优先查 Supabase part_weights 缓存（前端直连，零后端）
+    // 1. 优先查离线 RB 数据库（rb_weights store）
+    try {
+        if (typeof getPartWeightByNum === 'function') {
+            const offlineWeight = await getPartWeightByNum(cleanNum);
+            if (offlineWeight !== null && offlineWeight > 0) {
+                return { part_number: cleanNum, weight: offlineWeight, source: 'offline' };
+            }
+        }
+    } catch (e) {
+        console.warn('离线重量查询失败:', e.message);
+    }
+
+    // 2. 尝试 Bricklink：先查 Supabase part_weights 缓存（前端直连，零后端）
     try {
         const cached = await supabaseRequest('part_weights', {
             select: 'weight',
             filters: { part_num: cleanNum }
         });
         if (cached && cached.length > 0 && cached[0].weight != null) {
-            return { part_number: cleanNum, weight: cached[0].weight };
+            return { part_number: cleanNum, weight: cached[0].weight, source: 'supabase' };
         }
     } catch (e) {
         console.warn('重量缓存查询失败:', e.message);
     }
 
-    // 2. 缓存未命中：仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
+    // 2.1 缓存未命中：仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         try {
             const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
             if (response.ok) {
-                return await response.json();
+                const data = await response.json();
+                if (data && data.weight != null && data.weight > 0) {
+                    return data;
+                }
             }
         } catch (e) {
             console.warn('FastAPI 重量抓取失败:', e.message);
         }
     }
 
-    // 3. 非本机或抓取失败：暂无重量数据
-    return { part_number: cleanNum, weight: null, error: '暂无重量数据（未缓存）' };
+    // 3. 全部失败：返回空，调用方回退到手工输入
+    return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 
 // 重置 Supabase 自增序列（通过 RPC 函数，无需 CloudBase 后端）

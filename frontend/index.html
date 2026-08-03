@@ -12,8 +12,8 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080204">
-    
+    <link rel="stylesheet" href="css/style.css?v=2026080301">
+
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
     if (typeof RB_STORES === 'undefined') {
@@ -23,7 +23,8 @@
             INVENTORY_PARTS: 'rb_inventory_parts',
             PART_CATEGORIES: 'rb_part_categories',
             PART_RELATIONSHIPS: 'rb_part_relationships',
-            PARTS: 'rb_parts'
+            PARTS: 'rb_parts',
+            WEIGHTS: 'rb_weights'
         };
     }
     if (typeof RB_STORE_KEYS === 'undefined') {
@@ -33,15 +34,16 @@
             'rb_part_categories': 'part_categories',
             'rb_elements': 'elements',
             'rb_inventory_parts': 'inventory_parts',
-            'rb_part_relationships': 'part_relationships'
+            'rb_part_relationships': 'part_relationships',
+            'rb_weights': 'weights'
         };
     }
     </script>
-    
-    <script src="js/api.js?v=2026080204"></script>
+
+    <script src="js/api.js?v=2026080301"></script>
     <script src="js/store.js?v=2026073124"></script>
-    <script src="js/rb-db.js?v=2026073124"></script>
-    <script src="js/ui.js?v=2026080204"></script>
+    <script src="js/rb-db.js?v=2026080301"></script>
+    <script src="js/ui.js?v=2026080301"></script>
 </head>
 <body>
     <div class="container">

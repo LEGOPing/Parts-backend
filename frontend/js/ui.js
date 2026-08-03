@@ -1229,7 +1229,8 @@ async function fetchPartWeightForCalculator() {
             }
             if (messageEl) {
                 messageEl.style.color = '#27ae60';
-                messageEl.textContent = `获取成功：${cleanPartNum} = ${data.weight}g`;
+                const sourceLabel = data.source === 'offline' ? '离线' : (data.source === 'supabase' ? '缓存' : '在线');
+                messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g`;
             }
         } else {
             if (messageEl) {
@@ -2122,6 +2123,21 @@ async function loadRBOnStartup() {
         const hasLocalData = await hasLocalRBData();
         if (hasLocalData) {
             console.log('RB本地数据库已存在，使用离线数据');
+            // 升级场景：旧库无 weights store 数据，补充加载 weights.json
+            try {
+                const weightsCount = await countRecords(RB_STORES.WEIGHTS);
+                if (weightsCount === 0) {
+                    const weightsText = await fetchRBFile('weights.json');
+                    if (weightsText) {
+                        const result = await importWeightsFromJSON(JSON.parse(weightsText));
+                        if (result.success) {
+                            console.log(`补充加载重量数据: ${result.count}条`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('补充加载重量数据失败:', e.message);
+            }
             showRBStatusHint('rb-ready');
             return;
         }
@@ -2156,6 +2172,22 @@ async function loadRBOnStartup() {
                 console.error(`加载 ${file.name} 失败:`, error);
                 failCount++;
             }
+        }
+
+        // 读取 weights.json（离线重量数据，供称重计算优先使用）
+        try {
+            const weightsText = await fetchRBFile('weights.json');
+            if (weightsText) {
+                const weightsJson = JSON.parse(weightsText);
+                const result = await importWeightsFromJSON(weightsJson);
+                if (result.success) {
+                    console.log(`重量数据加载成功: ${result.count}条`);
+                } else {
+                    console.warn('重量数据加载失败:', result.error);
+                }
+            }
+        } catch (error) {
+            console.error('加载 weights.json 失败:', error);
         }
 
         if (successCount === csvFiles.length) {
@@ -2496,9 +2528,27 @@ async function updateRB() {
             }
         }
 
+        // 读取 weights.json（离线重量数据，供称重计算优先使用）
+        let weightsCount = 0;
+        try {
+            updateProgress(0.7, '读取重量数据...', 'weights.json');
+            const weightsText = await fetchRBFile('weights.json');
+            if (weightsText) {
+                const result = await importWeightsFromJSON(JSON.parse(weightsText));
+                weightsCount = result.success ? result.count : 0;
+                importResults['weights'] = result.success;
+                updateProgress(0.8, `重量数据 - ${result.success ? '导入成功' : '导入失败'}`, `${weightsCount}条`);
+            } else {
+                importResults['weights'] = false;
+            }
+        } catch (error) {
+            console.error('处理 weights.json 失败:', error);
+            importResults['weights'] = false;
+        }
+
         // 显示结果
         updateProgress(1, '更新完成！', '');
-        
+
         const stats = await getRBStats();
         let statsHtml = '';
         if (stats) {
@@ -2509,6 +2559,7 @@ async function updateRB() {
             statsHtml += `<div>元素: ${stats.rb_elements || 0} 条</div>`;
             statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
+            statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += '</div>';
         }
 
