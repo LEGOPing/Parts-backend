@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080312">
+    <link rel="stylesheet" href="css/style.css?v=2026080313">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -43,7 +43,7 @@
     <script src="js/api.js?v=2026080312"></script>
     <script src="js/store.js?v=2026073124"></script>
     <script src="js/rb-db.js?v=2026080312"></script>
-    <script src="js/ui.js?v=2026080312"></script>
+    <script src="js/ui.js?v=2026080313"></script>
 </head>
 <body>
     <div class="container">
@@ -114,6 +114,12 @@
                                 <span id="repo-name-text"></span>
                             </span>
                             <div class="part-stats"><span id="part-count">0</span><span class="part-stats-unit">T</span></div>
+                        </div>
+                        <div class="box-nav-bar" id="box-nav-bar" style="display:none;">
+                            <button class="box-nav-btn" onclick="switchBox('prev')">‹</button>
+                            <span id="box-sequence" class="box-sequence">1/1</span>
+                            <button class="box-nav-btn" onclick="switchBox('next')">›</button>
+                            <span class="box-nav-tip">左右滑动切换盒子</span>
                         </div>
                         <div class="part-action-buttons">
                             <button onclick="goBackToRepositories()" class="action-btn">返回</button>
@@ -238,7 +244,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
-                navigator.serviceWorker.register('service-worker.js?v=v66', { updateViaCache: 'none' })
+                navigator.serviceWorker.register('service-worker.js?v=v68', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
                         // 如果有旧SW在控制页面，强制重新加载以应用新版本

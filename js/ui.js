@@ -516,6 +516,9 @@ async function deleteBoxConfirm(id) {
 }
 
 async function loadParts(boxId) {
+    // 更新盒子序号显示
+    await updateBoxSequence();
+    
     const parts = await getParts(boxId);
     // 只从 RB 数据库获取颜色
     const colors = await getAllColors();
@@ -565,6 +568,149 @@ async function loadParts(boxId) {
         
         list.appendChild(card);
     });
+}
+
+// 获取当前仓库的去重盒子列表（按 box_number 排序）
+async function getSortedBoxes() {
+    if (!selectedRepository) return [];
+    const boxes = await getBoxes(selectedRepository.id);
+    // 去重：与 loadBoxes() 保持一致
+    const seenIds = new Set();
+    const seenBoxNums = new Set();
+    const uniqueBoxes = boxes.filter(box => {
+        if (seenIds.has(box.id)) return false;
+        const key = `${box.box_number}_${box.name}`;
+        if (seenBoxNums.has(key)) return false;
+        seenIds.add(box.id);
+        seenBoxNums.add(key);
+        return true;
+    });
+    uniqueBoxes.sort((a, b) => (a.box_number || 0) - (b.box_number || 0));
+    return uniqueBoxes;
+}
+
+// 更新盒子序号显示
+async function updateBoxSequence() {
+    const navBar = document.getElementById('box-nav-bar');
+    const seqEl = document.getElementById('box-sequence');
+    if (!navBar || !seqEl) return;
+    
+    if (!selectedBox || !selectedRepository) {
+        navBar.style.display = 'none';
+        return;
+    }
+    
+    const boxes = await getSortedBoxes();
+    if (boxes.length <= 1) {
+        navBar.style.display = 'none';
+        return;
+    }
+    
+    const currentIndex = boxes.findIndex(b => b.id === selectedBox.id);
+    if (currentIndex === -1) {
+        navBar.style.display = 'none';
+        return;
+    }
+    
+    navBar.style.display = 'flex';
+    seqEl.textContent = `${currentIndex + 1}/${boxes.length}`;
+}
+
+// 左右滑动切换盒子（按 box_number 顺序）
+async function switchBox(direction) {
+    if (!selectedBox || !selectedRepository) return;
+    
+    const boxes = await getSortedBoxes();
+    if (boxes.length <= 1) return;
+    
+    const currentIndex = boxes.findIndex(b => b.id === selectedBox.id);
+    if (currentIndex === -1) return;
+    
+    let targetIndex;
+    if (direction === 'next') {
+        targetIndex = currentIndex + 1;
+        if (targetIndex >= boxes.length) {
+            showToast('已是最后一个盒子');
+            return;
+        }
+    } else {
+        targetIndex = currentIndex - 1;
+        if (targetIndex < 0) {
+            showToast('已是第一个盒子');
+            return;
+        }
+    }
+    
+    const targetBox = boxes[targetIndex];
+    setSelectedBox(targetBox);
+    document.getElementById('selected-box-name').textContent = `${targetBox.name}零件管理`;
+    
+    // 添加滑动动画
+    const wrapper = document.querySelector('.part-grid-wrapper');
+    if (wrapper) {
+        wrapper.classList.remove('slide-left', 'slide-right');
+        void wrapper.offsetWidth; // 触发重排以重置动画
+        wrapper.classList.add(direction === 'next' ? 'slide-left' : 'slide-right');
+    }
+    
+    await loadParts(targetBox.id);
+}
+
+// 初始化零件页滑动手势
+function initPartsSwipeGesture() {
+    const partsTab = document.getElementById('parts-tab');
+    if (!partsTab) return;
+    
+    let startX = 0, startY = 0, isTracking = false;
+    const SWIPE_THRESHOLD = 60; // 最小滑动距离
+    
+    partsTab.addEventListener('touchstart', (e) => {
+        if (!selectedBox) return;
+        // 只在零件管理页面激活时追踪
+        if (!partsTab.classList.contains('active')) return;
+        const touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        isTracking = true;
+    }, { passive: true });
+    
+    partsTab.addEventListener('touchend', (e) => {
+        if (!isTracking || !selectedBox) {
+            isTracking = false;
+            return;
+        }
+        isTracking = false;
+        
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        
+        // 水平滑动且距离足够
+        if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            if (dx < 0) {
+                switchBox('next');
+            } else {
+                switchBox('prev');
+            }
+        }
+    }, { passive: true });
+}
+
+// 轻量提示
+function showToast(msg) {
+    let toast = document.getElementById('swipe-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'swipe-toast';
+        toast.className = 'swipe-toast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+        toast.classList.remove('show');
+    }, 1500);
 }
 
 function setupLongPress(element, callback) {
@@ -2397,6 +2543,9 @@ async function initializeApp() {
         
         const repoBtn = document.querySelector('.nav button.repo-btn');
         await switchTab('repositories', repoBtn);
+        
+        // 初始化零件页左右滑动手势
+        initPartsSwipeGesture();
     } catch (error) {
         console.error('应用初始化失败:', error);
         const list = document.getElementById('repositories-list');
