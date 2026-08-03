@@ -869,9 +869,9 @@ body {
     display: none;
 }
 
-/* 第二行：颜色名称，可水平滚动 */
+/* 第二行：颜色名称（左）+ 新旧状态圆形图标（右） */
 .src-row2 {
-    overflow: hidden;
+    justify-content: space-between;
 }
 
 .src-color-name {
@@ -888,9 +888,27 @@ body {
     display: none;
 }
 
-/* 第三行：仓库（左）+ 新旧状态圆形图标（右） */
+.src-status {
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.src-status.new { background-color: #4CAF50; }
+.src-status.used { background-color: #FF9800; }
+
+/* 第三行：仓库 */
 .src-row3 {
-    justify-content: space-between;
+    justify-content: flex-start;
 }
 
 .src-repo {
@@ -901,17 +919,6 @@ body {
     flex: 1 1 0;
     min-width: 0;
 }
-
-.src-status {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    margin-left: 8px;
-}
-
-.src-status.new { background-color: #4CAF50; }
-.src-status.used { background-color: #FF9800; }
 
 /* 第四行：盒子（左）+ 数量（右，预留 5 位数字） */
 .src-row4 {
