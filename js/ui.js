@@ -2633,9 +2633,14 @@ function getColorBrightness(hex) {
 async function confirmCSVImport() {
     if (!selectedBox || !window.currentCSVData) return;
 
+    // 清理数据，只保留 parts 表需要的字段
     const data = window.currentCSVData.map(item => ({
-        ...item,
-        box_id: selectedBox.id
+        box_id: selectedBox.id,
+        part_num: item.part_num || '',
+        name: item.name || '',
+        color_id: parseInt(item.color_id) || 1,
+        quantity: parseInt(item.quantity) || 0,
+        is_new: item.is_new === 'true' || item.is_new === 'True' || item.is_new === true
     }));
 
     const body = document.getElementById('csv-imp-body');
