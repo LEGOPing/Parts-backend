@@ -1801,7 +1801,7 @@ body {
 }
 
 .pd-status-used {
-    background: #9E9E9E;
+    background: #FF9800;
 }
 
 /* 第四行：名称 */
@@ -1876,14 +1876,14 @@ body {
     align-items: flex-end;
     flex-shrink: 0;
     margin-left: 8px;
+    justify-content: flex-end;
 }
 
 .pd-qty-val {
     font-size: 14px;
     font-weight: bold;
     display: inline-block;
-    min-width: 5ch;
-    text-align: center;
+    text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
