@@ -485,6 +485,7 @@ async function addBox() {
     const newBox = await createBox(selectedRepository.id, newBoxNumber, '新盒子');
     if (newBox && selectedRepository) {
         await loadBoxes(selectedRepository.id);
+        await loadRepositories();
     }
 }
 
@@ -501,6 +502,7 @@ async function deleteBoxConfirm(id) {
         const success = await deleteBox(id);
         if (success && selectedRepository) {
             await loadBoxes(selectedRepository.id);
+            await loadRepositories();
         }
     }
 }
@@ -1740,8 +1742,11 @@ async function showPartDetail(part) {
 
     // 从RB数据库获取图片URL
     let imgUrl = null;
+    let hasCustomImage = false;
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+        // 检查是否有自定义图片
+        hasCustomImage = !!getCustomImageUrl(part.part_num, part.color_id);
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -1756,13 +1761,31 @@ async function showPartDetail(part) {
     }
 
     const isNew = part.is_new;
+    const safePartName = (rbName || '').replace(/'/g, "\\'");
+
+    // 构建图片区域
+    let imageHtml;
+    if (imgUrl) {
+        imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
+    } else {
+        imageHtml = `<div class="pd-no-image">暂无图片</div>`;
+    }
+
+    // 图片操作按钮
+    let imageActionsHtml = '';
+    if (!imgUrl) {
+        imageActionsHtml = `<button class="pd-btn pd-btn-search" style="background:#4CAF50;margin-top:4px;" onclick="addCustomImage('${part.part_num}', ${part.color_id})">添加图片</button>`;
+    } else if (hasCustomImage) {
+        imageActionsHtml = `<button class="pd-btn pd-btn-edit" style="margin-top:4px;" onclick="manageCustomImage('${part.part_num}', ${part.color_id})">管理图片</button>`;
+    }
 
     sheet.innerHTML = `
         <div class="pd-row pd-title">零件详情</div>
         <div class="pd-row pd-image-row">
-            ${imgUrl
-                ? `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>暂无图片</div>'">`
-                : `<div class="pd-no-image">暂无图片</div>`}
+            ${imageHtml}
+        </div>
+        <div class="pd-row" style="justify-content:center;flex-shrink:0;">
+            ${imageActionsHtml}
         </div>
         <div class="pd-row pd-model-row">
             <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span></span>
@@ -1785,6 +1808,7 @@ async function showPartDetail(part) {
         </div>
         <div class="pd-row pd-actions">
             <button class="pd-btn pd-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            <button class="pd-btn pd-btn-search" onclick="searchFromDetail('${part.part_num}', ${part.color_id}, '${safePartName}')">搜索</button>
             <div class="pd-btn-group">
                 <button class="pd-btn pd-btn-delete" onclick="deletePartConfirm('${part.id}')">删除零件</button>
                 <button class="pd-btn pd-btn-edit" onclick="editPartQuantityFromDetail('${part.id}', ${part.quantity})">编辑数量</button>
@@ -1800,6 +1824,216 @@ function editPartQuantityFromDetail(partId, currentQuantity) {
     // 不关闭零件详情页，让编辑数量弹窗浮于其上
     const part = { id: partId, quantity: currentQuantity };
     editPartQuantity(part);
+}
+
+async function searchFromDetail(partNum, colorId, partName) {
+    // 关闭当前弹窗
+    const overlay = document.querySelector('.modal-overlay.active');
+    if (overlay) overlay.remove();
+    
+    // 切换到搜索页
+    const btn = document.querySelector('.search-btn');
+    await switchTab('search', btn);
+    
+    // 填充搜索条件
+    document.getElementById('search-part-num').value = partNum;
+    document.getElementById('search-part-name').value = partName;
+    document.getElementById('search-color-id').value = colorId;
+    
+    // 触发搜索
+    await handleAdvancedSearch();
+}
+
+// 添加自定义图片
+function addCustomImage(partNum, colorId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content';
+    sheet.style.maxWidth = '350px';
+
+    sheet.innerHTML = `
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span class="modal-title" style="font-size:16px;font-weight:600;">添加零件图片</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+        </div>
+        <div class="modal-body">
+            <div style="margin-bottom:12px;">
+                <div style="font-size:13px;color:#666;margin-bottom:8px;">方式一：输入图片URL</div>
+                <input type="text" id="custom-img-url" class="form-input" placeholder="https://example.com/image.jpg" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;box-sizing:border-box;">
+                <button onclick="saveImageFromUrl('${partNum}', ${colorId})" style="margin-top:8px;width:100%;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">使用URL图片</button>
+            </div>
+            <div style="text-align:center;color:#999;margin:12px 0;font-size:12px;">或</div>
+            <div style="margin-bottom:12px;">
+                <div style="font-size:13px;color:#666;margin-bottom:8px;">方式二：上传本地图片</div>
+                <input type="file" id="custom-img-file" accept="image/*" style="width:100%;margin-bottom:8px;">
+                <button onclick="uploadLocalImage('${partNum}', ${colorId})" style="width:100%;padding:8px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">上传图片</button>
+            </div>
+            <div id="custom-img-preview" style="display:none;margin-top:12px;text-align:center;">
+                <img id="custom-img-preview-img" style="max-width:100%;max-height:150px;border-radius:4px;">
+                <div id="custom-img-status" style="margin-top:8px;font-size:13px;"></div>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+}
+
+// 从URL保存图片
+function saveImageFromUrl(partNum, colorId) {
+    const urlInput = document.getElementById('custom-img-url');
+    const url = urlInput ? urlInput.value.trim() : '';
+    
+    if (!url) {
+        alert('请输入图片URL');
+        return;
+    }
+    
+    if (!url.match(/^https?:\/\//i)) {
+        alert('请输入有效的URL（以http://或https://开头）');
+        return;
+    }
+    
+    const success = saveCustomImageUrl(partNum, colorId, url);
+    const statusEl = document.getElementById('custom-img-status');
+    
+    if (success) {
+        statusEl.textContent = '✓ 图片添加成功！';
+        statusEl.style.color = '#4CAF50';
+        setTimeout(() => {
+            // 关闭所有弹窗并重新显示详情
+            const overlays = document.querySelectorAll('.modal-overlay.active');
+            overlays.forEach(o => o.remove());
+            // 重新获取零件信息并显示详情
+            refreshPartDetailWithCustomImage(partNum, colorId);
+        }, 1000);
+    } else {
+        statusEl.textContent = '✗ 保存失败';
+        statusEl.style.color = '#f44336';
+    }
+}
+
+// 上传本地图片
+function uploadLocalImage(partNum, colorId) {
+    const fileInput = document.getElementById('custom-img-file');
+    if (!fileInput || !fileInput.files[0]) {
+        alert('请选择图片文件');
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    if (!file.type.startsWith('image/')) {
+        alert('请选择有效的图片文件');
+        return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) {
+        alert('图片大小不能超过5MB');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const imageDataUrl = e.target.result;
+        const success = saveCustomImageUrl(partNum, colorId, imageDataUrl);
+        const preview = document.getElementById('custom-img-preview');
+        const previewImg = document.getElementById('custom-img-preview-img');
+        const statusEl = document.getElementById('custom-img-status');
+        
+        preview.style.display = 'block';
+        previewImg.src = imageDataUrl;
+        
+        if (success) {
+            statusEl.textContent = '✓ 图片上传成功！';
+            statusEl.style.color = '#4CAF50';
+            setTimeout(() => {
+                const overlays = document.querySelectorAll('.modal-overlay.active');
+                overlays.forEach(o => o.remove());
+                refreshPartDetailWithCustomImage(partNum, colorId);
+            }, 1000);
+        } else {
+            statusEl.textContent = '✗ 保存失败（可能是存储空间不足）';
+            statusEl.style.color = '#f44336';
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// 管理自定义图片
+function manageCustomImage(partNum, colorId) {
+    const currentUrl = getCustomImageUrl(partNum, colorId);
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content';
+    sheet.style.maxWidth = '350px';
+
+    sheet.innerHTML = `
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span class="modal-title" style="font-size:16px;font-weight:600;">管理零件图片</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+        </div>
+        <div class="modal-body">
+            <div style="text-align:center;margin-bottom:12px;">
+                <div style="font-size:13px;color:#666;margin-bottom:8px;">当前自定义图片</div>
+                <img src="${currentUrl}" style="max-width:100%;max-height:150px;border-radius:4px;border:1px solid #eee;">
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">替换图片</button>
+                <button onclick="removeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">删除图片</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+}
+
+// 替换自定义图片
+function changeCustomImage(partNum, colorId) {
+    // 关闭当前管理弹窗
+    const overlay = document.querySelector('.modal-overlay.active');
+    if (overlay) overlay.remove();
+    // 打开添加图片弹窗
+    addCustomImage(partNum, colorId);
+}
+
+// 删除自定义图片
+function removeCustomImage(partNum, colorId) {
+    if (!confirm('确定要删除自定义图片吗？')) return;
+    
+    deleteCustomImageUrl(partNum, colorId);
+    
+    const overlay = document.querySelector('.modal-overlay.active');
+    if (overlay) overlay.remove();
+    
+    // 刷新详情
+    refreshPartDetailWithCustomImage(partNum, colorId);
+}
+
+// 刷新零件详情（带自定义图片更新）
+async function refreshPartDetailWithCustomImage(partNum, colorId) {
+    try {
+        // 查找当前显示的零件详情中的零件数据
+        // 从搜索结果或零件列表中找到对应零件
+        const allParts = await getParts(null);
+        const part = allParts.find(p => 
+            p.part_num === partNum && String(p.color_id) === String(colorId)
+        );
+        
+        if (part) {
+            await showPartDetail(part);
+        } else {
+            alert('图片已更新，请刷新页面查看');
+        }
+    } catch (e) {
+        console.error('刷新零件详情失败:', e);
+        alert('图片已更新，请刷新页面查看');
+    }
 }
 
 async function deletePartConfirm(partId) {
@@ -1879,10 +2113,13 @@ async function executeDeletePart(partId) {
     }
 }
 
-function goBackToRepositories() {
+async function goBackToRepositories() {
     setSelectedBox(null);
     const btn = document.querySelector('.repo-btn');
-    switchTab('repositories', btn);
+    await switchTab('repositories', btn);
+    if (selectedRepository) {
+        await loadBoxes(selectedRepository.id);
+    }
 }
 
 function showCSVImporter() {
@@ -2206,9 +2443,15 @@ async function loadRBOnStartup() {
 // 显示 RB 状态提示
 function showRBStatusHint(status) {
     const hint = document.getElementById('rb-status-hint');
+    const idbInfo = document.getElementById('idb-version-info');
     if (!hint) {
         console.warn('rb-status-hint 元素未找到');
         return;
+    }
+    
+    // 更新 IndexedDB 版本信息
+    if (idbInfo && typeof RB_DB_VERSION !== 'undefined') {
+        idbInfo.textContent = `IndexedDB: ${RB_DB_NAME} v${RB_DB_VERSION}`;
     }
     
     const messages = {

@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080301">
+    <link rel="stylesheet" href="css/style.css?v=2026080302">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -40,10 +40,10 @@
     }
     </script>
 
-    <script src="js/api.js?v=2026080301"></script>
+    <script src="js/api.js?v=2026080302"></script>
     <script src="js/store.js?v=2026073124"></script>
-    <script src="js/rb-db.js?v=2026080301"></script>
-    <script src="js/ui.js?v=2026080301"></script>
+    <script src="js/rb-db.js?v=2026080302"></script>
+    <script src="js/ui.js?v=2026080302"></script>
 </head>
 <body>
     <div class="container">
@@ -183,6 +183,7 @@
                             <button onclick="exportRB()" class="btn-settings" style="background-color: #4CAF50; color: white; flex: 1;">导出RB</button>
                         </div>
                         <div id="rb-status-hint" style="font-size: 12px; margin-top: 8px; text-align: center;"></div>
+                        <div id="idb-version-info" style="font-size: 12px; margin-top: 4px; text-align: center; color: var(--dark-gray-color);"></div>
                     </div>
                     
                     <div class="settings-group">
