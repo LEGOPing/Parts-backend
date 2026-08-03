@@ -1689,6 +1689,7 @@ async function loadSearchColorGrid(partNum) {
 
         colorCard.addEventListener('click', (e) => {
             document.getElementById('search-color-id').value = color.id;
+            updateColorPickButton(color.id);
             e.target.closest('.modal-overlay').remove();
         });
 
@@ -1709,12 +1710,44 @@ async function handleAdvancedSearch() {
     renderSearchResults(parts);
 }
 
+// 更新选色按钮样式：根据颜色ID设置底色和文字颜色
+async function updateColorPickButton(colorId) {
+    const btn = document.querySelector('.btn-color-pick');
+    if (!btn) return;
+
+    if (!colorId) {
+        // 恢复默认样式
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+        btn.textContent = '选色';
+        return;
+    }
+
+    const colorInfo = await getColorById(colorId);
+    if (!colorInfo) return;
+
+    const rgbValue = colorInfo.rgb && colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + (colorInfo.rgb || 'FFFFFF');
+    btn.style.backgroundColor = rgbValue;
+    btn.style.borderColor = rgbValue;
+
+    // 计算亮度决定文字颜色
+    const hex = rgbValue.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    btn.style.color = brightness > 128 ? '#000' : '#fff';
+    btn.textContent = colorInfo.name || '选色';
+}
+
 function resetSearchFilters() {
     document.getElementById('search-part-num').value = '';
     document.getElementById('search-part-name').value = '';
     document.getElementById('search-color-id').value = '';
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
+    updateColorPickButton('');
 }
 
 async function renderSearchResults(parts) {
@@ -1813,6 +1846,7 @@ function clearSearchResults() {
     document.getElementById('search-color-id').value = '';
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
+    updateColorPickButton('');
 }
 
 async function showPartDetail(part) {
@@ -2059,6 +2093,7 @@ async function searchFromDetail(partNum, colorId, partName) {
     document.getElementById('search-part-num').value = partNum;
     document.getElementById('search-part-name').value = partName;
     document.getElementById('search-color-id').value = colorId;
+    updateColorPickButton(colorId);
     
     // 触发搜索
     await handleAdvancedSearch();
@@ -2571,6 +2606,19 @@ async function initializeApp() {
         
         // 初始化零件页左右滑动手势
         initPartsSwipeGesture();
+        
+        // 监听颜色ID输入框变化，手动输入时也更新按钮样式
+        const colorIdInput = document.getElementById('search-color-id');
+        if (colorIdInput) {
+            colorIdInput.addEventListener('input', (e) => {
+                const val = e.target.value.trim();
+                if (val) {
+                    updateColorPickButton(val);
+                } else {
+                    updateColorPickButton('');
+                }
+            });
+        }
     } catch (error) {
         console.error('应用初始化失败:', error);
         const list = document.getElementById('repositories-list');
