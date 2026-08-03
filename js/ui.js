@@ -1666,10 +1666,10 @@ async function renderSearchResults(parts) {
                 <div class="src-row src-row2">
                     <span class="src-label">颜色：</span>
                     <span class="src-color-name" title="${colorName}">${colorName}</span>
+                    <span class="src-status ${part.is_new ? 'new' : 'used'}" title="${part.is_new ? '新品' : '旧品'}">${part.is_new ? '新' : '旧'}</span>
                 </div>
                 <div class="src-row src-row3">
                     <span class="src-label">仓库：</span><span class="src-repo">${repoName}</span>
-                    <span class="src-status ${part.is_new ? 'new' : 'used'}" title="${part.is_new ? '新品' : '旧品'}"></span>
                 </div>
                 <div class="src-row src-row4">
                     <span class="src-label">盒子：</span><span class="src-box">${boxName}</span>
