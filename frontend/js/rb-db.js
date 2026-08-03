@@ -678,16 +678,11 @@ async function getPartImageUrl(partNum, colorId) {
             return customUrl;
         }
         
-        // 2. 从RB数据库查询
+        // 2. 从RB数据库查询，精确匹配 part_num 和 color_id
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        // 精确匹配 part_num 和 color_id
-        let record = inventory.find(i => 
+        const record = inventory.find(i => 
             i.part_num === partNum && String(i.color_id) === String(colorId)
         );
-        // 如果没找到，尝试只匹配 part_num
-        if (!record) {
-            record = inventory.find(i => i.part_num === partNum);
-        }
         return record ? record.img_url : null;
     } catch (error) {
         console.error('查询零件图片URL失败:', error);
