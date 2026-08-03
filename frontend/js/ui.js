@@ -410,6 +410,14 @@ async function loadBoxes(repoId) {
                 setSelectedBox(box);
                 document.getElementById('selected-box-name').textContent = `${box.name}零件管理`;
                 
+                // 显示仓库名称徽章
+                const repoBadge = document.getElementById('repo-name-badge');
+                const repoText = document.getElementById('repo-name-text');
+                if (selectedRepository && repoBadge && repoText) {
+                    repoText.textContent = selectedRepository.name;
+                    repoBadge.style.display = 'inline-flex';
+                }
+                
                 // 更新选中状态样式
                 document.querySelectorAll('.box-card').forEach(c => {
                     c.classList.remove('selected');
@@ -536,7 +544,7 @@ async function loadParts(boxId) {
             <div class="part-color">${colorName}</div>
             <div class="part-info">
                 <span class="part-new-status ${part.is_new ? 'new' : 'used'}">${part.is_new ? '新' : '旧'}</span>
-                <span class="part-quantity">${part.quantity}</span>
+                <span class="part-quantity ${part.quantity >= 50 ? 'qty-green' : part.quantity >= 10 ? 'qty-orange' : 'qty-red'}">${part.quantity}</span>
             </div>
         `;
         
