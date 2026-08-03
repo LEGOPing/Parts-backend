@@ -721,12 +721,10 @@ function showAddPartSheet() {
             </div>
             <div class="form-section">
                 <div class="quantity-weight-row">
-                    <div>
-                        <label class="form-label">零件数量：</label>
-                        <div class="quantity-input-row">
-                            <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
-                            <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
-                        </div>
+                    <label class="form-label">零件数量：</label>
+                    <div class="quantity-input-row">
+                        <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
+                        <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
                     </div>
                 </div>
                 <div class="form-row status-save-row">
@@ -1498,16 +1496,20 @@ async function updateColorButtonColor(colorId) {
     const btn = document.getElementById('color-pick-btn');
     if (!btn) return;
     
+    // 转为字符串处理
+    const idStr = String(colorId || '').trim();
+    
     // 如果没有颜色ID或颜色ID为空，恢复默认浅灰色
-    if (!colorId || !colorId.trim()) {
+    if (!idStr) {
         btn.style.backgroundColor = '';
         btn.classList.remove('color-white');
         return;
     }
     
     try {
-        // 从RB数据库查找颜色信息
-        const colorInfo = await getColorById(colorId.trim());
+        // 转为数字供 IndexedDB 查询（数据库中颜色ID为数字键）
+        const idNum = Number(idStr);
+        const colorInfo = await getColorById(idNum);
         
         if (colorInfo && colorInfo.rgb) {
             // 获取RGB值，确保有#前缀
