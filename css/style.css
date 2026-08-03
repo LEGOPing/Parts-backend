@@ -522,7 +522,7 @@ body {
 
 .part-header .part-header-right {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 6px;
 }
 
@@ -1145,106 +1145,6 @@ body {
     z-index: 1000;
 }
 
-/* 编辑数量弹窗：浮于零件详情页之上，使用更浅遮罩以便详情页可见 */
-.quantity-edit-overlay {
-    background: rgba(0, 0, 0, 0.2);
-    z-index: 1001;
-}
-
-/* 编辑数量弹窗（三行布局，行高比1:2:1） */
-.quantity-edit-modal {
-    background: white;
-    border-radius: 12px;
-    width: min(92vw, 280px);
-    height: 168px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.qe-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* 第一行：返回(左) + 标题(中) + 保存(右) */
-.qe-row1 {
-    flex: 1 1 0;
-    position: relative;
-}
-
-.qe-title {
-    font-size: 23px;
-    font-weight: 700;
-    text-align: center;
-}
-
-.qe-back-btn,
-.qe-save-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    border: none;
-    border-radius: 6px;
-    padding: 6px 14px;
-    color: white;
-    font-size: 14px;
-    cursor: pointer;
-}
-
-.qe-back-btn {
-    left: 12px;
-    background: #e74c3c;
-}
-
-.qe-save-btn {
-    right: 12px;
-    background: #27ae60;
-}
-
-/* 第二行：数量（35px粗体居中，颜色随数量变化） */
-.qe-row2 {
-    flex: 1.4 1 0;
-}
-
-.qe-quantity {
-    font-size: 35px;
-    font-weight: 700;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-}
-
-/* 第三行：圆形加减按钮，直径46px，间距46px */
-.qe-row3 {
-    flex: 1.2 1 0;
-    gap: 46px;
-}
-
-.qe-circle-btn {
-    width: 46px;
-    height: 46px;
-    border-radius: 50%;
-    border: none;
-    color: white;
-    font-size: 23px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    line-height: 1;
-}
-
-.qe-minus-btn {
-    background: #e74c3c;
-}
-
-.qe-plus-btn {
-    background: #27ae60;
-}
-
 .modal-content {
     background: white;
     padding: 20px;
@@ -1822,23 +1722,90 @@ body {
     flex-shrink: 0;
 }
 
-/* 第一行：标题 */
+/* 第一行：关闭(左) + 标题(中) + 删(右) */
+.pd-title-row {
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pd-close-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    background: #f44336;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1;
+}
+
 .pd-title {
-    justify-content: center;
     font-size: 23px;
     font-weight: 600;
     color: #34495e;
     line-height: 1.3;
 }
 
-/* 第二行：图片 */
+.pd-del-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: #f44336;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* 第二行：图片（左滑显示变更按钮） */
 .pd-image-row {
     height: 168px;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     background: transparent;
     border-radius: 8px;
     overflow: hidden;
+    position: relative;
+}
+
+.pd-image-content {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.pd-image-action {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 90px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.pd-img-change-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #2196F3;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
 }
 
 .pd-image {
@@ -1916,12 +1883,12 @@ body {
     display: none;
 }
 
-/* 第五行：颜色 + 数量 */
+/* 第五行：颜色(2/3) + 数量(1/3) */
 .pd-color-row {
     justify-content: space-between;
 }
 
-/* 第三/四/五行：行高占比1，内容下对齐使状态图标与型号文字底部对齐 */
+/* 第三/四/五行：行高占比1，内容下对齐 */
 .pd-model-row,
 .pd-name-row,
 .pd-color-row {
@@ -1929,7 +1896,7 @@ body {
     align-items: flex-end;
 }
 
-/* 第四/五/六行：上缩4px，使3-4/4-5/5-6间距从6px降为2px */
+/* 第四/五/六行：上缩4px */
 .pd-name-row,
 .pd-color-row,
 .pd-actions {
@@ -1939,7 +1906,7 @@ body {
 .pd-color-left {
     display: flex;
     align-items: flex-end;
-    flex: 1;
+    flex: 2;
     min-width: 0;
     overflow: hidden;
 }
@@ -1959,9 +1926,9 @@ body {
 .pd-qty {
     display: flex;
     align-items: flex-end;
-    flex-shrink: 0;
-    margin-left: 8px;
+    flex: 1;
     justify-content: flex-end;
+    min-width: 0;
 }
 
 .pd-qty-val {
@@ -1970,48 +1937,103 @@ body {
     display: inline-block;
     text-align: right;
     font-variant-numeric: tabular-nums;
+    min-width: 5ch;
 }
 
 .qty-red { color: #f44336; }
 .qty-orange { color: #FF9800; }
 .qty-green { color: #4CAF50; }
 
-/* 第六行：按钮（行高占比1.5，下对齐） */
+/* 第六行：搜索+保存(左) / -+(右) */
 .pd-actions {
     flex: 1.5 1 0;
     justify-content: space-between;
     align-items: flex-end;
 }
 
-.pd-btn-group {
+.pd-actions-left {
     display: flex;
-    gap: 6px;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.pd-actions-right {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
 }
 
 .modal-content .pd-btn {
     border: none;
     border-radius: 6px;
-    padding: 8px 14px;
-    font-size: 13px;
+    height: 46px;
+    padding: 0 16px;
+    font-size: 14px;
     cursor: pointer;
     color: #fff;
     line-height: 1;
-}
-
-.pd-btn-close {
-    background: #f44336;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .pd-btn-search {
+    background: #4CAF50;
+}
+
+.pd-btn-save {
     background: #2196F3;
 }
 
-.pd-btn-delete {
-    background: #2196F3;
+.pd-circle-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: none;
+    color: white;
+    font-size: 23px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    line-height: 1;
 }
 
-.pd-btn-edit {
-    background: #FF9800;
+.pd-minus-btn {
+    background: #f44336;
+}
+
+.pd-plus-btn {
+    background: #4CAF50;
+}
+
+/* 密码确认弹窗按钮 */
+.pd-password-modal .pd-btn-close {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    background: #f44336;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.pd-password-modal .pd-btn-delete {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    background: #2196F3;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.pd-password-modal .pd-btn-group {
+    display: flex;
+    gap: 6px;
 }
 
 /* 删除密码确认弹窗 */
