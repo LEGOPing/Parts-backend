@@ -603,6 +603,17 @@ body {
     font-size: 11px;
     color: var(--gray-color);
     margin-top: 2px;
+    height: 3em;
+    line-height: 1em;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: normal;
+    word-break: break-word;
+    scrollbar-width: none;
+}
+
+.part-name::-webkit-scrollbar {
+    display: none;
 }
 
 .part-color {
@@ -620,12 +631,19 @@ body {
 
 .part-new-status {
     font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    line-height: 1;
 }
 
-.part-new-status.new { color: #4CAF50; background-color: rgba(76, 175, 80, 0.1); }
-.part-new-status.used { color: #FF9800; background-color: rgba(255, 152, 0, 0.1); }
+.part-new-status.new { background-color: #4CAF50; }
+.part-new-status.used { background-color: #FF9800; }
 
 .part-qty {
     font-size: 12px;
@@ -1834,6 +1852,10 @@ body {
 
 .pd-btn-close {
     background: #f44336;
+}
+
+.pd-btn-search {
+    background: #2196F3;
 }
 
 .pd-btn-delete {
