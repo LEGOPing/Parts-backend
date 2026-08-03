@@ -401,7 +401,7 @@ async function loadBoxes(repoId) {
                 <div class="box-card-name">${box.name}</div>
                 <div class="box-card-footer">
                     <span class="box-id">ID: ${box.box_number}</span>
-                    <span class="box-part-count"><span class="count">${partCounts[box.id]}</span> <span class="unit">P</span></span>
+                    <span class="box-part-count"><span class="count">${partCounts[box.id]}</span> <span class="unit">T</span></span>
                 </div>
             `;
         
@@ -450,7 +450,7 @@ function startEditBox(card, box) {
         <input type="text" value="${box.name}" class="box-edit-input" />
         <div class="box-card-footer">
             <span class="box-id">ID: ${box.box_number}</span>
-            <span class="box-part-count"><span class="count">0</span> <span class="unit">P</span></span>
+            <span class="box-part-count"><span class="count">0</span> <span class="unit">T</span></span>
         </div>
     `;
     
