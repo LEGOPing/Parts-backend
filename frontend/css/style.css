@@ -1198,11 +1198,15 @@ body {
 /* 添加零件表单样式 */
 .add-part-modal {
     max-width: 500px !important;
+    width: 92%;
+    box-sizing: border-box;
 }
 
 .add-part-body {
     max-height: 60vh;
     overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* 添加零件-标题栏（取消左 + 标题中 + 保存右） */
@@ -1270,6 +1274,10 @@ body {
 
 .form-section {
     margin-bottom: 16px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .form-row {
@@ -1481,6 +1489,9 @@ body {
     align-items: center;
     gap: 10px;
     margin-bottom: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .quantity-weight-row > .form-label {
@@ -1493,6 +1504,7 @@ body {
     align-items: center;
     gap: 8px;
     flex: 1;
+    min-width: 0;
 }
 
 .quantity-input-row .form-input {
