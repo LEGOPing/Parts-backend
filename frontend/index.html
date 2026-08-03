@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080314">
+    <link rel="stylesheet" href="css/style.css?v=2026080315">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -43,7 +43,7 @@
     <script src="js/api.js?v=2026080312"></script>
     <script src="js/store.js?v=2026073124"></script>
     <script src="js/rb-db.js?v=2026080312"></script>
-    <script src="js/ui.js?v=2026080314"></script>
+    <script src="js/ui.js?v=2026080315"></script>
 </head>
 <body>
     <div class="container">
@@ -113,17 +113,14 @@
                             <div class="part-header-right">
                                 <span id="selected-box-name" class="box-name">未命名</span>
                                 <span class="repo-at" id="repo-at" style="display:none;">@</span>
-                                <span id="repo-name-badge" class="repo-name-badge" style="display:none;">
-                                    <span id="repo-name-text"></span>
-                                </span>
+                                <div class="repo-badge-wrapper" style="display:none;" id="repo-badge-wrapper">
+                                    <span id="box-sequence" class="box-sequence">1/1</span>
+                                    <span id="repo-name-badge" class="repo-name-badge">
+                                        <span id="repo-name-text"></span>
+                                    </span>
+                                </div>
                                 <div class="part-stats"><span id="part-count">0</span><span class="part-stats-unit">T</span></div>
                             </div>
-                        </div>
-                        <div class="box-nav-bar" id="box-nav-bar" style="display:none;">
-                            <button class="box-nav-btn" onclick="switchBox('prev')">‹</button>
-                            <span id="box-sequence" class="box-sequence">1/1</span>
-                            <button class="box-nav-btn" onclick="switchBox('next')">›</button>
-                            <span class="box-nav-tip">左右滑动切换盒子</span>
                         </div>
                         <div class="part-action-buttons">
                             <button onclick="goBackToRepositories()" class="action-btn">返回</button>

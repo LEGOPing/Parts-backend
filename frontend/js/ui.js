@@ -410,13 +410,13 @@ async function loadBoxes(repoId) {
                 setSelectedBox(box);
                 document.getElementById('selected-box-name').textContent = box.name;
                 
-                // 显示仓库名称徽章和@符号
-                const repoBadge = document.getElementById('repo-name-badge');
+                // 显示仓库名称徽章、@符号和序号
+                const repoBadgeWrapper = document.getElementById('repo-badge-wrapper');
                 const repoText = document.getElementById('repo-name-text');
                 const repoAt = document.getElementById('repo-at');
-                if (selectedRepository && repoBadge && repoText) {
+                if (selectedRepository && repoBadgeWrapper && repoText) {
                     repoText.textContent = selectedRepository.name;
-                    repoBadge.style.display = 'inline-flex';
+                    repoBadgeWrapper.style.display = 'inline-flex';
                     if (repoAt) repoAt.style.display = 'inline';
                 }
                 
@@ -566,8 +566,6 @@ async function loadParts(boxId) {
             showPartDetail(part);
         });
         
-        setupLongPress(card, () => editPartQuantity(part));
-        
         list.appendChild(card);
     });
 }
@@ -593,28 +591,21 @@ async function getSortedBoxes() {
 
 // 更新盒子序号显示
 async function updateBoxSequence() {
-    const navBar = document.getElementById('box-nav-bar');
     const seqEl = document.getElementById('box-sequence');
-    if (!navBar || !seqEl) return;
+    if (!seqEl) return;
     
     if (!selectedBox || !selectedRepository) {
-        navBar.style.display = 'none';
+        seqEl.textContent = '';
         return;
     }
     
     const boxes = await getSortedBoxes();
-    if (boxes.length <= 1) {
-        navBar.style.display = 'none';
-        return;
-    }
-    
     const currentIndex = boxes.findIndex(b => b.id === selectedBox.id);
     if (currentIndex === -1) {
-        navBar.style.display = 'none';
+        seqEl.textContent = '';
         return;
     }
     
-    navBar.style.display = 'flex';
     seqEl.textContent = `${currentIndex + 1}/${boxes.length}`;
 }
 
@@ -2319,8 +2310,9 @@ async function goBackToRepositories() {
     setSelectedBox(null);
     // 重置 header 状态
     document.getElementById('selected-box-name').textContent = '未命名';
-    document.getElementById('repo-name-badge').style.display = 'none';
+    document.getElementById('repo-badge-wrapper').style.display = 'none';
     document.getElementById('repo-at').style.display = 'none';
+    document.getElementById('box-sequence').textContent = '';
     const btn = document.querySelector('.repo-btn');
     await switchTab('repositories', btn);
     if (selectedRepository) {
