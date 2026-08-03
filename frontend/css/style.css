@@ -622,7 +622,7 @@ body {
     margin-top: 2px;
 }
 
-.part-status-row {
+.part-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -645,7 +645,7 @@ body {
 .part-new-status.new { background-color: #4CAF50; }
 .part-new-status.used { background-color: #FF9800; }
 
-.part-qty {
+.part-quantity {
     font-size: 12px;
     font-weight: bold;
     color: #F44336;
@@ -1185,52 +1185,67 @@ body {
     overflow-y: auto;
 }
 
-/* 添加零件-标题栏（标题+取消按钮） */
+/* 添加零件-标题栏（取消左 + 标题中 + 保存右） */
 .add-part-modal .modal-header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     margin-bottom: 12px;
+    gap: 10px;
 }
 
 .add-part-modal .modal-title {
-    font-size: 16px;
+    font-size: 23px;
     font-weight: 600;
     color: #34495e;
+    text-align: center;
 }
 
-/* 取消按钮：红色底色，右对齐 */
+/* 取消按钮：红色底色，与称重计算风格一致 */
 .add-part-modal .btn-cancel {
     background: #f44336;
     color: white;
-    padding: 6px 14px;
-    font-size: 13px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    height: 36px;
+    white-space: nowrap;
 }
 
-/* 保存按钮：蓝色底色，右对齐 */
+/* 保存按钮：蓝色底色，与称重计算风格一致 */
 .add-part-modal .btn-save {
     background: #2196F3;
     color: white;
-    padding: 6px 14px;
-    font-size: 13px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    height: 36px;
+    white-space: nowrap;
 }
 
-/* 状态+保存按钮行 */
-.add-part-modal .status-save-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 10px;
+/* 选择颜色按钮：与称重计算风格一致 */
+.add-part-modal .btn-color-pick {
+    background: #BDBDBD;
+    color: white;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    height: 36px;
+    white-space: nowrap;
+    transition: background-color 0.3s;
 }
 
-.add-part-modal .status-save-row .btn-save {
-    margin-left: auto;
+.add-part-modal .btn-color-pick.color-white {
+    color: #000 !important;
 }
 
 .form-section {

@@ -690,8 +690,9 @@ function showAddPartSheet() {
     
     sheet.innerHTML = `
         <div class="modal-header">
-            <span class="modal-title">添加零件</span>
             <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
+            <span class="modal-title">添加零件</span>
+            <button class="btn-save" onclick="saveNewPart(this)">保存</button>
         </div>
         <div class="modal-body add-part-body">
             <div class="form-section">
@@ -702,7 +703,6 @@ function showAddPartSheet() {
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                     </div>
                     <span class="part-name-hint" id="part-name-hint"></span>
-                    <button class="btn-secondary" onclick="showPartSelector()" style="padding: 8px 10px; font-size: 12px;">选择零件</button>
                 </div>
             </div>
             <div class="form-section">
@@ -715,8 +715,8 @@ function showAddPartSheet() {
                 </div>
                 <div class="form-row">
                     <label class="form-label">零件颜色：</label>
-                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" />
-                    <button class="btn-secondary" onclick="showColorPicker()" style="padding: 8px 10px; font-size: 12px;">选择颜色</button>
+                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value)" />
+                    <button id="color-pick-btn" class="btn-color-pick" onclick="showColorPicker()">选择颜色</button>
                 </div>
             </div>
             <div class="form-section">
@@ -735,7 +735,6 @@ function showAddPartSheet() {
                         <button id="status-new" class="status-btn active" onclick="togglePartNewStatus(true)">新品</button>
                         <button id="status-used" class="status-btn" onclick="togglePartNewStatus(false)">旧品</button>
                     </div>
-                    <button class="btn-save" onclick="saveNewPart(this)">保存</button>
                 </div>
             </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
@@ -1472,7 +1471,11 @@ async function loadColorGrid(partNum) {
         `;
 
         colorCard.addEventListener('click', (e) => {
-            document.getElementById('new-part-color').value = color.id;
+            const colorInput = document.getElementById('new-part-color');
+            if (colorInput) {
+                colorInput.value = color.id;
+                updateColorButtonColor(color.id);
+            }
             e.target.closest('.modal-overlay').remove();
         });
 
@@ -1488,6 +1491,54 @@ function filterColors(searchText) {
         const match = name.includes(searchText.toLowerCase()) || id.includes(searchText);
         card.style.display = match ? 'flex' : 'none';
     });
+}
+
+// 更新颜色选择按钮的底色
+async function updateColorButtonColor(colorId) {
+    const btn = document.getElementById('color-pick-btn');
+    if (!btn) return;
+    
+    // 如果没有颜色ID或颜色ID为空，恢复默认浅灰色
+    if (!colorId || !colorId.trim()) {
+        btn.style.backgroundColor = '';
+        btn.classList.remove('color-white');
+        return;
+    }
+    
+    try {
+        // 从RB数据库查找颜色信息
+        const colorInfo = await getColorById(colorId.trim());
+        
+        if (colorInfo && colorInfo.rgb) {
+            // 获取RGB值，确保有#前缀
+            const rgbValue = colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + colorInfo.rgb;
+            
+            // 设置按钮背景色
+            btn.style.backgroundColor = rgbValue;
+            
+            // 计算亮度，判断文字颜色
+            const hex = rgbValue.replace('#', '');
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            
+            // 如果是白色或浅色，文字用黑色
+            if (brightness > 200) {
+                btn.classList.add('color-white');
+            } else {
+                btn.classList.remove('color-white');
+            }
+        } else {
+            // 找不到颜色ID对应的颜色，恢复默认浅灰色
+            btn.style.backgroundColor = '';
+            btn.classList.remove('color-white');
+        }
+    } catch (error) {
+        console.error('更新颜色按钮失败:', error);
+        btn.style.backgroundColor = '';
+        btn.classList.remove('color-white');
+    }
 }
 
 
