@@ -521,13 +521,17 @@ body {
 }
 
 .part-header .part-stats {
-    font-size: 14px;
+    font-size: 16px;
+    font-weight: bold;
     margin-bottom: 2px;
 }
 
 .part-header .part-stats #part-count {
     color: #f44336;
     font-weight: bold;
+    display: inline-block;
+    min-width: 3ch;
+    text-align: right;
 }
 
 .part-header .part-stats .part-stats-unit {
@@ -545,6 +549,7 @@ body {
     border-radius: 4px;
     margin-bottom: 2px;
     white-space: nowrap;
+    margin-left: auto;
 }
 
 .repo-name-badge .repo-icon {
