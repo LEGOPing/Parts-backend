@@ -1747,8 +1747,8 @@ body {
 }
 
 .pd-del-btn {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: none;
     background: #f44336;
@@ -1927,8 +1927,12 @@ body {
     display: flex;
     align-items: flex-end;
     flex: 1;
-    justify-content: flex-end;
+    justify-content: space-between;
     min-width: 0;
+}
+
+.pd-qty .pd-label {
+    flex-shrink: 0;
 }
 
 .pd-qty-val {
@@ -1959,14 +1963,15 @@ body {
 
 .pd-actions-right {
     display: flex;
-    gap: 10px;
+    justify-content: space-between;
     align-items: flex-end;
+    flex: 1;
 }
 
 .modal-content .pd-btn {
     border: none;
     border-radius: 6px;
-    height: 46px;
+    height: 36px;
     padding: 0 16px;
     font-size: 14px;
     cursor: pointer;
@@ -1986,12 +1991,12 @@ body {
 }
 
 .pd-circle-btn {
-    width: 46px;
-    height: 46px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: none;
     color: white;
-    font-size: 23px;
+    font-size: 20px;
     font-weight: 700;
     display: flex;
     align-items: center;
