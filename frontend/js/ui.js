@@ -408,14 +408,16 @@ async function loadBoxes(repoId) {
         card.addEventListener('click', () => {
             if (!editingBox) {
                 setSelectedBox(box);
-                document.getElementById('selected-box-name').textContent = `${box.name}零件管理`;
+                document.getElementById('selected-box-name').textContent = box.name;
                 
-                // 显示仓库名称徽章
+                // 显示仓库名称徽章和@符号
                 const repoBadge = document.getElementById('repo-name-badge');
                 const repoText = document.getElementById('repo-name-text');
+                const repoAt = document.getElementById('repo-at');
                 if (selectedRepository && repoBadge && repoText) {
                     repoText.textContent = selectedRepository.name;
                     repoBadge.style.display = 'inline-flex';
+                    if (repoAt) repoAt.style.display = 'inline';
                 }
                 
                 // 更新选中状态样式
@@ -643,7 +645,7 @@ async function switchBox(direction) {
     
     const targetBox = boxes[targetIndex];
     setSelectedBox(targetBox);
-    document.getElementById('selected-box-name').textContent = `${targetBox.name}零件管理`;
+    document.getElementById('selected-box-name').textContent = targetBox.name;
     
     // 添加滑动动画
     const wrapper = document.querySelector('.part-grid-wrapper');
@@ -2315,6 +2317,10 @@ async function executeDeletePart(partId) {
 
 async function goBackToRepositories() {
     setSelectedBox(null);
+    // 重置 header 状态
+    document.getElementById('selected-box-name').textContent = '未命名';
+    document.getElementById('repo-name-badge').style.display = 'none';
+    document.getElementById('repo-at').style.display = 'none';
     const btn = document.querySelector('.repo-btn');
     await switchTab('repositories', btn);
     if (selectedRepository) {
