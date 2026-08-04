@@ -1178,14 +1178,14 @@ async function saveNewPart(button) {
 
     // 检查是否存在重复零件（型号、颜色、状态一致）
     const existingParts = await getParts(selectedBox.id);
-    const duplicatePart = existingParts.find(p =>
+    const duplicateParts = existingParts.filter(p =>
         p.part_num === newPartData.part_num &&
         p.color_id === newPartData.color_id &&
         Boolean(p.is_new) === Boolean(newPartData.is_new)
     );
 
-    if (duplicatePart) {
-        // 显示合并/新增提示对话框
+    if (duplicateParts.length > 0) {
+        // 创建对话框
         const confirmOverlay = document.createElement('div');
         confirmOverlay.className = 'modal-overlay active';
         confirmOverlay.id = 'duplicate-part-overlay';
@@ -1193,40 +1193,52 @@ async function saveNewPart(button) {
         const confirmSheet = document.createElement('div');
         confirmSheet.className = 'modal-content add-part-modal';
 
+        // 生成重复零件卡片的 HTML
+        let partsCardsHtml = '';
+        for (let i = 0; i < duplicateParts.length; i++) {
+            const part = duplicateParts[i];
+            const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+            const isSelected = i === 0; // 默认选中第一个
+            partsCardsHtml += `
+                <div class="dup-part-card ${isSelected ? 'selected' : ''}" data-part-id="${part.id}">
+                    <div class="dup-part-image">
+                        ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}">` : ''}
+                    </div>
+                    <div class="dup-part-details">
+                        <div class="dup-part-num">${part.part_num}</div>
+                        <div class="dup-part-color">C: ${part.color_id}</div>
+                    </div>
+                    <div class="dup-part-bottom">
+                        <div class="dup-part-quantity">x${part.quantity}</div>
+                        <div class="dup-part-status ${part.is_new ? 'new' : 'used'}">
+                            ${part.is_new ? 'N' : 'U'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         confirmSheet.innerHTML = `
             <div class="modal-header">
                 <span class="modal-title">检测到重复零件</span>
                 <button class="btn-cancel" id="dup-cancel-btn">取消</button>
             </div>
-            <div class="modal-body">
-                <div style="padding: 20px 10px; text-align: center;">
-                    <div style="font-size: 16px; color: #333; margin-bottom: 16px;">
-                        盒子中已存在相同零件：
+            <div class="modal-body" style="padding: 0;">
+                <div style="padding: 20px 16px 12px;">
+                    <div style="font-size: 16px; color: #333; margin-bottom: 12px; text-align: center;">
+                        选择要合并的零件
                     </div>
-                    <div style="background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #666;">型号：</span>
-                            <span style="font-weight: bold; color: #333;">${duplicatePart.part_num}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #666;">颜色：</span>
-                            <span style="font-weight: bold; color: #333;">${duplicatePart.color_id}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #666;">状态：</span>
-                            <span style="font-weight: bold; color: #333;">${duplicatePart.is_new ? '新品' : '旧品'}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="color: #666;">现有数量：</span>
-                            <span style="font-weight: bold; color: #333;">${duplicatePart.quantity}</span>
-                        </div>
-                    </div>
-                    <div style="font-size: 14px; color: #666; margin-bottom: 20px;">
-                        您刚刚输入了 <strong style="color: #333;">${quantity}</strong> 个，是否合并到现有零件中？
+                </div>
+                <div class="dup-parts-scroll">
+                    ${partsCardsHtml}
+                </div>
+                <div style="padding: 0 16px 20px;">
+                    <div style="font-size: 14px; color: #666; margin-bottom: 16px; text-align: center;">
+                        您刚刚输入了 <strong style="color: #333;">${quantity}</strong> 个
                     </div>
                     <div style="display: flex; gap: 12px; justify-content: center;">
-                        <button id="dup-merge-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">合并 (增加数量)</button>
-                        <button id="dup-new-btn" class="btn-cancel" style="flex: 1; background-color: #3498db; color: white; border: none;">新增 (创建记录)</button>
+                        <button id="dup-merge-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">合并到选中</button>
+                        <button id="dup-new-btn" class="btn-cancel" style="flex: 1; background-color: #3498db; color: white; border: none;">新增</button>
                     </div>
                 </div>
             </div>
@@ -1235,14 +1247,32 @@ async function saveNewPart(button) {
         confirmOverlay.appendChild(confirmSheet);
         document.body.appendChild(confirmOverlay);
 
-        // 绑定按钮事件
+        let selectedPartId = duplicateParts[0].id;
+
+        // 绑定卡片选择事件
+        const partCards = confirmSheet.querySelectorAll('.dup-part-card');
+        partCards.forEach(card => {
+            card.addEventListener('click', () => {
+                partCards.forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedPartId = parseInt(card.dataset.partId);
+            });
+        });
+
+        // 绑定取消按钮事件
         document.getElementById('dup-cancel-btn').addEventListener('click', () => {
             confirmOverlay.remove();
         });
 
+        // 绑定合并按钮事件
         document.getElementById('dup-merge-btn').addEventListener('click', async () => {
-            const newQty = duplicatePart.quantity + newPartData.quantity;
-            const success = await updatePart(duplicatePart.id, { quantity: newQty });
+            const selectedPart = duplicateParts.find(p => p.id === selectedPartId);
+            if (!selectedPart) {
+                alert('请选择要合并的零件');
+                return;
+            }
+            const newQty = selectedPart.quantity + newPartData.quantity;
+            const success = await updatePart(selectedPart.id, { quantity: newQty });
             if (success) {
                 confirmOverlay.remove();
                 button.closest('.modal-overlay').remove();
@@ -1254,6 +1284,7 @@ async function saveNewPart(button) {
             }
         });
 
+        // 绑定新增按钮事件
         document.getElementById('dup-new-btn').addEventListener('click', async () => {
             confirmOverlay.remove();
             const newPart = await createPart(newPartData);
