@@ -1210,9 +1210,9 @@ async function saveNewPart(button) {
                         <div class="dup-part-num">${part.part_num}</div>
                         <div class="dup-part-color">C: ${part.color_id}</div>
                         <div class="dup-part-status ${part.is_new ? 'new' : 'used'}">
-                            ${part.is_new ? 'N' : 'U'}
+                            ${part.is_new ? '新' : '旧'}
                         </div>
-                        <div class="dup-part-quantity">x${part.quantity}</div>
+                        <div class="dup-part-quantity"><span class="dup-part-x">x</span>${part.quantity}</div>
                     </div>
                 </div>
             `;
