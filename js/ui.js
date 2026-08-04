@@ -2046,6 +2046,7 @@ async function showPartDetail(part) {
         <div class="pd-row pd-title-row">
             <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
             <span class="pd-title">零件详情</span>
+            <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
             <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
         </div>
         <div class="pd-row pd-image-row" id="pd-image-swipe">
@@ -2194,6 +2195,12 @@ async function showPartDetail(part) {
 
     // 初始化变更按钮位置（隐藏在右侧）
     imageAction.style.transform = `translateX(${actionWidth}px)`;
+
+    // 合并按钮点击事件
+    const mergeBtn = sheet.querySelector('#pd-merge-btn');
+    mergeBtn.addEventListener('click', () => {
+        showMergePartSelector(part);
+    });
 }
 
 // 图片变更入口（根据是否有图片选择不同操作）
@@ -2492,6 +2499,150 @@ async function executeDeletePart(partId) {
     } else {
         if (errorEl) errorEl.textContent = '删除零件失败';
     }
+}
+
+// 显示合并零件选择器：在当前盒子中查找相同零件（型号、颜色、状态一致），选择目标合并
+async function showMergePartSelector(currentPart) {
+    if (!selectedBox) {
+        alert('未选中盒子，无法合并');
+        return;
+    }
+
+    // 获取当前盒子中的所有零件
+    const allParts = await getParts(selectedBox.id);
+    
+    // 查找相同条件的零件（排除自己）
+    const sameParts = allParts.filter(p =>
+        p.part_num === currentPart.part_num &&
+        p.color_id === currentPart.color_id &&
+        Boolean(p.is_new) === Boolean(currentPart.is_new) &&
+        p.id !== currentPart.id
+    );
+
+    if (sameParts.length === 0) {
+        alert('当前盒子中未找到相同零件（型号、颜色、状态都一致），无法合并');
+        return;
+    }
+
+    // 创建对话框，参考添加零件时的重复零件对话框样式
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'merge-part-overlay';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content add-part-modal';
+
+    // 生成零件卡片 HTML
+    let partsCardsHtml = '';
+    for (let i = 0; i < sameParts.length; i++) {
+        const part = sameParts[i];
+        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+        const isSelected = i === 0; // 默认选中第一个
+        partsCardsHtml += `
+            <div class="dup-part-card ${isSelected ? 'selected' : ''}" data-part-id="${part.id}">
+                <div class="dup-part-left">
+                    <div class="dup-part-image">
+                        ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}">` : ''}
+                    </div>
+                </div>
+                <div class="dup-part-right">
+                    <div class="dup-part-num">${part.part_num}</div>
+                    <div class="dup-part-color">C: ${part.color_id}</div>
+                    <div class="dup-part-status ${part.is_new ? 'new' : 'used'}">
+                        ${part.is_new ? '新' : '旧'}
+                    </div>
+                    <div class="dup-part-quantity"><span class="dup-part-x">x</span>${part.quantity}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">合并零件</span>
+            <button class="btn-cancel" id="merge-cancel-btn">取消</button>
+        </div>
+        <div class="modal-body" style="padding: 0;">
+            <div style="padding: 20px 16px 12px;">
+                <div style="font-size: 16px; color: #333; margin-bottom: 12px; text-align: center;">
+                    当前零件：${currentPart.part_num}（${currentPart.quantity} 个）<br>
+                    选择要合并到的目标零件
+                </div>
+            </div>
+            <div class="dup-parts-scroll">
+                ${partsCardsHtml}
+            </div>
+            <div style="padding: 0 16px 20px; margin-top: 12px;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 16px; text-align: center;">
+                    合并后当前零件将被删除，数量累加至目标零件
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: center;">
+                    <button id="merge-confirm-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">确认合并</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    let selectedTargetId = sameParts[0].id;
+
+    // 绑定卡片选择事件
+    const partCards = sheet.querySelectorAll('.dup-part-card');
+    partCards.forEach(card => {
+        card.addEventListener('click', () => {
+            partCards.forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            selectedTargetId = parseInt(card.dataset.partId);
+        });
+    });
+
+    // 绑定取消按钮
+    document.getElementById('merge-cancel-btn').addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    // 绑定确认合并按钮
+    document.getElementById('merge-confirm-btn').addEventListener('click', async () => {
+        const targetPart = sameParts.find(p => p.id === selectedTargetId);
+        if (!targetPart) {
+            alert('请选择目标零件');
+            return;
+        }
+
+        // 计算新数量
+        const newQty = targetPart.quantity + currentPart.quantity;
+        
+        // 更新目标零件数量
+        const updateSuccess = await updatePart(selectedTargetId, { quantity: newQty });
+        if (!updateSuccess) {
+            alert('更新目标零件数量失败');
+            return;
+        }
+
+        // 删除当前零件
+        const deleteSuccess = await deletePart(currentPart.id);
+        if (!deleteSuccess) {
+            alert('删除当前零件失败，请重试');
+            return;
+        }
+
+        // 关闭弹窗
+        overlay.remove();
+        // 关闭详情弹窗
+        const detailOverlay = document.querySelector('.modal-overlay.active');
+        if (detailOverlay) detailOverlay.remove();
+        // 刷新零件列表
+        if (selectedBox) {
+            await loadParts(selectedBox.id);
+        }
+        // 从搜索结果中移除当前零件卡片
+        const card = document.querySelector(`.search-result-card[data-part-id="${currentPart.id}"]`);
+        if (card) card.remove();
+
+        alert(`合并成功！已将 ${currentPart.quantity} 个零件合并到目标零件，新数量为 ${newQty}`);
+    });
 }
 
 async function goBackToRepositories() {
