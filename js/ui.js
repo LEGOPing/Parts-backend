@@ -2537,7 +2537,7 @@ async function showImportConfirmation(data) {
     const existingParts = await getParts(selectedBox.id);
     const existingMap = {};
     (existingParts || []).forEach(p => {
-        const key = `${p.part_num}_${p.color_id}`;
+        const key = `${p.part_num}_${p.color_id}_${p.is_new ? 1 : 0}`;
         existingMap[key] = p;
     });
 
@@ -2568,14 +2568,15 @@ async function showImportConfirmation(data) {
         const colorRgb = colorInfo && colorInfo.rgb ?
             (colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + colorInfo.rgb) : '#FFFFFF';
 
-        // 检测是否重复
-        const existingKey = `${partNum}_${colorId}`;
-        const existingPart = existingMap[existingKey];
-
+        // 先解析 is_new，再进行重复检测（状态是唯一性的关键标识）
         const rawIsNew = item.is_new;
         const v = String(rawIsNew ?? '').trim().toUpperCase();
         const parsedIsNew = v === 'T' || v === 'TRUE' || v === '1' || v === 'Y' || rawIsNew === true;
         console.log(`[CSV导入] part=${partNum} is_new原始值="${rawIsNew}" (type:${typeof rawIsNew}) → 解析=${parsedIsNew} (v="${v}")`);
+
+        // 检测是否重复（型号+颜色+新旧状态三者一致才视为重复）
+        const existingKey = `${partNum}_${colorId}_${parsedIsNew ? 1 : 0}`;
+        const existingPart = existingMap[existingKey];
 
         enrichedData.push({
             part_num: partNum,
