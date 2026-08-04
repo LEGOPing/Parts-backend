@@ -2350,3 +2350,62 @@ body {
     cursor: pointer;
     margin-top: 12px;
 }
+
+/* 重复零件提示 */
+.csv-imp-duplicate-tip {
+    background: #fff3e0;
+    color: #e65100;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+/* 重复零件卡片高亮 */
+.csv-imp-card-duplicate {
+    border: 2px solid #FF9800 !important;
+    background: #fff8e1 !important;
+}
+
+/* 重复操作行 */
+.csv-imp-duplicate-row {
+    flex-wrap: wrap;
+    gap: 8px !important;
+    margin-top: 4px;
+}
+
+/* 合并/新增选择器 */
+.csv-imp-action-switch {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.csv-imp-action-switch label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 10px;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 0;
+}
+
+.csv-imp-action-switch label input {
+    display: none;
+}
+
+.csv-imp-action-switch label.active {
+    background: #4CAF50;
+    color: white;
+    border-color: #4CAF50;
+}
+
+.csv-imp-action-switch label:nth-child(2).active {
+    background: #2196F3;
+    border-color: #2196F3;
+}

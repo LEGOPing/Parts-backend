@@ -587,13 +587,9 @@ async function advancedSearchParts(params) {
 
 async function batchCreateParts(partsData) {
     try {
-        // 使用 upsert 模式：已存在的零件（同box+型号+颜色）更新数量，不存在的新增
         const results = await supabaseRequest('parts', {
             method: 'POST',
-            body: partsData,
-            headers: {
-                'Prefer': 'return=representation, resolution=merge-duplicates'
-            }
+            body: partsData
         });
         if (results) {
             return { success: true, count: results.length, errors: [] };
