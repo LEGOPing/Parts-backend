@@ -2587,7 +2587,7 @@ async function showImportConfirmation(data) {
     let html = '';
 
     if (duplicateCount > 0) {
-        html += `<div class="csv-imp-duplicate-tip">检测到 ${duplicateCount} 个零件在盒子中已存在，请选择处理方式</div>`;
+        html += `<div class="csv-imp-duplicate-tip">检测到 ${duplicateCount} 个零件在盒子中已存在，可选择合并数量或新增一条记录</div>`;
     }
 
     html += '<div class="csv-imp-confirm-list">';
@@ -2682,6 +2682,12 @@ function getColorBrightness(hex) {
 
 async function confirmCSVImport() {
     if (!selectedBox || !window.currentCSVData) return;
+    doConfirmCSVImport();
+}
+
+// 实际执行导入的内部函数
+async function doConfirmCSVImport() {
+    if (!selectedBox || !window.currentCSVData) return;
 
     const body = document.getElementById('csv-imp-body');
     body.innerHTML = '<div class="csv-imp-loading">正在导入...</div>';
@@ -2702,7 +2708,7 @@ async function confirmCSVImport() {
         }
     }
 
-    // 处理新增项（包括重复但选择新增的 + 全新零件）
+    // 处理新增项（全新零件 + 选择新增的重复零件）
     const newItems = items.filter(it => !it.existing || it.action === 'new');
     if (newItems.length > 0) {
         // 先重置自增序列，避免主键冲突
@@ -2712,7 +2718,6 @@ async function confirmCSVImport() {
             console.warn('重置序列失败:', e.message);
         }
 
-        // 逐条插入，避免一条失败导致全部失败
         for (const item of newItems) {
             const partData = {
                 box_id: selectedBox.id,
@@ -2727,20 +2732,7 @@ async function confirmCSVImport() {
             if (result.success) {
                 successCount++;
             } else {
-                const errMsg = result.errors[0]?.error || '未知错误';
-                // 如果是重复零件且唯一约束冲突，自动回退为合并
-                if (item.existing && (errMsg.includes('unique') || errMsg.includes('duplicate') || errMsg.includes('23505') || errMsg.includes('409'))) {
-                    try {
-                        const newQty = item.existing_quantity + item.quantity;
-                        await updatePart(item.existing_id, { quantity: newQty });
-                        successCount++;
-                        errors.push({ part_num: item.part_num, error: `已自动转为合并（数量累加至${newQty}）` });
-                    } catch (e2) {
-                        errors.push({ part_num: item.part_num, error: `新增+合并均失败: ${e2.message}` });
-                    }
-                } else {
-                    errors.push({ part_num: item.part_num, error: errMsg });
-                }
+                errors.push({ part_num: item.part_num, error: result.errors[0]?.error || '未知错误' });
             }
         }
     }
