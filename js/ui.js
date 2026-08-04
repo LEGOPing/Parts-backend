@@ -2705,20 +2705,30 @@ async function confirmCSVImport() {
     // 处理新增项（包括重复但选择新增的 + 全新零件）
     const newItems = items.filter(it => !it.existing || it.action === 'new');
     if (newItems.length > 0) {
-        const newPartsData = newItems.map(item => ({
-            box_id: selectedBox.id,
-            part_num: item.part_num,
-            name: item.name,
-            color_id: item.color_id,
-            quantity: item.quantity,
-            is_new: item.is_new
-        }));
+        // 先重置自增序列，避免主键冲突
+        try {
+            await resetSequencesViaSupabase();
+        } catch (e) {
+            console.warn('重置序列失败:', e.message);
+        }
 
-        const result = await batchCreateParts(newPartsData);
-        if (result.success) {
-            successCount += result.count;
-        } else {
-            errors.push(...result.errors);
+        // 逐条插入，避免一条失败导致全部失败
+        for (const item of newItems) {
+            const partData = {
+                box_id: selectedBox.id,
+                part_num: item.part_num,
+                name: item.name || item.part_num,
+                color_id: item.color_id,
+                quantity: item.quantity,
+                is_new: item.is_new
+            };
+
+            const result = await batchCreateParts([partData]);
+            if (result.success) {
+                successCount++;
+            } else {
+                errors.push({ part_num: item.part_num, error: result.errors[0]?.error || '未知错误' });
+            }
         }
     }
 
