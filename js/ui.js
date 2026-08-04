@@ -1201,18 +1201,18 @@ async function saveNewPart(button) {
             const isSelected = i === 0; // 默认选中第一个
             partsCardsHtml += `
                 <div class="dup-part-card ${isSelected ? 'selected' : ''}" data-part-id="${part.id}">
-                    <div class="dup-part-image">
-                        ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}">` : ''}
+                    <div class="dup-part-left">
+                        <div class="dup-part-image">
+                            ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}">` : ''}
+                        </div>
                     </div>
-                    <div class="dup-part-details">
+                    <div class="dup-part-right">
                         <div class="dup-part-num">${part.part_num}</div>
                         <div class="dup-part-color">C: ${part.color_id}</div>
-                    </div>
-                    <div class="dup-part-bottom">
-                        <div class="dup-part-quantity">x${part.quantity}</div>
                         <div class="dup-part-status ${part.is_new ? 'new' : 'used'}">
                             ${part.is_new ? 'N' : 'U'}
                         </div>
+                        <div class="dup-part-quantity">x${part.quantity}</div>
                     </div>
                 </div>
             `;
