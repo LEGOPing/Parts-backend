@@ -2434,9 +2434,9 @@ function downloadCSVTemplate() {
     const fileName = `零件${dateStr}-${seq}.csv`;
 
     const csvContent = 'part_num,name,color_id,quantity,is_new\n' +
-        '3001,砖块 2x4,1,10,true\n' +
-        '3002,砖块 2x3,4,5,false\n' +
-        '3003,砖块 2x2,0,20,true\n';
+        '3001,,1,10,T\n' +
+        '3002,,4,5,F\n' +
+        '3003,,0,20,T\n';
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -2570,7 +2570,10 @@ async function showImportConfirmation(data) {
             color_name: colorName,
             color_rgb: colorRgb,
             quantity: quantity,
-            is_new: item.is_new === 'true' || item.is_new === 'True' || item.is_new === true,
+            is_new: (() => {
+                const v = String(item.is_new ?? '').trim().toUpperCase();
+                return v === 'T' || v === 'TRUE' || v === '1' || v === 'Y' || item.is_new === true;
+            })(),
             existing: existingPart ? true : false,
             existing_id: existingPart ? existingPart.id : null,
             existing_quantity: existingPart ? existingPart.quantity : 0,
