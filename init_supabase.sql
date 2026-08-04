@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS colors (
 CREATE INDEX IF NOT EXISTS idx_colors_color_name ON colors(color_name);
 
 -- 4. 零件表 (parts)
+-- 注意：唯一约束使用 (box_id, id, color_id) 而非 (box_id, part_num, color_id)
+-- 由于 id 是主键已唯一，此约束允许同一盒内存在相同 part_num + color_id 的多条记录
+-- 业务上支持"同盒同型号同颜色重号"，例如不同批次入库分别记录
 CREATE TABLE IF NOT EXISTS parts (
     id SERIAL PRIMARY KEY,
     part_num VARCHAR(100) NOT NULL,
@@ -41,7 +44,8 @@ CREATE TABLE IF NOT EXISTS parts (
     color_id INTEGER NOT NULL,
     is_new BOOLEAN DEFAULT FALSE,
     quantity INTEGER DEFAULT 0,
-    box_id INTEGER REFERENCES boxes(id) ON DELETE CASCADE
+    box_id INTEGER REFERENCES boxes(id) ON DELETE CASCADE,
+    CONSTRAINT parts_box_id_color_key UNIQUE (box_id, id, color_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_parts_part_num ON parts(part_num);
