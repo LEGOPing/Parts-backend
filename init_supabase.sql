@@ -92,13 +92,14 @@ ON CONFLICT DO NOTHING;
 -- ============================================
 -- 重置自增序列函数（供前端 RPC 调用，替代 CloudBase 后端）
 -- SECURITY DEFINER: 以函数所有者(postgres)身份执行，使 anon key 也能调用
+-- 使用 setval 同步到 MAX(id)，而非硬编码 RESTART WITH 1，避免主键冲突
 -- ============================================
 CREATE OR REPLACE FUNCTION reset_sequences()
 RETURNS void AS $$
 BEGIN
-    ALTER SEQUENCE repositories_id_seq RESTART WITH 1;
-    ALTER SEQUENCE boxes_id_seq RESTART WITH 1;
-    ALTER SEQUENCE parts_id_seq RESTART WITH 1;
+    PERFORM setval('repositories_id_seq', GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.repositories), 1));
+    PERFORM setval('boxes_id_seq',       GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.boxes),       1));
+    PERFORM setval('parts_id_seq',       GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.parts),       1));
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
