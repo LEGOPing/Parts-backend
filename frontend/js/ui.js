@@ -2624,14 +2624,8 @@ async function showImportConfirmation(data) {
                     <div class="csv-imp-card-row csv-imp-duplicate-row">
                         <span class="csv-imp-card-label">已有${item.existing_quantity}个</span>
                         <div class="csv-imp-action-switch">
-                            <label class="${item.action === 'merge' ? 'active' : ''}" onclick="setImportAction(${idx}, 'merge')">
-                                <input type="radio" name="action_${idx}" value="merge" ${item.action === 'merge' ? 'checked' : ''}>
-                                合并
-                            </label>
-                            <label class="${item.action === 'new' ? 'active' : ''}" onclick="setImportAction(${idx}, 'new')">
-                                <input type="radio" name="action_${idx}" value="new" ${item.action === 'new' ? 'checked' : ''}>
-                                新增
-                            </label>
+                            <div class="csv-imp-action-item ${item.action === 'merge' ? 'active' : ''}" onclick="setImportAction(${idx}, 'merge')">合并</div>
+                            <div class="csv-imp-action-item ${item.action === 'new' ? 'active' : ''}" onclick="setImportAction(${idx}, 'new')">新增</div>
                         </div>
                     </div>
                     ` : ''}
@@ -2668,12 +2662,13 @@ function setImportAction(idx, action) {
     if (!window.currentCSVData) return;
     window.currentCSVData[idx].action = action;
 
-    // 更新UI
-    const labels = document.querySelectorAll(`input[name="action_${idx}"]`);
-    labels.forEach(l => {
-        l.checked = l.value === action;
-        l.parentElement.classList.toggle('active', l.value === action);
-    });
+    // 更新UI - 使用新的div选择器
+    const row = document.querySelectorAll('.csv-imp-card-duplicate .csv-imp-action-switch')[idx];
+    if (row) {
+        const items = row.querySelectorAll('.csv-imp-action-item');
+        if (items[0]) items[0].classList.toggle('active', action === 'merge');
+        if (items[1]) items[1].classList.toggle('active', action === 'new');
+    }
 }
 
 // 计算颜色亮度

@@ -2382,30 +2382,30 @@ body {
     margin-left: auto;
 }
 
-.csv-imp-action-switch label {
+.csv-imp-action-item {
     display: flex;
     align-items: center;
-    gap: 3px;
-    padding: 3px 10px;
+    justify-content: center;
+    padding: 3px 12px;
     border: 1px solid #ddd;
     border-radius: 14px;
     font-size: 12px;
     cursor: pointer;
     transition: all 0.2s;
-    margin: 0;
+    user-select: none;
+    background: #fff;
+    color: #666;
 }
 
-.csv-imp-action-switch label input {
-    display: none;
-}
-
-.csv-imp-action-switch label.active {
-    background: #4CAF50;
+.csv-imp-action-item.active {
     color: white;
-    border-color: #4CAF50;
+    border-color: transparent;
 }
 
-.csv-imp-action-switch label:nth-child(2).active {
+.csv-imp-action-item:first-child.active {
+    background: #4CAF50;
+}
+
+.csv-imp-action-item:last-child.active {
     background: #2196F3;
-    border-color: #2196F3;
 }
