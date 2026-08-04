@@ -2727,7 +2727,20 @@ async function confirmCSVImport() {
             if (result.success) {
                 successCount++;
             } else {
-                errors.push({ part_num: item.part_num, error: result.errors[0]?.error || '未知错误' });
+                const errMsg = result.errors[0]?.error || '未知错误';
+                // 如果是重复零件且唯一约束冲突，自动回退为合并
+                if (item.existing && (errMsg.includes('unique') || errMsg.includes('duplicate') || errMsg.includes('23505') || errMsg.includes('409'))) {
+                    try {
+                        const newQty = item.existing_quantity + item.quantity;
+                        await updatePart(item.existing_id, { quantity: newQty });
+                        successCount++;
+                        errors.push({ part_num: item.part_num, error: `已自动转为合并（数量累加至${newQty}）` });
+                    } catch (e2) {
+                        errors.push({ part_num: item.part_num, error: `新增+合并均失败: ${e2.message}` });
+                    }
+                } else {
+                    errors.push({ part_num: item.part_num, error: errMsg });
+                }
             }
         }
     }
