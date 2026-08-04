@@ -2517,7 +2517,6 @@ async function processCSVFile(file) {
 async function showImportConfirmation(data) {
     const body = document.getElementById('csv-imp-body');
 
-    // 显示加载中
     body.innerHTML = '<div class="csv-imp-loading">正在加载零件信息...</div>';
 
     // 获取所有颜色信息
@@ -2525,15 +2524,23 @@ async function showImportConfirmation(data) {
     const colorMap = {};
     (colors || []).forEach(c => { colorMap[c.id] = c; });
 
+    // 获取盒子中已有零件，用于重复检测
+    const existingParts = await getParts(selectedBox.id);
+    const existingMap = {};
+    (existingParts || []).forEach(p => {
+        const key = `${p.part_num}_${p.color_id}`;
+        existingMap[key] = p;
+    });
+
     // 为每个零件匹配名称和图片
     const enrichedData = [];
     for (const item of data) {
         const partNum = item.part_num || '';
-        const colorId = item.color_id || '';
+        const colorId = parseInt(item.color_id) || '';
 
-        // 从RB数据库获取零件名称
-        let partName = item.name || '';
-        if (!partName && partNum) {
+        // 始终从RB数据库获取零件名称，忽略CSV中的name
+        let partName = '';
+        if (partNum) {
             try {
                 const rbPart = await getPartByNum(partNum);
                 if (rbPart && rbPart.name) {
@@ -2550,28 +2557,46 @@ async function showImportConfirmation(data) {
         const colorRgb = colorInfo && colorInfo.rgb ?
             (colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + colorInfo.rgb) : '#FFFFFF';
 
+        // 检测是否重复
+        const existingKey = `${partNum}_${colorId}`;
+        const existingPart = existingMap[existingKey];
+
         enrichedData.push({
-            ...item,
+            part_num: partNum,
             name: partName,
+            color_id: colorId,
             color_name: colorName,
             color_rgb: colorRgb,
-            part_num: partNum,
-            color_id: colorId
+            quantity: parseInt(item.quantity) || 0,
+            is_new: item.is_new === 'true' || item.is_new === 'True' || item.is_new === true,
+            existing: existingPart ? true : false,
+            existing_id: existingPart ? existingPart.id : null,
+            existing_quantity: existingPart ? existingPart.quantity : 0,
+            action: existingPart ? 'merge' : 'new' // 默认重复的选merge，新的选new
         });
     }
 
     window.currentCSVData = enrichedData;
 
+    // 统计重复数量
+    const duplicateCount = enrichedData.filter(d => d.existing).length;
+
     // 渲染确认表
-    let html = '<div class="csv-imp-confirm-list">';
+    let html = '';
+
+    if (duplicateCount > 0) {
+        html += `<div class="csv-imp-duplicate-tip">检测到 ${duplicateCount} 个零件在盒子中已存在，请选择处理方式</div>`;
+    }
+
+    html += '<div class="csv-imp-confirm-list">';
 
     enrichedData.forEach((item, idx) => {
-        const isNew = item.is_new === 'true' || item.is_new === 'True' || item.is_new === true;
+        const isNew = item.is_new;
         const brightness = getColorBrightness(item.color_rgb);
         const textColor = brightness > 128 ? '#000' : '#fff';
 
         html += `
-            <div class="csv-imp-card" data-idx="${idx}">
+            <div class="csv-imp-card ${item.existing ? 'csv-imp-card-duplicate' : ''}" data-idx="${idx}">
                 <div class="csv-imp-card-img" id="csv-imp-img-${idx}">
                     <div class="csv-imp-img-loading">加载中</div>
                 </div>
@@ -2590,9 +2615,24 @@ async function showImportConfirmation(data) {
                     </div>
                     <div class="csv-imp-card-row">
                         <span class="csv-imp-card-label">数量：</span>
-                        <span class="csv-imp-card-value csv-imp-qty">${item.quantity || 0}</span>
+                        <span class="csv-imp-card-value csv-imp-qty">${item.quantity}</span>
                         <span class="csv-imp-card-status ${isNew ? 'new' : 'used'}">${isNew ? '新品' : '旧品'}</span>
                     </div>
+                    ${item.existing ? `
+                    <div class="csv-imp-card-row csv-imp-duplicate-row">
+                        <span class="csv-imp-card-label">已有${item.existing_quantity}个</span>
+                        <div class="csv-imp-action-switch">
+                            <label class="${item.action === 'merge' ? 'active' : ''}" onclick="setImportAction(${idx}, 'merge')">
+                                <input type="radio" name="action_${idx}" value="merge" ${item.action === 'merge' ? 'checked' : ''}>
+                                合并
+                            </label>
+                            <label class="${item.action === 'new' ? 'active' : ''}" onclick="setImportAction(${idx}, 'new')">
+                                <input type="radio" name="action_${idx}" value="new" ${item.action === 'new' ? 'checked' : ''}>
+                                新增
+                            </label>
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -2621,6 +2661,19 @@ async function showImportConfirmation(data) {
     });
 }
 
+// 设置重复零件的处理方式
+function setImportAction(idx, action) {
+    if (!window.currentCSVData) return;
+    window.currentCSVData[idx].action = action;
+
+    // 更新UI
+    const labels = document.querySelectorAll(`input[name="action_${idx}"]`);
+    labels.forEach(l => {
+        l.checked = l.value === action;
+        l.parentElement.classList.toggle('active', l.value === action);
+    });
+}
+
 // 计算颜色亮度
 function getColorBrightness(hex) {
     const cleanHex = hex.replace('#', '');
@@ -2633,49 +2686,64 @@ function getColorBrightness(hex) {
 async function confirmCSVImport() {
     if (!selectedBox || !window.currentCSVData) return;
 
-    // 清理数据，只保留 parts 表需要的字段
-    const data = window.currentCSVData.map(item => ({
-        box_id: selectedBox.id,
-        part_num: item.part_num || '',
-        name: item.name || '',
-        color_id: parseInt(item.color_id) || 1,
-        quantity: parseInt(item.quantity) || 0,
-        is_new: item.is_new === 'true' || item.is_new === 'True' || item.is_new === true
-    }));
-
     const body = document.getElementById('csv-imp-body');
-    body.innerHTML = '<div class="csv-imp-loading">正在重置序列并导入...</div>';
+    body.innerHTML = '<div class="csv-imp-loading">正在导入...</div>';
 
-    // 先重置自增序列，避免主键冲突
-    try {
-        await resetSequencesViaSupabase();
-    } catch (e) {
-        console.warn('重置序列失败，可能影响批量导入:', e.message);
+    const items = window.currentCSVData;
+    let successCount = 0;
+    const errors = [];
+
+    // 处理合并项：更新已有零件数量
+    const mergeItems = items.filter(it => it.existing && it.action === 'merge');
+    for (const item of mergeItems) {
+        try {
+            const newQty = item.existing_quantity + item.quantity;
+            await updatePart(item.existing_id, { quantity: newQty });
+            successCount++;
+        } catch (e) {
+            errors.push({ part_num: item.part_num, error: `合并失败: ${e.message}` });
+        }
     }
 
-    const result = await batchCreateParts(data);
+    // 处理新增项（包括重复但选择新增的 + 全新零件）
+    const newItems = items.filter(it => !it.existing || it.action === 'new');
+    if (newItems.length > 0) {
+        const newPartsData = newItems.map(item => ({
+            box_id: selectedBox.id,
+            part_num: item.part_num,
+            name: item.name,
+            color_id: item.color_id,
+            quantity: item.quantity,
+            is_new: item.is_new
+        }));
 
-    if (result.success) {
+        const result = await batchCreateParts(newPartsData);
+        if (result.success) {
+            successCount += result.count;
+        } else {
+            errors.push(...result.errors);
+        }
+    }
+
+    // 显示结果
+    if (errors.length === 0) {
         body.innerHTML = `
             <div class="csv-imp-success">
                 <div class="csv-imp-success-icon">✓</div>
                 <div>导入成功！</div>
-                <div>成功导入 ${result.count} 个零件</div>
+                <div>成功导入/更新 ${successCount} 个零件</div>
                 <button class="csv-imp-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         `;
-        if (selectedBox) {
-            loadParts(selectedBox.id);
-        }
     } else {
         let errorHtml = `
             <div class="csv-imp-error">
                 <div class="csv-imp-error-icon">✗</div>
                 <div>导入完成，但有部分失败</div>
-                <div>成功导入 ${result.count} 个零件</div>
+                <div>成功处理 ${successCount} 个零件</div>
                 <div class="csv-imp-error-list">
         `;
-        result.errors.forEach(e => {
+        errors.forEach(e => {
             errorHtml += `<div>${e.part_num}: ${e.error}</div>`;
         });
         errorHtml += `
@@ -2684,9 +2752,10 @@ async function confirmCSVImport() {
             </div>
         `;
         body.innerHTML = errorHtml;
-        if (selectedBox) {
-            loadParts(selectedBox.id);
-        }
+    }
+
+    if (selectedBox) {
+        loadParts(selectedBox.id);
     }
 }
 
