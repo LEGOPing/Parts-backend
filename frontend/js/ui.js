@@ -2450,6 +2450,13 @@ function downloadCSVTemplate() {
 }
 
 function parseCSVContent(content) {
+    // 去掉 BOM（UTF-8 BOM \ufeff）
+    if (content.charCodeAt(0) === 0xFEFF) {
+        content = content.slice(1);
+    }
+    // 统一换行符：\r\n → \n，再 \r → \n
+    content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
     const lines = content.split('\n');
     const rows = [];
 
@@ -2502,7 +2509,9 @@ async function processCSVFile(file) {
         const importData = data.map(row => {
             const item = {};
             headers.forEach((header, index) => {
-                item[header.trim().toLowerCase()] = row[index] || '';
+                const cleanHeader = header.trim().toLowerCase();
+                const value = row[index] != null ? String(row[index]).trim() : '';
+                item[cleanHeader] = value;
             });
             return item;
         });
@@ -2563,6 +2572,11 @@ async function showImportConfirmation(data) {
         const existingKey = `${partNum}_${colorId}`;
         const existingPart = existingMap[existingKey];
 
+        const rawIsNew = item.is_new;
+        const v = String(rawIsNew ?? '').trim().toUpperCase();
+        const parsedIsNew = v === 'T' || v === 'TRUE' || v === '1' || v === 'Y' || rawIsNew === true;
+        console.log(`[CSV导入] part=${partNum} is_new原始值="${rawIsNew}" (type:${typeof rawIsNew}) → 解析=${parsedIsNew} (v="${v}")`);
+
         enrichedData.push({
             part_num: partNum,
             name: partName,
@@ -2570,10 +2584,7 @@ async function showImportConfirmation(data) {
             color_name: colorName,
             color_rgb: colorRgb,
             quantity: quantity,
-            is_new: (() => {
-                const v = String(item.is_new ?? '').trim().toUpperCase();
-                return v === 'T' || v === 'TRUE' || v === '1' || v === 'Y' || item.is_new === true;
-            })(),
+            is_new: parsedIsNew,
             existing: existingPart ? true : false,
             existing_id: existingPart ? existingPart.id : null,
             existing_quantity: existingPart ? existingPart.quantity : 0,
