@@ -2535,8 +2535,10 @@ async function showImportConfirmation(data) {
     // 为每个零件匹配名称和图片
     const enrichedData = [];
     for (const item of data) {
-        const partNum = item.part_num || '';
-        const colorId = parseInt(item.color_id) || '';
+        const partNum = (item.part_num || '').trim();
+        const rawColorId = item.color_id;
+        const colorId = (rawColorId !== '' && rawColorId !== undefined && rawColorId !== null) ? parseInt(rawColorId) : 0;
+        const quantity = parseInt(item.quantity) || 0;
 
         // 始终从RB数据库获取零件名称，忽略CSV中的name
         let partName = '';
@@ -2567,7 +2569,7 @@ async function showImportConfirmation(data) {
             color_id: colorId,
             color_name: colorName,
             color_rgb: colorRgb,
-            quantity: parseInt(item.quantity) || 0,
+            quantity: quantity,
             is_new: item.is_new === 'true' || item.is_new === 'True' || item.is_new === true,
             existing: existingPart ? true : false,
             existing_id: existingPart ? existingPart.id : null,
