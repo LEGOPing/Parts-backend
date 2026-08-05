@@ -721,56 +721,6 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
     }
 }
 
-// 上传零件图片到 Gitee Parts-img 仓库（partNum_colorId.jpg）。
-// 返回 { success, url, error }；文件已存在时自动用 sha 覆盖更新。
-async function uploadPartImageToGitee(partNum, colorId, imageDataUrl) {
-    try {
-        const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
-        const fileName = getGiteePartImgFileName(partNum, colorId);
-        const apiUrl = `https://gitee.com/api/v5/repos/legoping/Parts-img/contents/${fileName}`;
-
-        // 提取 base64 数据（兼容 data:image/...;base64, 前缀）
-        const base64 = String(imageDataUrl).split(',')[1] || imageDataUrl;
-        const content = base64.replace(/\s+/g, '');
-
-        // 先查询是否已存在（获取 sha 用于覆盖）
-        let sha = null;
-        try {
-            const checkResp = await fetch(`${apiUrl}?ref=main`, {
-                headers: { 'Authorization': `token ${token}` }
-            });
-            if (checkResp.ok) {
-                const checkData = await checkResp.json();
-                sha = checkData.sha || null;
-            }
-        } catch (e) { /* 不存在则走新建 */ }
-
-        const body = {
-            message: `添加零件图片 ${fileName}`,
-            content: content,
-            branch: 'main'
-        };
-        if (sha) body.sha = sha;
-
-        const resp = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `token ${token}`
-            },
-            body: JSON.stringify(body)
-        });
-
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-        }
-        return { success: true, url: getGiteePartImgUrl(partNum, colorId) };
-    } catch (error) {
-        console.error('上传零件图片到Gitee失败:', error);
-        return { success: false, error: error.message };
-    }
-}
-
 // 查询单个零件重量（克）。
 // 策略（按用户指定顺序）：
 // 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）

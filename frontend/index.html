@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080301">
+    <link rel="stylesheet" href="css/style.css?v=2026080320">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -40,10 +40,10 @@
     }
     </script>
 
-    <script src="js/api.js?v=2026080301"></script>
+    <script src="js/api.js?v=2026080312"></script>
     <script src="js/store.js?v=2026073124"></script>
-    <script src="js/rb-db.js?v=2026080301"></script>
-    <script src="js/ui.js?v=2026080301"></script>
+    <script src="js/rb-db.js?v=2026080312"></script>
+    <script src="js/ui.js?v=2026080320"></script>
 </head>
 <body>
     <div class="container">
@@ -109,8 +109,18 @@
                 <div id="parts-tab" class="tab-content">
                     <div class="part-management-container">
                         <div class="part-header">
-                            <h2 id="selected-box-name">未命名零件管理</h2>
-                            <div class="part-stats">共 <span id="part-count">0</span> 种零件</div>
+                            <h2 class="part-title">零件管理</h2>
+                            <div class="part-header-right">
+                                <span id="selected-box-name" class="box-name">未命名</span>
+                                <span class="repo-at" id="repo-at" style="display:none;">@</span>
+                                <div class="repo-badge-wrapper" style="display:none;" id="repo-badge-wrapper">
+                                    <span id="box-sequence" class="box-sequence">1/1</span>
+                                    <span id="repo-name-badge" class="repo-name-badge">
+                                        <span id="repo-name-text"></span>
+                                    </span>
+                                </div>
+                                <div class="part-stats"><span id="part-count">0</span><span class="part-stats-unit">T</span></div>
+                            </div>
                         </div>
                         <div class="part-action-buttons">
                             <button onclick="goBackToRepositories()" class="action-btn">返回</button>
@@ -183,6 +193,7 @@
                             <button onclick="exportRB()" class="btn-settings" style="background-color: #4CAF50; color: white; flex: 1;">导出RB</button>
                         </div>
                         <div id="rb-status-hint" style="font-size: 12px; margin-top: 8px; text-align: center;"></div>
+                        <div id="idb-version-info" style="font-size: 12px; margin-top: 4px; text-align: center; color: var(--dark-gray-color);"></div>
                     </div>
                     
                     <div class="settings-group">
@@ -234,7 +245,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
-                navigator.serviceWorker.register('service-worker.js?v=v70', { updateViaCache: 'none' })
+                navigator.serviceWorker.register('service-worker.js?v=v71', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
                         // 如果有旧SW在控制页面，强制重新加载以应用新版本

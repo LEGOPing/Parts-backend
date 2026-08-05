@@ -633,18 +633,56 @@ async function getPartColorCount(partNum) {
     }
 }
 
-// 根据 part_num 和 color_id 查询图片URL
+// 存储自定义图片的 localStorage key 前缀
+const CUSTOM_IMAGE_KEY_PREFIX = 'custom_img_';
+
+// 保存自定义图片URL
+function saveCustomImageUrl(partNum, colorId, imageUrl) {
+    try {
+        const key = `${CUSTOM_IMAGE_KEY_PREFIX}${partNum}_${colorId}`;
+        localStorage.setItem(key, imageUrl);
+        return true;
+    } catch (error) {
+        console.error('保存自定义图片失败:', error);
+        return false;
+    }
+}
+
+// 获取自定义图片URL
+function getCustomImageUrl(partNum, colorId) {
+    try {
+        const key = `${CUSTOM_IMAGE_KEY_PREFIX}${partNum}_${colorId}`;
+        return localStorage.getItem(key);
+    } catch (error) {
+        return null;
+    }
+}
+
+// 删除自定义图片URL
+function deleteCustomImageUrl(partNum, colorId) {
+    try {
+        const key = `${CUSTOM_IMAGE_KEY_PREFIX}${partNum}_${colorId}`;
+        localStorage.removeItem(key);
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+// 根据 part_num 和 color_id 查询图片URL（支持自定义图片覆盖）
 async function getPartImageUrl(partNum, colorId) {
     try {
+        // 1. 首先检查是否有自定义图片
+        const customUrl = getCustomImageUrl(partNum, colorId);
+        if (customUrl) {
+            return customUrl;
+        }
+        
+        // 2. 从RB数据库查询，精确匹配 part_num 和 color_id
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        // 精确匹配 part_num 和 color_id
-        let record = inventory.find(i => 
+        const record = inventory.find(i => 
             i.part_num === partNum && String(i.color_id) === String(colorId)
         );
-        // 如果没找到，尝试只匹配 part_num
-        if (!record) {
-            record = inventory.find(i => i.part_num === partNum);
-        }
         return record ? record.img_url : null;
     } catch (error) {
         console.error('查询零件图片URL失败:', error);
