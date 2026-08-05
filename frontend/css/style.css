@@ -1863,13 +1863,14 @@ body {
     gap: 13px;
 }
 
-.pd-close-btn,
-.pd-merge-btn,
-.pd-del-btn {
+.modal-content .pd-close-btn,
+.modal-content .pd-merge-btn,
+.modal-content .pd-del-btn {
     width: 42px;
     height: 42px;
     border-radius: 50%;
     border: none;
+    padding: 0;
     color: white;
     font-size: 16px;
     font-weight: 600;
