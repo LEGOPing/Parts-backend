@@ -389,15 +389,19 @@ async function loadBoxes(repoId) {
     }));
     
     uniqueBoxes.forEach(box => {
+        const transferMode = getBoxTransferMode();
+        const isSelectedForTransfer = transferMode && getSelectedTransferBoxes().some(b => b.id === box.id);
         const card = document.createElement('div');
-        card.className = `box-card ${box.name === '新盒子' ? 'default' : ''}`;
+        card.className = `box-card ${box.name === '新盒子' ? 'default' : ''} ${isSelectedForTransfer ? 'transfer-selected' : ''}`;
         card.dataset.id = box.id;
         
         const isTempBox = box.name === '临时盒子';
-        const deleteBtn = isTempBox ? '' : `<button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>`;
+        const deleteBtn = (isTempBox || transferMode) ? '' : `<button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>`;
+        const checkBadge = `<div class="box-check-badge" style="display:${isSelectedForTransfer ? 'flex' : 'none'};">✓</div>`;
         
         card.innerHTML = `
                 ${deleteBtn}
+                ${checkBadge}
                 <div class="box-card-name">${box.name}</div>
                 <div class="box-card-footer">
                     <span class="box-id">ID: ${box.box_number}</span>
@@ -406,6 +410,10 @@ async function loadBoxes(repoId) {
             `;
         
         card.addEventListener('click', () => {
+            if (getBoxTransferMode()) {
+                toggleTransferBoxSelection(box, card);
+                return;
+            }
             if (!editingBox) {
                 setSelectedBox(box);
                 document.getElementById('selected-box-name').textContent = box.name;
@@ -433,14 +441,173 @@ async function loadBoxes(repoId) {
             }
         });
         
-        setupLongPress(card, () => {
-            if (box.name !== '临时盒子') {
-                startEditBox(card, box);
-            }
-        });
+        if (!transferMode) {
+            setupLongPress(card, () => {
+                if (box.name !== '临时盒子') {
+                    startEditBox(card, box);
+                }
+            });
+        }
         
         grid.appendChild(card);
     });
+}
+
+// ===== 盒子转仓 =====
+async function toggleBoxTransferMode() {
+    const mode = !getBoxTransferMode();
+    setBoxTransferMode(mode);
+    if (mode) {
+        setSelectedTransferBoxes([]);
+    }
+    
+    const btn = document.getElementById('transfer-box-btn');
+    const toolbar = document.getElementById('transfer-toolbar');
+    if (btn) btn.textContent = mode ? '取消转仓' : '盒子转仓';
+    if (toolbar) toolbar.style.display = mode ? 'flex' : 'none';
+    const targetBtn = document.getElementById('transfer-target-btn');
+    if (targetBtn) {
+        targetBtn.disabled = true;
+        targetBtn.textContent = '选择目标仓库(0)';
+    }
+    
+    if (selectedRepository) {
+        await loadBoxes(selectedRepository.id);
+    }
+}
+
+function toggleTransferBoxSelection(box, card) {
+    if (box.name === '临时盒子') {
+        alert('临时盒子不可转仓');
+        return;
+    }
+    const selected = getSelectedTransferBoxes();
+    const idx = selected.findIndex(b => b.id === box.id);
+    if (idx >= 0) {
+        selected.splice(idx, 1);
+        card.classList.remove('transfer-selected');
+        card.querySelector('.box-check-badge').style.display = 'none';
+    } else {
+        selected.push(box);
+        card.classList.add('transfer-selected');
+        card.querySelector('.box-check-badge').style.display = 'flex';
+    }
+    setSelectedTransferBoxes(selected);
+    
+    const targetBtn = document.getElementById('transfer-target-btn');
+    if (targetBtn) {
+        targetBtn.textContent = `选择目标仓库(${selected.length})`;
+        targetBtn.disabled = selected.length === 0;
+    }
+}
+
+function showTransferTargetPicker() {
+    const boxes = getSelectedTransferBoxes();
+    if (boxes.length === 0) {
+        alert('请先选择需要转仓的盒子');
+        return;
+    }
+    if (!selectedRepository) return;
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content transfer-target-modal';
+    
+    let repoListHtml = '';
+    getRepositories().then(repos => {
+        // 排除当前仓库和临时仓库
+        const candidates = repos.filter(r => r.id !== selectedRepository.id && r.name !== '临时仓库');
+        if (candidates.length === 0) {
+            sheet.innerHTML = `
+                <div class="transfer-target-header">
+                    <span class="transfer-target-title">盒子转仓</span>
+                    <button class="transfer-target-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                </div>
+                <div class="transfer-target-empty">没有可用的目标仓库</div>
+            `;
+            overlay.appendChild(sheet);
+            document.body.appendChild(overlay);
+            return;
+        }
+        candidates.forEach((repo, i) => {
+            repoListHtml += `
+                <label class="transfer-repo-option ${i === 0 ? 'checked' : ''}">
+                    <input type="radio" name="transfer-target-repo" value="${repo.id}" ${i === 0 ? 'checked' : ''}>
+                    <span>${repo.name}</span>
+                </label>
+            `;
+        });
+        sheet.innerHTML = `
+            <div class="transfer-target-header">
+                <span class="transfer-target-title">选择目标仓库（已选 ${boxes.length} 个盒子）</span>
+                <button class="transfer-target-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+            </div>
+            <div class="transfer-target-list">${repoListHtml}</div>
+            <button class="transfer-confirm-btn" onclick="performBoxTransfer()">确认转仓</button>
+        `;
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+    });
+}
+
+async function performBoxTransfer() {
+    const radio = document.querySelector('input[name="transfer-target-repo"]:checked');
+    if (!radio) {
+        alert('请选择目标仓库');
+        return;
+    }
+    const targetRepoId = parseInt(radio.value);
+    const boxes = getSelectedTransferBoxes();
+    
+    if (!confirm(`确定将 ${boxes.length} 个盒子转入所选仓库吗？`)) {
+        return;
+    }
+    
+    try {
+        // 获取目标仓库已有盒子，收集已占用的 box_number
+        const targetBoxes = await getBoxes(targetRepoId);
+        const usedNumbers = new Set(targetBoxes.map(b => b.box_number));
+        
+        // 按当前 ID 排序，尽量保留原 ID
+        const sortedBoxes = [...boxes].sort((a, b) => (a.box_number || 0) - (b.box_number || 0));
+        let maxNumber = targetBoxes.reduce((max, b) => Math.max(max, b.box_number || 0), 0);
+        
+        let renumbered = 0;
+        for (const box of sortedBoxes) {
+            let newNumber = box.box_number;
+            // 原 ID 被占用或无效时，分配目标仓库下一个可用 ID
+            if (!newNumber || usedNumbers.has(newNumber)) {
+                maxNumber += 1;
+                newNumber = maxNumber;
+                renumbered++;
+            }
+            usedNumbers.add(newNumber);
+            const success = await updateBox(box.id, { repository_id: targetRepoId, box_number: newNumber });
+            if (!success) {
+                throw new Error(`盒子 ${box.name || box.box_number} 更新失败`);
+            }
+        }
+        
+        // 退出转仓模式并刷新
+        setBoxTransferMode(false);
+        setSelectedTransferBoxes([]);
+        const btn = document.getElementById('transfer-box-btn');
+        const toolbar = document.getElementById('transfer-toolbar');
+        if (btn) btn.textContent = '盒子转仓';
+        if (toolbar) toolbar.style.display = 'none';
+        
+        await loadRepositories();
+        if (selectedRepository) {
+            await loadBoxes(selectedRepository.id);
+        }
+        
+        alert(`转仓成功：${boxes.length} 个盒子已转入目标仓库` + (renumbered > 0 ? `，其中 ${renumbered} 个盒子因 ID 冲突已重新编号` : ''));
+    } catch (error) {
+        console.error('转仓失败:', error);
+        alert('转仓失败：' + error.message);
+    }
 }
 
 function startEditBox(card, box) {
@@ -2014,7 +2181,7 @@ async function showPartDetail(part) {
     let hasCustomImage = false;
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
-        hasCustomImage = !!getCustomImageUrl(part.part_num, part.color_id);
+        hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -2205,9 +2372,9 @@ async function showPartDetail(part) {
     });
 }
 
-// 图片变更入口（根据是否有图片选择不同操作）
-function changePartImage(partNum, colorId) {
-    const hasCustom = !!getCustomImageUrl(partNum, colorId);
+// 图片变更入口（根据是否有离线缓存图片选择不同操作）
+async function changePartImage(partNum, colorId) {
+    const hasCustom = !!(await getPartImageFromOfflineCache(partNum, colorId));
     if (hasCustom) {
         manageCustomImage(partNum, colorId);
     } else {
@@ -2271,8 +2438,8 @@ function addCustomImage(partNum, colorId) {
     document.body.appendChild(overlay);
 }
 
-// 从URL保存图片
-function saveImageFromUrl(partNum, colorId) {
+// 从URL保存图片（下载→离线缓存 + Gitee Parts-img）
+async function saveImageFromUrl(partNum, colorId) {
     const urlInput = document.getElementById('custom-img-url');
     const url = urlInput ? urlInput.value.trim() : '';
     
@@ -2286,12 +2453,31 @@ function saveImageFromUrl(partNum, colorId) {
         return;
     }
     
-    const success = saveCustomImageUrl(partNum, colorId, url);
     const statusEl = document.getElementById('custom-img-status');
+    statusEl.textContent = '⏳ 正在下载并保存图片...';
+    statusEl.style.color = '#2196F3';
     
-    if (success) {
-        statusEl.textContent = '✓ 图片添加成功！';
-        statusEl.style.color = '#4CAF50';
+    try {
+        // 下载图片并转为 base64
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('图片下载失败');
+        const blob = await response.blob();
+        const imageBase64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+        
+        // ① 保存到浏览器离线缓存
+        await savePartImageToOfflineCache(partNum, colorId, imageBase64);
+        // ② 上传到 Gitee Parts-img
+        const uploadResult = await uploadPartImageToGitee(partNum, colorId, imageBase64);
+        
+        statusEl.textContent = uploadResult.success
+            ? '✓ 图片添加成功！'
+            : `✓ 已存入离线缓存（Gitee上传失败: ${uploadResult.error}）`;
+        statusEl.style.color = uploadResult.success ? '#4CAF50' : '#FF9800';
         setTimeout(() => {
             // 关闭所有弹窗并重新显示详情
             const overlays = document.querySelectorAll('.modal-overlay.active');
@@ -2299,8 +2485,8 @@ function saveImageFromUrl(partNum, colorId) {
             // 重新获取零件信息并显示详情
             refreshPartDetailWithCustomImage(partNum, colorId);
         }, 1000);
-    } else {
-        statusEl.textContent = '✗ 保存失败';
+    } catch (e) {
+        statusEl.textContent = `✗ 保存失败：${e.message}`;
         statusEl.style.color = '#f44336';
     }
 }
@@ -2325,35 +2511,39 @@ function uploadLocalImage(partNum, colorId) {
     }
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         const imageDataUrl = e.target.result;
-        const success = saveCustomImageUrl(partNum, colorId, imageDataUrl);
         const preview = document.getElementById('custom-img-preview');
         const previewImg = document.getElementById('custom-img-preview-img');
         const statusEl = document.getElementById('custom-img-status');
         
         preview.style.display = 'block';
         previewImg.src = imageDataUrl;
+        statusEl.textContent = '⏳ 正在保存图片...';
+        statusEl.style.color = '#2196F3';
         
-        if (success) {
-            statusEl.textContent = '✓ 图片上传成功！';
-            statusEl.style.color = '#4CAF50';
-            setTimeout(() => {
-                const overlays = document.querySelectorAll('.modal-overlay.active');
-                overlays.forEach(o => o.remove());
-                refreshPartDetailWithCustomImage(partNum, colorId);
-            }, 1000);
-        } else {
-            statusEl.textContent = '✗ 保存失败（可能是存储空间不足）';
-            statusEl.style.color = '#f44336';
-        }
+        // ① 保存到浏览器离线缓存
+        await savePartImageToOfflineCache(partNum, colorId, imageDataUrl);
+        // ② 上传到 Gitee Parts-img
+        const uploadResult = await uploadPartImageToGitee(partNum, colorId, imageDataUrl);
+        
+        statusEl.textContent = uploadResult.success
+            ? '✓ 图片上传成功！'
+            : `✓ 已存入离线缓存（Gitee上传失败: ${uploadResult.error}）`;
+        statusEl.style.color = uploadResult.success ? '#4CAF50' : '#FF9800';
+        setTimeout(() => {
+            const overlays = document.querySelectorAll('.modal-overlay.active');
+            overlays.forEach(o => o.remove());
+            refreshPartDetailWithCustomImage(partNum, colorId);
+        }, 1000);
     };
     reader.readAsDataURL(file);
 }
 
-// 管理自定义图片
-function manageCustomImage(partNum, colorId) {
-    const currentUrl = getCustomImageUrl(partNum, colorId);
+// 管理自定义图片（从离线缓存读取当前图片）
+async function manageCustomImage(partNum, colorId) {
+    const cached = await getPartImageFromOfflineCache(partNum, colorId);
+    const currentUrl = cached ? buildPartsImgUrl(partNum, colorId) : '';
     
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
@@ -2392,11 +2582,14 @@ function changeCustomImage(partNum, colorId) {
     addCustomImage(partNum, colorId);
 }
 
-// 删除自定义图片
-function removeCustomImage(partNum, colorId) {
+// 删除自定义图片（离线缓存 + Gitee Parts-img）
+async function removeCustomImage(partNum, colorId) {
     if (!confirm('确定要删除自定义图片吗？')) return;
     
-    deleteCustomImageUrl(partNum, colorId);
+    // 删除浏览器离线缓存
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
+    await deletePartImageFromGitee(partNum, colorId);
     
     const overlay = document.querySelector('.modal-overlay.active');
     if (overlay) overlay.remove();

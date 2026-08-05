@@ -40,10 +40,10 @@
     }
     </script>
 
-    <script src="js/api.js?v=2026080312"></script>
+    <script src="js/api.js?v=2026080510"></script>
     <script src="js/store.js?v=2026073124"></script>
-    <script src="js/rb-db.js?v=2026080312"></script>
-    <script src="js/ui.js?v=2026080320"></script>
+    <script src="js/rb-db.js?v=2026080510"></script>
+    <script src="js/ui.js?v=2026080510"></script>
 </head>
 <body>
     <div class="container">
@@ -93,7 +93,14 @@
                             </div>
                             <div class="box-management-buttons">
                                 <button onclick="addBox()" class="add-box-btn">添加盒子</button>
-                                <button onclick="alert('转仓功能开发中...')" class="transfer-box-btn">盒子转仓</button>
+                                <button onclick="toggleBoxTransferMode()" class="transfer-box-btn" id="transfer-box-btn">盒子转仓</button>
+                            </div>
+                        </div>
+                        <div class="transfer-toolbar" id="transfer-toolbar" style="display:none;">
+                            <span class="transfer-tip" id="transfer-tip">点击选择需要转仓的盒子（可多选）</span>
+                            <div class="transfer-actions">
+                                <button onclick="showTransferTargetPicker()" class="transfer-target-btn" id="transfer-target-btn" disabled>选择目标仓库(0)</button>
+                                <button onclick="toggleBoxTransferMode()" class="transfer-cancel-btn">取消</button>
                             </div>
                         </div>
                         <div class="box-grid-wrapper">
