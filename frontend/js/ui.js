@@ -401,24 +401,14 @@ async function loadBoxes(repoId) {
                 <div class="box-card-name">${box.name}</div>
                 <div class="box-card-footer">
                     <span class="box-id">ID: ${box.box_number}</span>
-                    <span class="box-part-count"><span class="count">${partCounts[box.id]}</span> <span class="unit">T</span></span>
+                    <span class="box-part-count"><span class="count">${partCounts[box.id]}</span> <span class="unit">P</span></span>
                 </div>
             `;
         
         card.addEventListener('click', () => {
             if (!editingBox) {
                 setSelectedBox(box);
-                document.getElementById('selected-box-name').textContent = box.name;
-                
-                // 显示仓库名称徽章、@符号和序号
-                const repoBadgeWrapper = document.getElementById('repo-badge-wrapper');
-                const repoText = document.getElementById('repo-name-text');
-                const repoAt = document.getElementById('repo-at');
-                if (selectedRepository && repoBadgeWrapper && repoText) {
-                    repoText.textContent = selectedRepository.name;
-                    repoBadgeWrapper.style.display = 'inline-flex';
-                    if (repoAt) repoAt.style.display = 'inline';
-                }
+                document.getElementById('selected-box-name').textContent = `${box.name}零件管理`;
                 
                 // 更新选中状态样式
                 document.querySelectorAll('.box-card').forEach(c => {
@@ -450,7 +440,7 @@ function startEditBox(card, box) {
         <input type="text" value="${box.name}" class="box-edit-input" />
         <div class="box-card-footer">
             <span class="box-id">ID: ${box.box_number}</span>
-            <span class="box-part-count"><span class="count">0</span> <span class="unit">T</span></span>
+            <span class="box-part-count"><span class="count">0</span> <span class="unit">P</span></span>
         </div>
     `;
     
@@ -495,7 +485,6 @@ async function addBox() {
     const newBox = await createBox(selectedRepository.id, newBoxNumber, '新盒子');
     if (newBox && selectedRepository) {
         await loadBoxes(selectedRepository.id);
-        await loadRepositories();
     }
 }
 
@@ -512,15 +501,11 @@ async function deleteBoxConfirm(id) {
         const success = await deleteBox(id);
         if (success && selectedRepository) {
             await loadBoxes(selectedRepository.id);
-            await loadRepositories();
         }
     }
 }
 
 async function loadParts(boxId) {
-    // 更新盒子序号显示
-    await updateBoxSequence();
-    
     const parts = await getParts(boxId);
     // 只从 RB 数据库获取颜色
     const colors = await getAllColors();
@@ -549,7 +534,7 @@ async function loadParts(boxId) {
             <div class="part-color">${colorName}</div>
             <div class="part-info">
                 <span class="part-new-status ${part.is_new ? 'new' : 'used'}">${part.is_new ? '新' : '旧'}</span>
-                <span class="part-quantity ${part.quantity >= 50 ? 'qty-green' : part.quantity >= 10 ? 'qty-orange' : 'qty-red'}">${part.quantity}</span>
+                <span class="part-quantity">${part.quantity}</span>
             </div>
         `;
         
@@ -566,144 +551,10 @@ async function loadParts(boxId) {
             showPartDetail(part);
         });
         
+        setupLongPress(card, () => editPartQuantity(part));
+        
         list.appendChild(card);
     });
-}
-
-// 获取当前仓库的去重盒子列表（按 box_number 排序）
-async function getSortedBoxes() {
-    if (!selectedRepository) return [];
-    const boxes = await getBoxes(selectedRepository.id);
-    // 去重：与 loadBoxes() 保持一致
-    const seenIds = new Set();
-    const seenBoxNums = new Set();
-    const uniqueBoxes = boxes.filter(box => {
-        if (seenIds.has(box.id)) return false;
-        const key = `${box.box_number}_${box.name}`;
-        if (seenBoxNums.has(key)) return false;
-        seenIds.add(box.id);
-        seenBoxNums.add(key);
-        return true;
-    });
-    uniqueBoxes.sort((a, b) => (a.box_number || 0) - (b.box_number || 0));
-    return uniqueBoxes;
-}
-
-// 更新盒子序号显示
-async function updateBoxSequence() {
-    const seqEl = document.getElementById('box-sequence');
-    if (!seqEl) return;
-    
-    if (!selectedBox || !selectedRepository) {
-        seqEl.textContent = '';
-        return;
-    }
-    
-    const boxes = await getSortedBoxes();
-    const currentIndex = boxes.findIndex(b => b.id === selectedBox.id);
-    if (currentIndex === -1) {
-        seqEl.textContent = '';
-        return;
-    }
-    
-    seqEl.textContent = `${currentIndex + 1}/${boxes.length}`;
-}
-
-// 左右滑动切换盒子（按 box_number 顺序）
-async function switchBox(direction) {
-    if (!selectedBox || !selectedRepository) return;
-    
-    const boxes = await getSortedBoxes();
-    if (boxes.length <= 1) return;
-    
-    const currentIndex = boxes.findIndex(b => b.id === selectedBox.id);
-    if (currentIndex === -1) return;
-    
-    let targetIndex;
-    if (direction === 'next') {
-        targetIndex = currentIndex + 1;
-        if (targetIndex >= boxes.length) {
-            showToast('已是最后一个盒子');
-            return;
-        }
-    } else {
-        targetIndex = currentIndex - 1;
-        if (targetIndex < 0) {
-            showToast('已是第一个盒子');
-            return;
-        }
-    }
-    
-    const targetBox = boxes[targetIndex];
-    setSelectedBox(targetBox);
-    document.getElementById('selected-box-name').textContent = targetBox.name;
-    
-    // 添加滑动动画
-    const wrapper = document.querySelector('.part-grid-wrapper');
-    if (wrapper) {
-        wrapper.classList.remove('slide-left', 'slide-right');
-        void wrapper.offsetWidth; // 触发重排以重置动画
-        wrapper.classList.add(direction === 'next' ? 'slide-left' : 'slide-right');
-    }
-    
-    await loadParts(targetBox.id);
-}
-
-// 初始化零件页滑动手势
-function initPartsSwipeGesture() {
-    const partsTab = document.getElementById('parts-tab');
-    if (!partsTab) return;
-    
-    let startX = 0, startY = 0, isTracking = false;
-    const SWIPE_THRESHOLD = 60; // 最小滑动距离
-    
-    partsTab.addEventListener('touchstart', (e) => {
-        if (!selectedBox) return;
-        // 只在零件管理页面激活时追踪
-        if (!partsTab.classList.contains('active')) return;
-        const touch = e.touches[0];
-        startX = touch.clientX;
-        startY = touch.clientY;
-        isTracking = true;
-    }, { passive: true });
-    
-    partsTab.addEventListener('touchend', (e) => {
-        if (!isTracking || !selectedBox) {
-            isTracking = false;
-            return;
-        }
-        isTracking = false;
-        
-        const touch = e.changedTouches[0];
-        const dx = touch.clientX - startX;
-        const dy = touch.clientY - startY;
-        
-        // 水平滑动且距离足够
-        if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
-            if (dx < 0) {
-                switchBox('next');
-            } else {
-                switchBox('prev');
-            }
-        }
-    }, { passive: true });
-}
-
-// 轻量提示
-function showToast(msg) {
-    let toast = document.getElementById('swipe-toast');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'swipe-toast';
-        toast.className = 'swipe-toast';
-        document.body.appendChild(toast);
-    }
-    toast.textContent = msg;
-    toast.classList.add('show');
-    clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => {
-        toast.classList.remove('show');
-    }, 1500);
 }
 
 function setupLongPress(element, callback) {
@@ -722,6 +573,90 @@ function setupLongPress(element, callback) {
     element.addEventListener('mouseleave', end);
     element.addEventListener('touchstart', start);
     element.addEventListener('touchend', end);
+}
+
+function editPartQuantity(part) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active quantity-edit-overlay';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'quantity-edit-modal';
+
+    let qtyCls = 'qty-red';
+    if (part.quantity >= 50) qtyCls = 'qty-green';
+    else if (part.quantity >= 10) qtyCls = 'qty-orange';
+
+    sheet.innerHTML = `
+        <div class="qe-row qe-row1">
+            <button class="qe-back-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
+            <span class="qe-title">编辑数量</span>
+            <button class="qe-save-btn" onclick="savePartQuantity('${part.id}', this)">保存</button>
+        </div>
+        <div class="qe-row qe-row2">
+            <div class="qe-quantity ${qtyCls}" id="quantity-display">${part.quantity}</div>
+        </div>
+        <div class="qe-row qe-row3">
+            <button class="qe-circle-btn qe-minus-btn" onclick="changeQuantity(-1)">−</button>
+            <button class="qe-circle-btn qe-plus-btn" onclick="changeQuantity(1)">+</button>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    window.currentEditQuantity = part.quantity;
+
+    function changeQuantity(delta) {
+        window.currentEditQuantity = Math.max(0, window.currentEditQuantity + delta);
+        const display = document.getElementById('quantity-display');
+        display.textContent = window.currentEditQuantity;
+        display.classList.remove('qty-red', 'qty-orange', 'qty-green');
+        let cls = 'qty-red';
+        if (window.currentEditQuantity >= 50) cls = 'qty-green';
+        else if (window.currentEditQuantity >= 10) cls = 'qty-orange';
+        display.classList.add(cls);
+    }
+
+    window.changeQuantity = changeQuantity;
+}
+
+async function savePartQuantity(partId, btn) {
+    const quantity = window.currentEditQuantity;
+    if (quantity < 0) return;
+
+    const success = await updatePartQuantity(partId, quantity);
+    if (success) {
+        // 仅移除编辑数量弹窗，保留底下的零件详情页
+        btn.closest('.modal-overlay').remove();
+        // 更新零件详情页显示的数量
+        updateDetailQuantityDisplay(quantity);
+        // 更新搜索结果卡片中对应零件的数量
+        updateSearchResultQuantity(partId, quantity);
+    } else {
+        alert('保存失败');
+    }
+}
+
+async function updatePartQuantity(partId, quantity) {
+    const success = await updatePart(partId, { quantity: quantity });
+    if (success && selectedBox) {
+        await loadParts(selectedBox.id);
+    }
+    return success;
+}
+
+// 更新零件详情页中显示的数量与颜色
+function updateDetailQuantityDisplay(quantity) {
+    const detailModal = document.querySelector('.part-detail-modal');
+    if (!detailModal) return;
+    const qtyEl = detailModal.querySelector('.pd-qty-val');
+    if (!qtyEl) return;
+    qtyEl.textContent = quantity;
+    qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
+    let cls = 'qty-red';
+    if (quantity >= 50) cls = 'qty-green';
+    else if (quantity >= 10) cls = 'qty-orange';
+    qtyEl.classList.add(cls);
 }
 
 // 更新搜索结果卡片中对应零件的数量
@@ -753,9 +688,8 @@ function showAddPartSheet() {
     
     sheet.innerHTML = `
         <div class="modal-header">
-            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
             <span class="modal-title">添加零件</span>
-            <button class="btn-save" onclick="saveNewPart(this)">保存</button>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
         </div>
         <div class="modal-body add-part-body">
             <div class="form-section">
@@ -764,8 +698,9 @@ function showAddPartSheet() {
                     <div class="part-number-input-wrapper">
                         <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" />
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
-                        <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
+                    <span class="part-name-hint" id="part-name-hint"></span>
+                    <button class="btn-secondary" onclick="showPartSelector()" style="padding: 8px 10px; font-size: 12px;">选择零件</button>
                 </div>
             </div>
             <div class="form-section">
@@ -778,24 +713,27 @@ function showAddPartSheet() {
                 </div>
                 <div class="form-row">
                     <label class="form-label">零件颜色：</label>
-                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value)" />
-                    <button id="color-pick-btn" class="btn-color-pick" onclick="showColorPicker()">选择颜色</button>
+                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" />
+                    <button class="btn-secondary" onclick="showColorPicker()" style="padding: 8px 10px; font-size: 12px;">选择颜色</button>
                 </div>
             </div>
             <div class="form-section">
                 <div class="quantity-weight-row">
-                    <label class="form-label">零件数量：</label>
-                    <div class="quantity-input-row">
-                        <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
-                        <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
+                    <div>
+                        <label class="form-label">零件数量：</label>
+                        <div class="quantity-input-row">
+                            <input type="number" id="new-part-quantity" class="form-input" placeholder="请输入数量" value="1" />
+                            <button class="btn-weight-calc" onclick="showWeightCalculator()">称重计算</button>
+                        </div>
                     </div>
                 </div>
-                <div class="quantity-weight-row">
-                    <label class="form-label">零件状态：</label>
+                <div class="form-row status-save-row">
                     <div class="status-group">
+                        <span class="status-label">状态：</span>
                         <button id="status-new" class="status-btn active" onclick="togglePartNewStatus(true)">新品</button>
                         <button id="status-used" class="status-btn" onclick="togglePartNewStatus(false)">旧品</button>
                     </div>
+                    <button class="btn-save" onclick="saveNewPart(this)">保存</button>
                 </div>
             </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
@@ -1085,9 +1023,16 @@ function initAddPartSuggestions() {
             return;
         }
         
-        // 延迟触发联想查询（不自动选择）
+        // 延迟1秒触发查询
         partNumTimer = setTimeout(async () => {
             await showPartNumSuggestions(value);
+            
+            // 如果是精确匹配，自动填充信息
+            const part = await getPartByNum(value);
+            if (part) {
+                partNameInput.value = part.name || '';
+                updatePartInfoPreview();
+            }
         }, 800);
     });
     
@@ -1167,140 +1112,14 @@ async function saveNewPart(button) {
         return;
     }
     
-    const newPartData = {
+    const newPart = await createPart({
         box_id: selectedBox.id,
         part_num: partNum,
         name: partName || partNum,
         color_id: parseInt(colorInput),
         quantity: quantity,
         is_new: window.newPartIsNew
-    };
-
-    // 检查是否存在重复零件（型号、颜色、状态一致）
-    const existingParts = await getParts(selectedBox.id);
-    const duplicateParts = existingParts.filter(p =>
-        p.part_num === newPartData.part_num &&
-        p.color_id === newPartData.color_id &&
-        Boolean(p.is_new) === Boolean(newPartData.is_new)
-    );
-
-    if (duplicateParts.length > 0) {
-        // 创建对话框
-        const confirmOverlay = document.createElement('div');
-        confirmOverlay.className = 'modal-overlay active';
-        confirmOverlay.id = 'duplicate-part-overlay';
-
-        const confirmSheet = document.createElement('div');
-        confirmSheet.className = 'modal-content add-part-modal';
-
-        // 生成重复零件卡片的 HTML
-        let partsCardsHtml = '';
-        for (let i = 0; i < duplicateParts.length; i++) {
-            const part = duplicateParts[i];
-            const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
-            const isSelected = i === 0; // 默认选中第一个
-            partsCardsHtml += `
-                <div class="dup-part-card ${isSelected ? 'selected' : ''}" data-part-id="${part.id}">
-                    <div class="dup-part-left">
-                        <div class="dup-part-image">
-                            ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}">` : ''}
-                        </div>
-                    </div>
-                    <div class="dup-part-right">
-                        <div class="dup-part-num">${part.part_num}</div>
-                        <div class="dup-part-color">C: ${part.color_id}</div>
-                        <div class="dup-part-status ${part.is_new ? 'new' : 'used'}">
-                            ${part.is_new ? '新' : '旧'}
-                        </div>
-                        <div class="dup-part-quantity"><span class="dup-part-x">x</span>${part.quantity}</div>
-                    </div>
-                </div>
-            `;
-        }
-
-        confirmSheet.innerHTML = `
-            <div class="modal-header">
-                <span class="modal-title">检测到重复零件</span>
-                <button class="btn-cancel" id="dup-cancel-btn">取消</button>
-            </div>
-            <div class="modal-body" style="padding: 0;">
-                <div style="padding: 20px 16px 12px;">
-                    <div style="font-size: 16px; color: #333; margin-bottom: 12px; text-align: center;">
-                        选择要合并的零件
-                    </div>
-                </div>
-                <div class="dup-parts-scroll">
-                    ${partsCardsHtml}
-                </div>
-                <div style="padding: 0 16px 20px;">
-                    <div style="font-size: 14px; color: #666; margin-bottom: 16px; text-align: center;">
-                        您刚刚输入了 <strong style="color: #333;">${quantity}</strong> 个
-                    </div>
-                    <div style="display: flex; gap: 12px; justify-content: center;">
-                        <button id="dup-merge-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">合并到选中</button>
-                        <button id="dup-new-btn" class="btn-cancel" style="flex: 1; background-color: #3498db; color: white; border: none;">新增</button>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        confirmOverlay.appendChild(confirmSheet);
-        document.body.appendChild(confirmOverlay);
-
-        let selectedPartId = duplicateParts[0].id;
-
-        // 绑定卡片选择事件
-        const partCards = confirmSheet.querySelectorAll('.dup-part-card');
-        partCards.forEach(card => {
-            card.addEventListener('click', () => {
-                partCards.forEach(c => c.classList.remove('selected'));
-                card.classList.add('selected');
-                selectedPartId = parseInt(card.dataset.partId);
-            });
-        });
-
-        // 绑定取消按钮事件
-        document.getElementById('dup-cancel-btn').addEventListener('click', () => {
-            confirmOverlay.remove();
-        });
-
-        // 绑定合并按钮事件
-        document.getElementById('dup-merge-btn').addEventListener('click', async () => {
-            const selectedPart = duplicateParts.find(p => p.id === selectedPartId);
-            if (!selectedPart) {
-                alert('请选择要合并的零件');
-                return;
-            }
-            const newQty = selectedPart.quantity + newPartData.quantity;
-            const success = await updatePart(selectedPart.id, { quantity: newQty });
-            if (success) {
-                confirmOverlay.remove();
-                button.closest('.modal-overlay').remove();
-                if (selectedBox) {
-                    await loadParts(selectedBox.id);
-                }
-            } else {
-                alert('合并失败，请重试');
-            }
-        });
-
-        // 绑定新增按钮事件
-        document.getElementById('dup-new-btn').addEventListener('click', async () => {
-            confirmOverlay.remove();
-            const newPart = await createPart(newPartData);
-            if (newPart) {
-                button.closest('.modal-overlay').remove();
-                if (selectedBox) {
-                    await loadParts(selectedBox.id);
-                }
-            }
-        });
-
-        return; // 提前返回，不再执行后续的默认创建逻辑
-    }
-
-    // 无重复，直接创建新零件
-    const newPart = await createPart(newPartData);
+    });
     
     if (newPart) {
         button.closest('.modal-overlay').remove();
@@ -1651,11 +1470,7 @@ async function loadColorGrid(partNum) {
         `;
 
         colorCard.addEventListener('click', (e) => {
-            const colorInput = document.getElementById('new-part-color');
-            if (colorInput) {
-                colorInput.value = color.id;
-                updateColorButtonColor(color.id);
-            }
+            document.getElementById('new-part-color').value = color.id;
             e.target.closest('.modal-overlay').remove();
         });
 
@@ -1671,58 +1486,6 @@ function filterColors(searchText) {
         const match = name.includes(searchText.toLowerCase()) || id.includes(searchText);
         card.style.display = match ? 'flex' : 'none';
     });
-}
-
-// 更新颜色选择按钮的底色
-async function updateColorButtonColor(colorId) {
-    const btn = document.getElementById('color-pick-btn');
-    if (!btn) return;
-    
-    // 转为字符串处理
-    const idStr = String(colorId || '').trim();
-    
-    // 如果没有颜色ID或颜色ID为空，恢复默认浅灰色
-    if (!idStr) {
-        btn.style.backgroundColor = '';
-        btn.classList.remove('color-white');
-        return;
-    }
-    
-    try {
-        // 转为数字供 IndexedDB 查询（数据库中颜色ID为数字键）
-        const idNum = Number(idStr);
-        const colorInfo = await getColorById(idNum);
-        
-        if (colorInfo && colorInfo.rgb) {
-            // 获取RGB值，确保有#前缀
-            const rgbValue = colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + colorInfo.rgb;
-            
-            // 设置按钮背景色
-            btn.style.backgroundColor = rgbValue;
-            
-            // 计算亮度，判断文字颜色
-            const hex = rgbValue.replace('#', '');
-            const r = parseInt(hex.substr(0, 2), 16);
-            const g = parseInt(hex.substr(2, 2), 16);
-            const b = parseInt(hex.substr(4, 2), 16);
-            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-            
-            // 如果是白色或浅色，文字用黑色
-            if (brightness > 200) {
-                btn.classList.add('color-white');
-            } else {
-                btn.classList.remove('color-white');
-            }
-        } else {
-            // 找不到颜色ID对应的颜色，恢复默认浅灰色
-            btn.style.backgroundColor = '';
-            btn.classList.remove('color-white');
-        }
-    } catch (error) {
-        console.error('更新颜色按钮失败:', error);
-        btn.style.backgroundColor = '';
-        btn.classList.remove('color-white');
-    }
 }
 
 
@@ -1815,7 +1578,6 @@ async function loadSearchColorGrid(partNum) {
 
         colorCard.addEventListener('click', (e) => {
             document.getElementById('search-color-id').value = color.id;
-            updateColorPickButton(color.id);
             e.target.closest('.modal-overlay').remove();
         });
 
@@ -1836,44 +1598,12 @@ async function handleAdvancedSearch() {
     renderSearchResults(parts);
 }
 
-// 更新选色按钮样式：根据颜色ID设置底色和文字颜色
-async function updateColorPickButton(colorId) {
-    const btn = document.querySelector('.btn-color-pick');
-    if (!btn) return;
-
-    if (!colorId) {
-        // 恢复默认样式
-        btn.style.backgroundColor = '';
-        btn.style.color = '';
-        btn.style.borderColor = '';
-        btn.textContent = '选色';
-        return;
-    }
-
-    const colorInfo = await getColorById(colorId);
-    if (!colorInfo) return;
-
-    const rgbValue = colorInfo.rgb && colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + (colorInfo.rgb || 'FFFFFF');
-    btn.style.backgroundColor = rgbValue;
-    btn.style.borderColor = rgbValue;
-
-    // 计算亮度决定文字颜色
-    const hex = rgbValue.replace('#', '');
-    const r = parseInt(hex.substr(0, 2), 16);
-    const g = parseInt(hex.substr(2, 2), 16);
-    const b = parseInt(hex.substr(4, 2), 16);
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-    btn.style.color = brightness > 128 ? '#000' : '#fff';
-    btn.textContent = colorInfo.name || '选色';
-}
-
 function resetSearchFilters() {
     document.getElementById('search-part-num').value = '';
     document.getElementById('search-part-name').value = '';
     document.getElementById('search-color-id').value = '';
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
-    updateColorPickButton('');
 }
 
 async function renderSearchResults(parts) {
@@ -1934,10 +1664,10 @@ async function renderSearchResults(parts) {
                 <div class="src-row src-row2">
                     <span class="src-label">颜色：</span>
                     <span class="src-color-name" title="${colorName}">${colorName}</span>
-                    <span class="src-status ${part.is_new ? 'new' : 'used'}" title="${part.is_new ? '新品' : '旧品'}">${part.is_new ? '新' : '旧'}</span>
                 </div>
                 <div class="src-row src-row3">
                     <span class="src-label">仓库：</span><span class="src-repo">${repoName}</span>
+                    <span class="src-status ${part.is_new ? 'new' : 'used'}" title="${part.is_new ? '新品' : '旧品'}"></span>
                 </div>
                 <div class="src-row src-row4">
                     <span class="src-label">盒子：</span><span class="src-box">${boxName}</span>
@@ -1972,7 +1702,6 @@ function clearSearchResults() {
     document.getElementById('search-color-id').value = '';
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
-    updateColorPickButton('');
 }
 
 async function showPartDetail(part) {
@@ -2011,10 +1740,8 @@ async function showPartDetail(part) {
 
     // 从RB数据库获取图片URL
     let imgUrl = null;
-    let hasCustomImage = false;
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
-        hasCustomImage = !!getCustomImageUrl(part.part_num, part.color_id);
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -2029,33 +1756,13 @@ async function showPartDetail(part) {
     }
 
     const isNew = part.is_new;
-    const safePartName = (rbName || '').replace(/'/g, "\\'");
-
-    // 构建图片区域
-    let imageHtml;
-    if (imgUrl) {
-        imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
-    } else {
-        imageHtml = `<div class="pd-no-image">暂无图片</div>`;
-    }
-
-    // 图片变更按钮文本
-    const imgBtnText = imgUrl ? (hasCustomImage ? '管理图片' : '变更图片') : '添加图片';
 
     sheet.innerHTML = `
-        <div class="pd-row pd-title-row">
-            <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
-            <span class="pd-title">零件详情</span>
-            <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
-            <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
-        </div>
-        <div class="pd-row pd-image-row" id="pd-image-swipe">
-            <div class="pd-image-content">
-                ${imageHtml}
-            </div>
-            <div class="pd-image-action">
-                <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
-            </div>
+        <div class="pd-row pd-title">零件详情</div>
+        <div class="pd-row pd-image-row">
+            ${imgUrl
+                ? `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>暂无图片</div>'">`
+                : `<div class="pd-no-image">暂无图片</div>`}
         </div>
         <div class="pd-row pd-model-row">
             <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span></span>
@@ -2073,194 +1780,14 @@ async function showPartDetail(part) {
             </div>
             <div class="pd-qty">
                 <span class="pd-label">数量：</span>
-                <span class="pd-qty-val ${qtyColorClass}" id="pd-qty-val">${qty}</span>
+                <span class="pd-qty-val ${qtyColorClass}">${qty}</span>
             </div>
         </div>
         <div class="pd-row pd-actions">
-            <div class="pd-actions-left">
-                <button class="pd-btn pd-btn-search" onclick="searchFromDetail('${part.part_num}', ${part.color_id}, '${safePartName}')">搜索</button>
-                <button class="pd-btn pd-btn-save" id="pd-save-btn" data-part-id="${part.id}">保存</button>
-            </div>
-            <div class="pd-actions-right">
-                <button class="pd-circle-btn pd-minus-btn" id="pd-minus-btn">−</button>
-                <button class="pd-circle-btn pd-plus-btn" id="pd-plus-btn">+</button>
-            </div>
-        </div>
-    `;
-
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-
-    // 初始化数量调整
-    let currentQty = qty;
-    const qtyEl = sheet.querySelector('#pd-qty-val');
-    const saveBtn = sheet.querySelector('#pd-save-btn');
-    const partId = part.id;
-
-    function updateQtyDisplay() {
-        qtyEl.textContent = currentQty;
-        qtyEl.classList.remove('qty-red', 'qty-orange', 'qty-green');
-        let cls = 'qty-red';
-        if (currentQty >= 50) cls = 'qty-green';
-        else if (currentQty >= 10) cls = 'qty-orange';
-        qtyEl.classList.add(cls);
-    }
-
-    sheet.querySelector('#pd-minus-btn').addEventListener('click', () => {
-        currentQty = Math.max(0, currentQty - 1);
-        updateQtyDisplay();
-    });
-
-    sheet.querySelector('#pd-plus-btn').addEventListener('click', () => {
-        currentQty = currentQty + 1;
-        updateQtyDisplay();
-    });
-
-    // 保存按钮
-    saveBtn.addEventListener('click', async () => {
-        const success = await updatePart(partId, { quantity: currentQty });
-        if (success) {
-            overlay.remove();
-            if (selectedBox) {
-                await loadParts(selectedBox.id);
-            }
-            updateSearchResultQuantity(partId, currentQty);
-        } else {
-            alert('保存失败');
-        }
-    });
-
-    // 删除按钮长按2秒
-    const delBtn = sheet.querySelector('#pd-del-btn');
-    let delTimer = null;
-    const startDelLongPress = (e) => {
-        e.preventDefault();
-        delTimer = setTimeout(() => {
-            deletePartConfirm(partId);
-        }, 2000);
-    };
-    const cancelDelLongPress = () => {
-        if (delTimer) {
-            clearTimeout(delTimer);
-            delTimer = null;
-        }
-    };
-    delBtn.addEventListener('mousedown', startDelLongPress);
-    delBtn.addEventListener('mouseup', cancelDelLongPress);
-    delBtn.addEventListener('mouseleave', cancelDelLongPress);
-    delBtn.addEventListener('touchstart', startDelLongPress, { passive: false });
-    delBtn.addEventListener('touchend', cancelDelLongPress);
-
-    // 图片左滑显示变更按钮
-    const imageSwipe = sheet.querySelector('#pd-image-swipe');
-    const imageContent = imageSwipe.querySelector('.pd-image-content');
-    const imageAction = imageSwipe.querySelector('.pd-image-action');
-    const actionWidth = 90;
-    let startX = 0, currentX = 0, isSwiping = false, isOpen = false;
-
-    imageContent.style.transition = 'transform 0.25s ease';
-    imageAction.style.transition = 'transform 0.25s ease';
-
-    imageSwipe.addEventListener('touchstart', (e) => {
-        startX = e.touches[0].clientX;
-        isSwiping = true;
-        imageContent.style.transition = 'none';
-        imageAction.style.transition = 'none';
-    }, { passive: true });
-
-    imageSwipe.addEventListener('touchmove', (e) => {
-        if (!isSwiping) return;
-        const dx = e.touches[0].clientX - startX;
-        let baseX = isOpen ? -actionWidth : 0;
-        currentX = Math.max(-actionWidth, Math.min(0, baseX + dx));
-        imageContent.style.transform = `translateX(${currentX}px)`;
-        imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
-    }, { passive: true });
-
-    imageSwipe.addEventListener('touchend', () => {
-        if (!isSwiping) return;
-        isSwiping = false;
-        imageContent.style.transition = 'transform 0.25s ease';
-        imageAction.style.transition = 'transform 0.25s ease';
-        if (currentX < -actionWidth / 2) {
-            isOpen = true;
-            imageContent.style.transform = `translateX(-${actionWidth}px)`;
-            imageAction.style.transform = `translateX(0)`;
-        } else {
-            isOpen = false;
-            imageContent.style.transform = 'translateX(0)';
-            imageAction.style.transform = `translateX(${actionWidth}px)`;
-        }
-    }, { passive: true });
-
-    // 初始化变更按钮位置（隐藏在右侧）
-    imageAction.style.transform = `translateX(${actionWidth}px)`;
-
-    // 合并按钮点击事件
-    const mergeBtn = sheet.querySelector('#pd-merge-btn');
-    mergeBtn.addEventListener('click', () => {
-        showMergePartSelector(part);
-    });
-}
-
-// 图片变更入口（根据是否有图片选择不同操作）
-function changePartImage(partNum, colorId) {
-    const hasCustom = !!getCustomImageUrl(partNum, colorId);
-    if (hasCustom) {
-        manageCustomImage(partNum, colorId);
-    } else {
-        addCustomImage(partNum, colorId);
-    }
-}
-
-async function searchFromDetail(partNum, colorId, partName) {
-    // 关闭当前弹窗
-    const overlay = document.querySelector('.modal-overlay.active');
-    if (overlay) overlay.remove();
-    
-    // 切换到搜索页
-    const btn = document.querySelector('.search-btn');
-    await switchTab('search', btn);
-    
-    // 填充搜索条件
-    document.getElementById('search-part-num').value = partNum;
-    document.getElementById('search-part-name').value = partName;
-    document.getElementById('search-color-id').value = colorId;
-    updateColorPickButton(colorId);
-    
-    // 触发搜索
-    await handleAdvancedSearch();
-}
-
-// 添加自定义图片
-function addCustomImage(partNum, colorId) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-
-    const sheet = document.createElement('div');
-    sheet.className = 'modal-content';
-    sheet.style.maxWidth = '350px';
-
-    sheet.innerHTML = `
-        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span class="modal-title" style="font-size:16px;font-weight:600;">添加零件图片</span>
-            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
-        </div>
-        <div class="modal-body">
-            <div style="margin-bottom:12px;">
-                <div style="font-size:13px;color:#666;margin-bottom:8px;">方式一：输入图片URL</div>
-                <input type="text" id="custom-img-url" class="form-input" placeholder="https://example.com/image.jpg" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;box-sizing:border-box;">
-                <button onclick="saveImageFromUrl('${partNum}', ${colorId})" style="margin-top:8px;width:100%;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">使用URL图片</button>
-            </div>
-            <div style="text-align:center;color:#999;margin:12px 0;font-size:12px;">或</div>
-            <div style="margin-bottom:12px;">
-                <div style="font-size:13px;color:#666;margin-bottom:8px;">方式二：上传本地图片</div>
-                <input type="file" id="custom-img-file" accept="image/*" style="width:100%;margin-bottom:8px;">
-                <button onclick="uploadLocalImage('${partNum}', ${colorId})" style="width:100%;padding:8px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">上传图片</button>
-            </div>
-            <div id="custom-img-preview" style="display:none;margin-top:12px;text-align:center;">
-                <img id="custom-img-preview-img" style="max-width:100%;max-height:150px;border-radius:4px;">
-                <div id="custom-img-status" style="margin-top:8px;font-size:13px;"></div>
+            <button class="pd-btn pd-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            <div class="pd-btn-group">
+                <button class="pd-btn pd-btn-delete" onclick="deletePartConfirm('${part.id}')">删除零件</button>
+                <button class="pd-btn pd-btn-edit" onclick="editPartQuantityFromDetail('${part.id}', ${part.quantity})">编辑数量</button>
             </div>
         </div>
     `;
@@ -2269,159 +1796,10 @@ function addCustomImage(partNum, colorId) {
     document.body.appendChild(overlay);
 }
 
-// 从URL保存图片
-function saveImageFromUrl(partNum, colorId) {
-    const urlInput = document.getElementById('custom-img-url');
-    const url = urlInput ? urlInput.value.trim() : '';
-    
-    if (!url) {
-        alert('请输入图片URL');
-        return;
-    }
-    
-    if (!url.match(/^https?:\/\//i)) {
-        alert('请输入有效的URL（以http://或https://开头）');
-        return;
-    }
-    
-    const success = saveCustomImageUrl(partNum, colorId, url);
-    const statusEl = document.getElementById('custom-img-status');
-    
-    if (success) {
-        statusEl.textContent = '✓ 图片添加成功！';
-        statusEl.style.color = '#4CAF50';
-        setTimeout(() => {
-            // 关闭所有弹窗并重新显示详情
-            const overlays = document.querySelectorAll('.modal-overlay.active');
-            overlays.forEach(o => o.remove());
-            // 重新获取零件信息并显示详情
-            refreshPartDetailWithCustomImage(partNum, colorId);
-        }, 1000);
-    } else {
-        statusEl.textContent = '✗ 保存失败';
-        statusEl.style.color = '#f44336';
-    }
-}
-
-// 上传本地图片
-function uploadLocalImage(partNum, colorId) {
-    const fileInput = document.getElementById('custom-img-file');
-    if (!fileInput || !fileInput.files[0]) {
-        alert('请选择图片文件');
-        return;
-    }
-    
-    const file = fileInput.files[0];
-    if (!file.type.startsWith('image/')) {
-        alert('请选择有效的图片文件');
-        return;
-    }
-    
-    if (file.size > 5 * 1024 * 1024) {
-        alert('图片大小不能超过5MB');
-        return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const imageDataUrl = e.target.result;
-        const success = saveCustomImageUrl(partNum, colorId, imageDataUrl);
-        const preview = document.getElementById('custom-img-preview');
-        const previewImg = document.getElementById('custom-img-preview-img');
-        const statusEl = document.getElementById('custom-img-status');
-        
-        preview.style.display = 'block';
-        previewImg.src = imageDataUrl;
-        
-        if (success) {
-            statusEl.textContent = '✓ 图片上传成功！';
-            statusEl.style.color = '#4CAF50';
-            setTimeout(() => {
-                const overlays = document.querySelectorAll('.modal-overlay.active');
-                overlays.forEach(o => o.remove());
-                refreshPartDetailWithCustomImage(partNum, colorId);
-            }, 1000);
-        } else {
-            statusEl.textContent = '✗ 保存失败（可能是存储空间不足）';
-            statusEl.style.color = '#f44336';
-        }
-    };
-    reader.readAsDataURL(file);
-}
-
-// 管理自定义图片
-function manageCustomImage(partNum, colorId) {
-    const currentUrl = getCustomImageUrl(partNum, colorId);
-    
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-
-    const sheet = document.createElement('div');
-    sheet.className = 'modal-content';
-    sheet.style.maxWidth = '350px';
-
-    sheet.innerHTML = `
-        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span class="modal-title" style="font-size:16px;font-weight:600;">管理零件图片</span>
-            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
-        </div>
-        <div class="modal-body">
-            <div style="text-align:center;margin-bottom:12px;">
-                <div style="font-size:13px;color:#666;margin-bottom:8px;">当前自定义图片</div>
-                <img src="${currentUrl}" style="max-width:100%;max-height:150px;border-radius:4px;border:1px solid #eee;">
-            </div>
-            <div style="display:flex;gap:8px;">
-                <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">替换图片</button>
-                <button onclick="removeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">删除图片</button>
-            </div>
-        </div>
-    `;
-
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-}
-
-// 替换自定义图片
-function changeCustomImage(partNum, colorId) {
-    // 关闭当前管理弹窗
-    const overlay = document.querySelector('.modal-overlay.active');
-    if (overlay) overlay.remove();
-    // 打开添加图片弹窗
-    addCustomImage(partNum, colorId);
-}
-
-// 删除自定义图片
-function removeCustomImage(partNum, colorId) {
-    if (!confirm('确定要删除自定义图片吗？')) return;
-    
-    deleteCustomImageUrl(partNum, colorId);
-    
-    const overlay = document.querySelector('.modal-overlay.active');
-    if (overlay) overlay.remove();
-    
-    // 刷新详情
-    refreshPartDetailWithCustomImage(partNum, colorId);
-}
-
-// 刷新零件详情（带自定义图片更新）
-async function refreshPartDetailWithCustomImage(partNum, colorId) {
-    try {
-        // 查找当前显示的零件详情中的零件数据
-        // 从搜索结果或零件列表中找到对应零件
-        const allParts = await getParts(null);
-        const part = allParts.find(p => 
-            p.part_num === partNum && String(p.color_id) === String(colorId)
-        );
-        
-        if (part) {
-            await showPartDetail(part);
-        } else {
-            alert('图片已更新，请刷新页面查看');
-        }
-    } catch (e) {
-        console.error('刷新零件详情失败:', e);
-        alert('图片已更新，请刷新页面查看');
-    }
+function editPartQuantityFromDetail(partId, currentQuantity) {
+    // 不关闭零件详情页，让编辑数量弹窗浮于其上
+    const part = { id: partId, quantity: currentQuantity };
+    editPartQuantity(part);
 }
 
 async function deletePartConfirm(partId) {
@@ -2501,162 +1879,10 @@ async function executeDeletePart(partId) {
     }
 }
 
-// 显示合并零件选择器：在当前盒子中查找相同零件（型号、颜色、状态一致），选择目标合并
-async function showMergePartSelector(currentPart) {
-    if (!selectedBox) {
-        alert('未选中盒子，无法合并');
-        return;
-    }
-
-    // 获取当前盒子中的所有零件
-    const allParts = await getParts(selectedBox.id);
-    
-    // 查找相同条件的零件（排除自己）
-    const sameParts = allParts.filter(p =>
-        p.part_num === currentPart.part_num &&
-        p.color_id === currentPart.color_id &&
-        Boolean(p.is_new) === Boolean(currentPart.is_new) &&
-        p.id !== currentPart.id
-    );
-
-    if (sameParts.length === 0) {
-        alert('当前盒子中未找到相同零件（型号、颜色、状态都一致），无法合并');
-        return;
-    }
-
-    // 创建对话框，参考添加零件时的重复零件对话框样式
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-    overlay.id = 'merge-part-overlay';
-
-    const sheet = document.createElement('div');
-    sheet.className = 'modal-content add-part-modal';
-
-    // 生成零件卡片 HTML
-    let partsCardsHtml = '';
-    for (let i = 0; i < sameParts.length; i++) {
-        const part = sameParts[i];
-        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
-        const isSelected = i === 0; // 默认选中第一个
-        partsCardsHtml += `
-            <div class="dup-part-card ${isSelected ? 'selected' : ''}" data-part-id="${part.id}">
-                <div class="dup-part-left">
-                    <div class="dup-part-image">
-                        ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}">` : ''}
-                    </div>
-                </div>
-                <div class="dup-part-right">
-                    <div class="dup-part-num">${part.part_num}</div>
-                    <div class="dup-part-color">C: ${part.color_id}</div>
-                    <div class="dup-part-status ${part.is_new ? 'new' : 'used'}">
-                        ${part.is_new ? '新' : '旧'}
-                    </div>
-                    <div class="dup-part-quantity"><span class="dup-part-x">x</span>${part.quantity}</div>
-                </div>
-            </div>
-        `;
-    }
-
-    sheet.innerHTML = `
-        <div class="modal-header">
-            <span class="modal-title">合并零件</span>
-            <button class="btn-cancel" id="merge-cancel-btn">取消</button>
-        </div>
-        <div class="modal-body" style="padding: 0;">
-            <div style="padding: 20px 16px 12px;">
-                <div style="font-size: 16px; color: #333; margin-bottom: 12px; text-align: center;">
-                    当前零件：${currentPart.part_num}（${currentPart.quantity} 个）<br>
-                    选择要合并到的目标零件
-                </div>
-            </div>
-            <div class="dup-parts-scroll">
-                ${partsCardsHtml}
-            </div>
-            <div style="padding: 0 16px 20px; margin-top: 12px;">
-                <div style="font-size: 14px; color: #666; margin-bottom: 16px; text-align: center;">
-                    合并后当前零件将被删除，数量累加至目标零件
-                </div>
-                <div style="display: flex; gap: 12px; justify-content: center;">
-                    <button id="merge-confirm-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">确认合并</button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-
-    let selectedTargetId = sameParts[0].id;
-
-    // 绑定卡片选择事件
-    const partCards = sheet.querySelectorAll('.dup-part-card');
-    partCards.forEach(card => {
-        card.addEventListener('click', () => {
-            partCards.forEach(c => c.classList.remove('selected'));
-            card.classList.add('selected');
-            selectedTargetId = parseInt(card.dataset.partId);
-        });
-    });
-
-    // 绑定取消按钮
-    document.getElementById('merge-cancel-btn').addEventListener('click', () => {
-        overlay.remove();
-    });
-
-    // 绑定确认合并按钮
-    document.getElementById('merge-confirm-btn').addEventListener('click', async () => {
-        const targetPart = sameParts.find(p => p.id === selectedTargetId);
-        if (!targetPart) {
-            alert('请选择目标零件');
-            return;
-        }
-
-        // 计算新数量
-        const newQty = targetPart.quantity + currentPart.quantity;
-        
-        // 更新目标零件数量
-        const updateSuccess = await updatePart(selectedTargetId, { quantity: newQty });
-        if (!updateSuccess) {
-            alert('更新目标零件数量失败');
-            return;
-        }
-
-        // 删除当前零件
-        const deleteSuccess = await deletePart(currentPart.id);
-        if (!deleteSuccess) {
-            alert('删除当前零件失败，请重试');
-            return;
-        }
-
-        // 关闭弹窗
-        overlay.remove();
-        // 关闭详情弹窗
-        const detailOverlay = document.querySelector('.modal-overlay.active');
-        if (detailOverlay) detailOverlay.remove();
-        // 刷新零件列表
-        if (selectedBox) {
-            await loadParts(selectedBox.id);
-        }
-        // 从搜索结果中移除当前零件卡片
-        const card = document.querySelector(`.search-result-card[data-part-id="${currentPart.id}"]`);
-        if (card) card.remove();
-
-        alert(`合并成功！已将 ${currentPart.quantity} 个零件合并到目标零件，新数量为 ${newQty}`);
-    });
-}
-
-async function goBackToRepositories() {
+function goBackToRepositories() {
     setSelectedBox(null);
-    // 重置 header 状态
-    document.getElementById('selected-box-name').textContent = '未命名';
-    document.getElementById('repo-badge-wrapper').style.display = 'none';
-    document.getElementById('repo-at').style.display = 'none';
-    document.getElementById('box-sequence').textContent = '';
     const btn = document.querySelector('.repo-btn');
-    await switchTab('repositories', btn);
-    if (selectedRepository) {
-        await loadBoxes(selectedRepository.id);
-    }
+    switchTab('repositories', btn);
 }
 
 function showCSVImporter() {
@@ -2672,24 +1898,46 @@ function showCSVImporter() {
     sheet.className = 'modal-content csv-importer-modal';
 
     sheet.innerHTML = `
-        <div class="csv-imp-header">
-            <span class="csv-imp-title">批量导入零件</span>
-            <button class="csv-imp-btn-back" onclick="this.closest('.modal-overlay').remove()">返回</button>
+        <div class="modal-header">
+            <span class="modal-title">批量导入零件</span>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
         </div>
-        <div class="csv-imp-toolbar">
-            <button class="csv-imp-btn-template" onclick="downloadCSVTemplate()">格式模版</button>
-            <button class="csv-imp-btn-import" onclick="document.getElementById('csv-file-input').click()">导入文件</button>
-            <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
-        </div>
-        <div class="csv-imp-body" id="csv-imp-body">
-            <div class="csv-imp-tip">请先下载格式模版，按格式填写后导入</div>
+        <div class="modal-body">
+            <div class="csv-importer-container">
+                <div class="csv-upload-area" id="csv-upload-area">
+                    <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
+                    <div class="csv-upload-icon">📁</div>
+                    <div class="csv-upload-text">点击或拖拽CSV文件到此处</div>
+                    <div class="csv-format-hint">支持格式: part_num,name,color_id,quantity,is_new</div>
+                </div>
+                <div class="csv-preview" id="csv-preview" style="display: none;">
+                    <h4>预览数据</h4>
+                    <div class="csv-preview-table" id="csv-preview-table"></div>
+                    <button class="btn-import-csv" onclick="confirmCSVImport()">确认导入</button>
+                </div>
+                <div class="import-status" id="import-status" style="display: none;"></div>
+            </div>
         </div>
     `;
 
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
+    const uploadArea = document.getElementById('csv-upload-area');
     const fileInput = document.getElementById('csv-file-input');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => e.preventDefault());
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file && file.name.endsWith('.csv')) {
+            processCSVFile(file);
+        }
+    });
+
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -2698,49 +1946,14 @@ function showCSVImporter() {
     });
 }
 
-// 生成并下载CSV模版
-function downloadCSVTemplate() {
-    const today = new Date();
-    const dateStr = today.getFullYear().toString() +
-        String(today.getMonth() + 1).padStart(2, '0') +
-        String(today.getDate()).padStart(2, '0');
-
-    // 生成序号（基于时间戳的后4位作为序号）
-    const seq = String(Date.now()).slice(-4);
-
-    const fileName = `零件${dateStr}-${seq}.csv`;
-
-    const csvContent = 'part_num,name,color_id,quantity,is_new\n' +
-        '3001,,1,10,T\n' +
-        '3002,,4,5,F\n' +
-        '3003,,0,20,T\n';
-
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', fileName);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
 function parseCSVContent(content) {
-    // 去掉 BOM（UTF-8 BOM \ufeff）
-    if (content.charCodeAt(0) === 0xFEFF) {
-        content = content.slice(1);
-    }
-    // 统一换行符：\r\n → \n，再 \r → \n
-    content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
     const lines = content.split('\n');
     const rows = [];
 
     for (let line of lines) {
         line = line.trim();
         if (!line) continue;
-
+        
         const row = parseCSVLine(line);
         rows.push(row);
     }
@@ -2770,11 +1983,11 @@ function parseCSVLine(line) {
 
 async function processCSVFile(file) {
     const reader = new FileReader();
-
+    
     reader.onload = async (e) => {
         const content = e.target.result;
         const rows = parseCSVContent(content);
-
+        
         if (rows.length < 2) {
             alert('CSV文件内容为空或格式不正确');
             return;
@@ -2782,284 +1995,98 @@ async function processCSVFile(file) {
 
         const headers = rows[0];
         const data = rows.slice(1);
-
+        
         const importData = data.map(row => {
             const item = {};
             headers.forEach((header, index) => {
-                const cleanHeader = header.trim().toLowerCase();
-                const value = row[index] != null ? String(row[index]).trim() : '';
-                item[cleanHeader] = value;
+                item[header.trim().toLowerCase()] = row[index] || '';
             });
             return item;
         });
 
-        await showImportConfirmation(importData);
+        showCSVPreview(headers, importData);
     };
 
     reader.readAsText(file);
 }
 
-// 显示带图片的确认表
-async function showImportConfirmation(data) {
-    const body = document.getElementById('csv-imp-body');
+function showCSVPreview(headers, data) {
+    const preview = document.getElementById('csv-preview');
+    const uploadArea = document.getElementById('csv-upload-area');
+    const table = document.getElementById('csv-preview-table');
 
-    body.innerHTML = '<div class="csv-imp-loading">正在加载零件信息...</div>';
+    uploadArea.style.display = 'none';
+    preview.style.display = 'block';
 
-    // 获取所有颜色信息
-    const colors = await getAllColors();
-    const colorMap = {};
-    (colors || []).forEach(c => { colorMap[c.id] = c; });
-
-    // 获取盒子中已有零件，用于重复检测
-    const existingParts = await getParts(selectedBox.id);
-    const existingMap = {};
-    (existingParts || []).forEach(p => {
-        const key = `${p.part_num}_${p.color_id}_${p.is_new ? 1 : 0}`;
-        existingMap[key] = p;
+    let html = '<table><thead><tr>';
+    headers.forEach(h => {
+        html += `<th>${h}</th>`;
     });
+    html += '</tr></thead><tbody>';
 
-    // 为每个零件匹配名称和图片
-    const enrichedData = [];
-    for (const item of data) {
-        const partNum = (item.part_num || '').trim();
-        const rawColorId = item.color_id;
-        const colorId = (rawColorId !== '' && rawColorId !== undefined && rawColorId !== null) ? parseInt(rawColorId) : 0;
-        const quantity = parseInt(item.quantity) || 0;
-
-        // 始终从RB数据库获取零件名称，忽略CSV中的name
-        let partName = '';
-        if (partNum) {
-            try {
-                const rbPart = await getPartByNum(partNum);
-                if (rbPart && rbPart.name) {
-                    partName = rbPart.name;
-                }
-            } catch (e) {
-                console.warn('获取零件名称失败:', e);
-            }
-        }
-
-        // 获取颜色信息
-        const colorInfo = colorMap[colorId] || colorMap[parseInt(colorId)];
-        const colorName = colorInfo ? colorInfo.name : '未知';
-        const colorRgb = colorInfo && colorInfo.rgb ?
-            (colorInfo.rgb.startsWith('#') ? colorInfo.rgb : '#' + colorInfo.rgb) : '#FFFFFF';
-
-        // 先解析 is_new，再进行重复检测（状态是唯一性的关键标识）
-        const rawIsNew = item.is_new;
-        const v = String(rawIsNew ?? '').trim().toUpperCase();
-        const parsedIsNew = v === 'T' || v === 'TRUE' || v === '1' || v === 'Y' || rawIsNew === true;
-        console.log(`[CSV导入] part=${partNum} is_new原始值="${rawIsNew}" (type:${typeof rawIsNew}) → 解析=${parsedIsNew} (v="${v}")`);
-
-        // 检测是否重复（型号+颜色+新旧状态三者一致才视为重复）
-        const existingKey = `${partNum}_${colorId}_${parsedIsNew ? 1 : 0}`;
-        const existingPart = existingMap[existingKey];
-
-        enrichedData.push({
-            part_num: partNum,
-            name: partName,
-            color_id: colorId,
-            color_name: colorName,
-            color_rgb: colorRgb,
-            quantity: quantity,
-            is_new: parsedIsNew,
-            existing: existingPart ? true : false,
-            existing_id: existingPart ? existingPart.id : null,
-            existing_quantity: existingPart ? existingPart.quantity : 0,
-            action: existingPart ? 'merge' : 'new' // 默认重复的选merge，新的选new
+    data.forEach(row => {
+        html += '<tr>';
+        headers.forEach(h => {
+            html += `<td>${row[h.trim().toLowerCase()] || ''}</td>`;
         });
-    }
-
-    window.currentCSVData = enrichedData;
-
-    // 统计重复数量
-    const duplicateCount = enrichedData.filter(d => d.existing).length;
-
-    // 渲染确认表
-    let html = '';
-
-    if (duplicateCount > 0) {
-        html += `<div class="csv-imp-duplicate-tip">检测到 ${duplicateCount} 个零件在盒子中已存在，可选择合并数量或新增一条记录</div>`;
-    }
-
-    html += '<div class="csv-imp-confirm-list">';
-
-    enrichedData.forEach((item, idx) => {
-        const isNew = item.is_new;
-        const brightness = getColorBrightness(item.color_rgb);
-        const textColor = brightness > 128 ? '#000' : '#fff';
-
-        html += `
-            <div class="csv-imp-card ${item.existing ? 'csv-imp-card-duplicate' : ''}" data-idx="${idx}">
-                <div class="csv-imp-card-img" id="csv-imp-img-${idx}">
-                    <div class="csv-imp-img-loading">加载中</div>
-                </div>
-                <div class="csv-imp-card-info">
-                    <div class="csv-imp-card-row">
-                        <span class="csv-imp-card-label">型号：</span>
-                        <span class="csv-imp-card-value">${item.part_num}</span>
-                    </div>
-                    <div class="csv-imp-card-row">
-                        <span class="csv-imp-card-label">名称：</span>
-                        <span class="csv-imp-card-value">${item.name || '未知'}</span>
-                    </div>
-                    <div class="csv-imp-card-row">
-                        <span class="csv-imp-card-label">颜色：</span>
-                        <span class="csv-imp-card-color-chip" style="background:${item.color_rgb};color:${textColor}">${item.color_name}</span>
-                    </div>
-                    <div class="csv-imp-card-row">
-                        <span class="csv-imp-card-label">数量：</span>
-                        <span class="csv-imp-card-value csv-imp-qty">${item.quantity}</span>
-                        <span class="csv-imp-card-status ${isNew ? 'new' : 'used'}">${isNew ? '新品' : '旧品'}</span>
-                    </div>
-                    ${item.existing ? `
-                    <div class="csv-imp-card-row csv-imp-duplicate-row">
-                        <span class="csv-imp-card-label">已有${item.existing_quantity}个</span>
-                        <div class="csv-imp-action-switch">
-                            <div class="csv-imp-action-item ${item.action === 'merge' ? 'active' : ''}" onclick="setImportAction(${idx}, 'merge')">合并</div>
-                            <div class="csv-imp-action-item ${item.action === 'new' ? 'active' : ''}" onclick="setImportAction(${idx}, 'new')">新增</div>
-                        </div>
-                    </div>
-                    ` : ''}
-                </div>
-            </div>
-        `;
+        html += '</tr>';
     });
 
-    html += '</div>';
-    html += '<div class="csv-imp-confirm-actions">';
-    html += '<button class="csv-imp-btn-cancel" onclick="showCSVImporter()">取消</button>';
-    html += '<button class="csv-imp-btn-confirm" onclick="confirmCSVImport()">确认导入</button>';
-    html += '</div>';
+    html += '</tbody></table>';
+    table.innerHTML = html;
 
-    body.innerHTML = html;
-
-    // 异步加载每个零件的图片
-    enrichedData.forEach((item, idx) => {
-        getPartImageUrl(item.part_num, item.color_id).then(imgUrl => {
-            const imgContainer = document.getElementById(`csv-imp-img-${idx}`);
-            if (imgContainer) {
-                if (imgUrl) {
-                    imgContainer.innerHTML = `<img src="${imgUrl}" alt="${item.name || ''}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=csv-imp-no-img>暂无</div>'">`;
-                } else {
-                    imgContainer.innerHTML = '<div class="csv-imp-no-img">暂无</div>';
-                }
-            }
-        });
-    });
-}
-
-// 设置重复零件的处理方式
-function setImportAction(idx, action) {
-    if (!window.currentCSVData) return;
-    window.currentCSVData[idx].action = action;
-
-    // 更新UI - 使用新的div选择器
-    const row = document.querySelectorAll('.csv-imp-card-duplicate .csv-imp-action-switch')[idx];
-    if (row) {
-        const items = row.querySelectorAll('.csv-imp-action-item');
-        if (items[0]) items[0].classList.toggle('active', action === 'merge');
-        if (items[1]) items[1].classList.toggle('active', action === 'new');
-    }
-}
-
-// 计算颜色亮度
-function getColorBrightness(hex) {
-    const cleanHex = hex.replace('#', '');
-    const r = parseInt(cleanHex.substr(0, 2), 16);
-    const g = parseInt(cleanHex.substr(2, 2), 16);
-    const b = parseInt(cleanHex.substr(4, 2), 16);
-    return (r * 299 + g * 587 + b * 114) / 1000;
+    window.currentCSVData = data;
 }
 
 async function confirmCSVImport() {
     if (!selectedBox || !window.currentCSVData) return;
-    doConfirmCSVImport();
-}
 
-// 实际执行导入的内部函数
-async function doConfirmCSVImport() {
-    if (!selectedBox || !window.currentCSVData) return;
+    const data = window.currentCSVData.map(item => ({
+        ...item,
+        box_id: selectedBox.id
+    }));
 
-    const body = document.getElementById('csv-imp-body');
-    body.innerHTML = '<div class="csv-imp-loading">正在导入...</div>';
+    const status = document.getElementById('import-status');
+    const preview = document.getElementById('csv-preview');
+    
+    preview.style.display = 'none';
+    status.style.display = 'block';
+    status.innerHTML = '<div class="import-loading">正在导入...</div>';
 
-    const items = window.currentCSVData;
-    let successCount = 0;
-    const errors = [];
+    const result = await batchCreateParts(data);
 
-    // 处理合并项：更新已有零件数量
-    const mergeItems = items.filter(it => it.existing && it.action === 'merge');
-    for (const item of mergeItems) {
-        try {
-            const newQty = item.existing_quantity + item.quantity;
-            await updatePart(item.existing_id, { quantity: newQty });
-            successCount++;
-        } catch (e) {
-            errors.push({ part_num: item.part_num, error: `合并失败: ${e.message}` });
-        }
-    }
-
-    // 处理新增项（全新零件 + 选择新增的重复零件）
-    const newItems = items.filter(it => !it.existing || it.action === 'new');
-    if (newItems.length > 0) {
-        // 先重置自增序列，避免主键冲突
-        try {
-            await resetSequencesViaSupabase();
-        } catch (e) {
-            console.warn('重置序列失败:', e.message);
-        }
-
-        for (const item of newItems) {
-            const partData = {
-                box_id: selectedBox.id,
-                part_num: item.part_num,
-                name: item.name || item.part_num,
-                color_id: item.color_id,
-                quantity: item.quantity,
-                is_new: item.is_new
-            };
-
-            const result = await batchCreateParts([partData]);
-            if (result.success) {
-                successCount++;
-            } else {
-                errors.push({ part_num: item.part_num, error: result.errors[0]?.error || '未知错误' });
-            }
-        }
-    }
-
-    // 显示结果
-    if (errors.length === 0) {
-        body.innerHTML = `
-            <div class="csv-imp-success">
-                <div class="csv-imp-success-icon">✓</div>
+    if (result.success) {
+        status.innerHTML = `
+            <div class="import-success">
+                <div class="success-icon">✓</div>
                 <div>导入成功！</div>
-                <div>成功导入/更新 ${successCount} 个零件</div>
-                <button class="csv-imp-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                <div>成功导入 ${result.count} 个零件</div>
+                <button class="btn-close-import" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         `;
+        if (selectedBox) {
+            loadParts(selectedBox.id);
+        }
     } else {
         let errorHtml = `
-            <div class="csv-imp-error">
-                <div class="csv-imp-error-icon">✗</div>
+            <div class="import-error">
+                <div class="error-icon">✗</div>
                 <div>导入完成，但有部分失败</div>
-                <div>成功处理 ${successCount} 个零件</div>
-                <div class="csv-imp-error-list">
+                <div>成功导入 ${result.count} 个零件</div>
+                <div class="error-list">
         `;
-        errors.forEach(e => {
+        result.errors.forEach(e => {
             errorHtml += `<div>${e.part_num}: ${e.error}</div>`;
         });
         errorHtml += `
                 </div>
-                <button class="csv-imp-btn-close" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                <button class="btn-close-import" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         `;
-        body.innerHTML = errorHtml;
-    }
-
-    if (selectedBox) {
-        loadParts(selectedBox.id);
+        status.innerHTML = errorHtml;
+        if (selectedBox) {
+            loadParts(selectedBox.id);
+        }
     }
 }
 
@@ -3079,22 +2106,6 @@ async function initializeApp() {
         
         const repoBtn = document.querySelector('.nav button.repo-btn');
         await switchTab('repositories', repoBtn);
-        
-        // 初始化零件页左右滑动手势
-        initPartsSwipeGesture();
-        
-        // 监听颜色ID输入框变化，手动输入时也更新按钮样式
-        const colorIdInput = document.getElementById('search-color-id');
-        if (colorIdInput) {
-            colorIdInput.addEventListener('input', (e) => {
-                const val = e.target.value.trim();
-                if (val) {
-                    updateColorPickButton(val);
-                } else {
-                    updateColorPickButton('');
-                }
-            });
-        }
     } catch (error) {
         console.error('应用初始化失败:', error);
         const list = document.getElementById('repositories-list');
@@ -3195,15 +2206,9 @@ async function loadRBOnStartup() {
 // 显示 RB 状态提示
 function showRBStatusHint(status) {
     const hint = document.getElementById('rb-status-hint');
-    const idbInfo = document.getElementById('idb-version-info');
     if (!hint) {
         console.warn('rb-status-hint 元素未找到');
         return;
-    }
-    
-    // 更新 IndexedDB 版本信息
-    if (idbInfo && typeof RB_DB_VERSION !== 'undefined') {
-        idbInfo.textContent = `IndexedDB: ${RB_DB_NAME} v${RB_DB_VERSION}`;
     }
     
     const messages = {
@@ -3679,3 +2684,19 @@ async function loadStats() {
 // 将函数暴露到全局
 window.updateRB = updateRB;
 window.exportRB = exportRB;
+
+// 防止滚动容器顶部被下拉：页面顶边允许上移出屏，但不允许下拉低于屏幕顶边（兼容旧版 iOS）
+(function () {
+    let lastTouchY = 0;
+    document.addEventListener('touchstart', function (e) {
+        lastTouchY = e.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+        const cc = document.querySelector('.cc-area');
+        if (!cc || !e.target.closest || !e.target.closest('.cc-area')) return;
+        if (cc.scrollTop <= 0 && e.touches[0].clientY > lastTouchY) {
+            e.preventDefault();
+        }
+        lastTouchY = e.touches[0].clientY;
+    }, { passive: false });
+})();
