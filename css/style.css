@@ -26,7 +26,11 @@ html, body {
 }
 
 body {
-    font
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: var(--primary-color);
+    color: var(--black-color);
+    min-height: 100vh;
+}
 
 .container {
     display: flex;
@@ -131,7 +135,6 @@ body {
     background-color: var(--primary-color);
     padding: 10px;
     overflow-y: auto;
-    overscroll-behavior-y: contain;
 }
 
 .cc-area .content {
