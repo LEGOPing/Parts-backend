@@ -2044,10 +2044,12 @@ async function showPartDetail(part) {
 
     sheet.innerHTML = `
         <div class="pd-row pd-title-row">
-            <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返回</button>
             <span class="pd-title">零件详情</span>
-            <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
-            <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
+            <div class="pd-title-btns">
+                <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
+                <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
+                <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返</button>
+            </div>
         </div>
         <div class="pd-row pd-image-row" id="pd-image-swipe">
             <div class="pd-image-content">
