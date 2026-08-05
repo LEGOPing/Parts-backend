@@ -633,56 +633,82 @@ async function getPartColorCount(partNum) {
     }
 }
 
-// 存储自定义图片的 localStorage key 前缀
-const CUSTOM_IMAGE_KEY_PREFIX = 'custom_img_';
+// ===== 零件图片缓存机制 =====
+const PART_IMAGE_CACHE_NAME = 'part-images-cache-v1';
 
-// 保存自定义图片URL
-function saveCustomImageUrl(partNum, colorId, imageUrl) {
+// 构造 Gitee Parts-img 仓库中的零件图片地址
+function buildPartsImgUrl(partNum, colorId) {
+    return `${GITEE_IMG_URL}parts/${partNum}_${colorId}.jpg`;
+}
+
+// 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
+async function savePartImageToOfflineCache(partNum, colorId, imageData) {
     try {
-        const key = `${CUSTOM_IMAGE_KEY_PREFIX}${partNum}_${colorId}`;
-        localStorage.setItem(key, imageUrl);
+        const cache = await caches.open(PART_IMAGE_CACHE_NAME);
+        const response = imageData instanceof Response
+            ? imageData
+            : new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+        await cache.put(buildPartsImgUrl(partNum, colorId), response);
         return true;
     } catch (error) {
-        console.error('保存自定义图片失败:', error);
+        console.error('保存零件图片到离线缓存失败:', error);
         return false;
     }
 }
 
-// 获取自定义图片URL
-function getCustomImageUrl(partNum, colorId) {
+// 从浏览器离线缓存读取零件图片
+async function getPartImageFromOfflineCache(partNum, colorId) {
     try {
-        const key = `${CUSTOM_IMAGE_KEY_PREFIX}${partNum}_${colorId}`;
-        return localStorage.getItem(key);
+        const cache = await caches.open(PART_IMAGE_CACHE_NAME);
+        return await cache.match(buildPartsImgUrl(partNum, colorId));
     } catch (error) {
         return null;
     }
 }
 
-// 删除自定义图片URL
-function deleteCustomImageUrl(partNum, colorId) {
+// 从浏览器离线缓存删除零件图片
+async function deletePartImageFromOfflineCache(partNum, colorId) {
     try {
-        const key = `${CUSTOM_IMAGE_KEY_PREFIX}${partNum}_${colorId}`;
-        localStorage.removeItem(key);
-        return true;
+        const cache = await caches.open(PART_IMAGE_CACHE_NAME);
+        return await cache.delete(buildPartsImgUrl(partNum, colorId));
+    } catch (error) {
+        console.error('删除零件图片离线缓存失败:', error);
+        return false;
+    }
+}
+
+// 检查 Gitee Parts-img 仓库是否存在该零件图片
+async function checkPartsImgOnGitee(partNum, colorId) {
+    try {
+        const response = await fetch(buildPartsImgUrl(partNum, colorId), { cache: 'no-store' });
+        return response.ok;
     } catch (error) {
         return false;
     }
 }
 
-// 根据 part_num 和 color_id 查询图片URL（支持自定义图片覆盖）
+// 根据 part_num 和 color_id 查询图片URL（三级读取：① 浏览器离线缓存 → ② Gitee Parts-img → ③ RB数据库）
 async function getPartImageUrl(partNum, colorId) {
+    // ① 浏览器离线缓存（人工添加的图片优先）
+    const cached = await getPartImageFromOfflineCache(partNum, colorId);
+    if (cached) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ② Gitee Parts-img 仓库
+    if (await checkPartsImgOnGitee(partNum, colorId)) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ③ RB数据库
     try {
-        // 1. 首先检查是否有自定义图片
-        const customUrl = getCustomImageUrl(partNum, colorId);
-        if (customUrl) {
-            return customUrl;
-        }
-        
-        // 2. 从RB数据库查询，精确匹配 part_num 和 color_id
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        const record = inventory.find(i => 
+        // 精确匹配 part_num 和 color_id
+        let record = inventory.find(i => 
             i.part_num === partNum && String(i.color_id) === String(colorId)
         );
+        // 如果没找到，尝试只匹配 part_num
+        if (!record) {
+            record = inventory.find(i => i.part_num === partNum);
+        }
         return record ? record.img_url : null;
     } catch (error) {
         console.error('查询零件图片URL失败:', error);

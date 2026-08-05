@@ -795,3 +795,96 @@ async function resetSequencesViaSupabase() {
         throw error;
     }
 }
+
+// ===== Parts-img 仓库图片上传/删除 =====
+const GITEE_IMG_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-img/contents';
+const GITEE_IMG_BRANCH = 'main';
+
+// 上传零件图片到 Gitee Parts-img 仓库（POST 新建 / PUT 更新）
+async function uploadPartImageToGitee(partNum, colorId, imageBase64) {
+    try {
+        const token = getGiteeToken();
+        if (!token) {
+            throw new Error('缺少 Gitee Token，无法上传');
+        }
+        // 兼容 dataURL 或纯 base64
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+        const filePath = `parts/${partNum}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}`;
+
+        // 检查文件是否已存在，获取 sha 用于更新
+        const checkResp = await fetch(`${apiUrl}?ref=${GITEE_IMG_BRANCH}`, {
+            headers: { 'Authorization': `token ${token}` }
+        });
+        const existing = checkResp.ok ? await checkResp.json() : null;
+
+        const body = {
+            message: existing ? `更新零件图片 ${partNum}_${colorId}` : `添加零件图片 ${partNum}_${colorId}`,
+            content: base64Data,
+            branch: GITEE_IMG_BRANCH
+        };
+        if (existing && existing.sha) {
+            body.sha = existing.sha;
+        }
+
+        const response = await fetch(apiUrl, {
+            method: existing ? 'PUT' : 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        const result = await response.json();
+        return { success: true, sha: result.sha };
+    } catch (error) {
+        console.error('上传零件图片到Parts-img失败:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// 从 Gitee Parts-img 仓库删除零件图片
+async function deletePartImageFromGitee(partNum, colorId) {
+    try {
+        const token = getGiteeToken();
+        if (!token) {
+            throw new Error('缺少 Gitee Token，无法删除');
+        }
+        const filePath = `parts/${partNum}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}`;
+
+        // 先获取 sha（删除必须携带 sha）
+        const checkResp = await fetch(`${apiUrl}?ref=${GITEE_IMG_BRANCH}`, {
+            headers: { 'Authorization': `token ${token}` }
+        });
+        if (!checkResp.ok) {
+            return { success: false, error: '文件不存在，无需删除' };
+        }
+        const existing = await checkResp.json();
+
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify({
+                message: `删除零件图片 ${partNum}_${colorId}`,
+                sha: existing.sha,
+                branch: GITEE_IMG_BRANCH
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('删除零件图片失败:', error);
+        return { success: false, error: error.message };
+    }
+}
