@@ -1857,40 +1857,50 @@ body {
     align-items: center;
 }
 
-.pd-close-btn {
-    border: none;
-    border-radius: 6px;
-    padding: 6px 14px;
-    background: #FF9800;
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-    line-height: 1;
+.pd-title-btns {
+    display: flex;
+    align-items: center;
+    gap: 13px;
 }
 
-.pd-title {
-    font-size: 23px;
-    font-weight: 600;
-    color: #34495e;
-    line-height: 1.3;
-}
-
+.pd-close-btn,
+.pd-merge-btn,
 .pd-del-btn {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     border: none;
-    background: #f44336;
     color: white;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
+    flex-shrink: 0;
     user-select: none;
     -webkit-user-select: none;
+}
+
+.pd-close-btn {
+    background: #FF9800;
+}
+
+.pd-merge-btn {
+    background: #2196F3;
+}
+
+.pd-del-btn {
+    background: #f44336;
+}
+
+.pd-title {
+    font-size: 23px;
+    font-weight: bold;
+    color: #34495e;
+    line-height: 1.3;
+    text-align: left;
 }
 
 /* 第二行：图片（左滑显示变更按钮） */
