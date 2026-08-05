@@ -2503,13 +2503,15 @@ async function executeDeletePart(partId) {
 
 // 显示合并零件选择器：在当前盒子中查找相同零件（型号、颜色、状态一致），选择目标合并
 async function showMergePartSelector(currentPart) {
-    if (!selectedBox) {
+    // 优先使用当前零件所属的盒子，避免从搜索结果进入时全局 selectedBox 不对应
+    const boxId = currentPart.box_id || (selectedBox ? selectedBox.id : null);
+    if (!boxId) {
         alert('未选中盒子，无法合并');
         return;
     }
 
     // 获取当前盒子中的所有零件
-    const allParts = await getParts(selectedBox.id);
+    const allParts = await getParts(boxId);
     
     // 查找相同条件的零件（排除自己）
     const sameParts = allParts.filter(p =>
