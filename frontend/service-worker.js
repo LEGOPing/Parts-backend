@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v69';
+const CACHE_NAME = 'lego-parts-v70';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -57,8 +57,8 @@ self.addEventListener('fetch', (event) => {
     }
     
     if (request.method === 'GET') {
-        // JS/CSS files: network-first strategy to ensure updates
-        const isDynamicResource = (url.pathname.endsWith('.js') || url.pathname.endsWith('.css'));
+        // 导航请求(HTML页面)和JS/CSS: network-first, 确保界面更新
+        const isDynamicResource = request.mode === 'navigate' || url.pathname.endsWith('.js') || url.pathname.endsWith('.css');
         
         if (isDynamicResource) {
             event.respondWith(
@@ -72,7 +72,7 @@ self.addEventListener('fetch', (event) => {
                     }
                     return caches.match(request);
                 }).catch(() => {
-                    return caches.match(request);
+                    return caches.match(request).then((cached) => cached || caches.match('./index.html'));
                 })
             );
         } else {
