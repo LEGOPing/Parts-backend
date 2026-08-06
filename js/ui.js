@@ -567,30 +567,35 @@ async function performBoxTransfer() {
     
     try {
         // 获取目标仓库已有盒子，收集已占用的 box_number
+        // 注意：Supabase int8(bigint) 列会以字符串返回，统一转字符串 key，避免 Set 严格相等检测失效导致重复 ID
+        const numKey = (n) => (n === null || n === undefined || n === '') ? null : String(n);
         const targetBoxes = await getBoxes(targetRepoId);
-        const usedNumbers = new Set(targetBoxes.map(b => b.box_number));
+        const usedNumbers = new Set(targetBoxes.map(b => numKey(b.box_number)).filter(k => k !== null));
         
         // 按当前 ID 排序，尽量保留原 ID
-        const sortedBoxes = [...boxes].sort((a, b) => (a.box_number || 0) - (b.box_number || 0));
-        let maxNumber = targetBoxes.reduce((max, b) => Math.max(max, b.box_number || 0), 0);
+        const sortedBoxes = [...boxes].sort((a, b) => (parseInt(a.box_number, 10) || 0) - (parseInt(b.box_number, 10) || 0));
+        let maxNumber = targetBoxes.reduce((max, b) => {
+            const n = parseInt(b.box_number, 10);
+            return isNaN(n) ? max : Math.max(max, n);
+        }, 0);
         
         let renumbered = 0;
         for (const box of sortedBoxes) {
             let newNumber = box.box_number;
             // 原 ID 被占用或无效时，分配目标仓库下一个可用 ID
-            if (!newNumber || usedNumbers.has(newNumber)) {
+            if (!numKey(newNumber) || usedNumbers.has(numKey(newNumber))) {
                 maxNumber += 1;
                 newNumber = maxNumber;
                 renumbered++;
             }
-            usedNumbers.add(newNumber);
+            usedNumbers.add(numKey(newNumber));
             const success = await updateBox(box.id, { repository_id: targetRepoId, box_number: newNumber });
             if (!success) {
                 throw new Error(`盒子 ${box.name || box.box_number} 更新失败`);
             }
         }
         
-        // 退出转仓模式并刷新
+        // 退出转仓模式并重置 UI
         setBoxTransferMode(false);
         setSelectedTransferBoxes([]);
         const btn = document.getElementById('transfer-box-btn');
@@ -598,8 +603,13 @@ async function performBoxTransfer() {
         if (btn) btn.textContent = '盒子转仓';
         if (toolbar) toolbar.style.display = 'none';
         
+        // 刷新仓库列表并自动打开目标仓库，展示转仓后的盒子情况
         await loadRepositories();
-        if (selectedRepository) {
+        const repos = await getRepositories();
+        const targetRepo = repos.find(r => r.id == targetRepoId);
+        if (targetRepo) {
+            await selectRepository(targetRepo);
+        } else if (selectedRepository) {
             await loadBoxes(selectedRepository.id);
         }
         
