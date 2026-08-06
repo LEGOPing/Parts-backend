@@ -21,6 +21,10 @@
     --black-color: #333333;
 }
 
+html, body {
+    overscroll-behavior: none;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background-color: var(--primary-color);
@@ -367,7 +371,7 @@ body {
 
 .box-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
 }
 
@@ -509,21 +513,123 @@ body {
 .part-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
+    align-items: center;
     margin-bottom: 12px;
 }
 
-.part-header h2 {
+.part-header .part-title {
     font-size: 26px;
     font-weight: bold;
     margin: 0;
     white-space: nowrap;
 }
 
-.part-header .part-stats {
+.part-header .part-header-right {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.part-header .box-name {
+    font-size: 16px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.part-header .repo-at {
     font-size: 14px;
+    color: var(--dark-gray-color);
+    margin: 0 2px;
+}
+
+.part-header .part-stats {
+    font-size: 16px;
+    font-weight: bold;
+    display: flex;
+    align-items: baseline;
+    gap: 0;
+}
+
+.part-header .part-stats #part-count {
+    color: #f44336;
+    font-weight: bold;
+    display: inline-block;
+    min-width: 3ch;
+    text-align: right;
+}
+
+.part-header .part-stats .part-stats-unit {
+    color: var(--dark-gray-color);
+}
+
+.repo-name-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background-color: var(--gray-color);
+    color: white;
+    font-size: 12px;
+    padding: 1px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.repo-name-badge .repo-icon {
+    font-size: 14px;
+    display: none;
+}
+
+.repo-badge-wrapper {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.box-sequence {
+    font-size: 6px;
     color: var(--gray-color);
-    margin-bottom: 2px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.part-grid-wrapper.slide-left {
+    animation: slideInFromRight 0.25s ease-out;
+}
+
+.part-grid-wrapper.slide-right {
+    animation: slideInFromLeft 0.25s ease-out;
+}
+
+@keyframes slideInFromRight {
+    from { opacity: 0; transform: translateX(40px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInFromLeft {
+    from { opacity: 0; transform: translateX(-40px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.swipe-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    z-index: 9999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.swipe-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
 .part-action-buttons {
@@ -603,6 +709,17 @@ body {
     font-size: 11px;
     color: var(--gray-color);
     margin-top: 2px;
+    height: 3em;
+    line-height: 1em;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: normal;
+    word-break: break-word;
+    scrollbar-width: none;
+}
+
+.part-name::-webkit-scrollbar {
+    display: none;
 }
 
 .part-color {
@@ -611,7 +728,7 @@ body {
     margin-top: 2px;
 }
 
-.part-status-row {
+.part-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -620,17 +737,152 @@ body {
 
 .part-new-status {
     font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    line-height: 1;
 }
 
-.part-new-status.new { color: #4CAF50; background-color: rgba(76, 175, 80, 0.1); }
-.part-new-status.used { color: #FF9800; background-color: rgba(255, 152, 0, 0.1); }
+.part-new-status.new { background-color: #4CAF50; }
+.part-new-status.used { background-color: #FF9800; }
 
-.part-qty {
+.part-quantity {
     font-size: 12px;
     font-weight: bold;
-    color: #F44336;
+}
+
+.part-quantity.qty-red { color: #f44336; }
+.part-quantity.qty-orange { color: #FF9800; }
+.part-quantity.qty-green { color: #4CAF50; }
+
+/* 重复零件卡片选择 */
+.dup-parts-scroll {
+    display: flex;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 0 16px 16px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.dup-parts-scroll::-webkit-scrollbar {
+    height: 4px;
+}
+
+.dup-parts-scroll::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 2px;
+}
+
+.dup-part-card {
+    width: 138px;
+    height: 82px;
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 6px;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+}
+
+.dup-part-card.selected {
+    border-color: #27ae60;
+    border-width: 3px;
+    background-color: #fff;
+}
+
+.dup-part-card:hover {
+    border-color: #27ae60;
+}
+
+.dup-part-left {
+    flex: 0 0 66%; /* 2/3 宽度 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dup-part-image {
+    width: 100%;
+    height: 100%;
+    background-color: #fff;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dup-part-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.dup-part-right {
+    flex: 0 0 34%; /* 1/3 宽度 */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-around;
+    gap: 1px;
+}
+
+.dup-part-num {
+    font-size: 11px;
+    font-weight: bold;
+    color: #000;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.dup-part-color {
+    font-size: 11px;
+    font-weight: bold;
+    color: #000;
+    text-align: right;
+}
+
+.dup-part-quantity {
+    font-size: 11px;
+    font-weight: bold;
+    color: #000;
+    text-align: right;
+}
+
+.dup-part-x {
+    font-size: 9px;
+    font-weight: normal;
+}
+
+.dup-part-status {
+    width: 23px;
+    height: 23px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.dup-part-status.new {
+    background-color: #4CAF50;
+}
+
+.dup-part-status.used {
+    background-color: #FF9800;
 }
 
 .no-box-selected {
@@ -642,21 +894,37 @@ body {
 }
 
 .search-tab {
-    padding: 15px;
+    padding: 8px;
+}
+
+/* 标题行：标题左对齐 + 按钮右对齐（搜索在最右） */
+.search-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.search-header h2 {
+    margin: 0;
 }
 
 .search-filters {
     background: #f9f9f9;
-    padding: 15px;
+    padding: 8px;
     border-radius: 8px;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
 }
 
 .filter-row {
     display: flex;
-    gap: 15px;
-    margin-bottom: 10px;
+    gap: 8px;
+    margin-bottom: 6px;
     flex-wrap: wrap;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
 }
 
 .filter-group {
@@ -671,6 +939,36 @@ body {
     margin-bottom: 5px;
 }
 
+/* 颜色ID筛选组的标题行：标签左对齐 + 选色按钮右对齐 */
+.filter-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.filter-group-header label {
+    margin-bottom: 0;
+}
+
+/* 选色按钮：高度18px，右边与输入框右边线对齐 */
+.btn-color-pick {
+    height: 18px;
+    padding: 0 8px;
+    border: 1px solid var(--secondary-color);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--secondary-color);
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.btn-color-pick:active {
+    background: var(--secondary-color);
+    color: #fff;
+}
+
 .filter-group input, .filter-group select {
     width: 100%;
     padding: 8px;
@@ -681,8 +979,7 @@ body {
 
 .search-actions {
     display: flex;
-    gap: 10px;
-    margin-top: 15px;
+    gap: 8px;
 }
 
 .btn-search { background: #2196F3; color: white; }
@@ -690,26 +987,206 @@ body {
 
 .btn-search, .btn-reset {
     border: none;
-    padding: 10px 20px;
+    padding: 6px 16px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
 }
 
 .search-results {
-    margin-top: 15px;
-}
-
-.search-result-item {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px;
-    border-bottom: 1px solid #eee;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.search-result-item:last-child {
-    border-bottom: none;
+/* 搜索结果零件卡片：每行一个，全宽，高 92px */
+.search-result-card {
+    display: flex;
+    width: 100%;
+    height: 92px;
+    background-color: #fff;
+    border: 1px solid var(--light-gray-color);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+}
+
+.search-result-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 左侧：宽 92px，垂直分两部分（上 4/5 图片，下 1/5 型号） */
+.src-left {
+    width: 92px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: #fff;
+    border-right: 1px solid #eee;
+}
+
+.src-image {
+    flex: 4 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.src-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.src-img-loading,
+.src-no-image {
+    font-size: 10px;
+    color: var(--gray-color);
+}
+
+.src-part-num {
+    flex: 1 1 0;
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--black-color);
+    text-align: center;
+    line-height: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 2px;
+}
+
+/* 右侧：剩余空间，四行（字体 14），垂直居中，行间距 0 */
+.src-right {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4px 8px;
+    gap: 0;
+}
+
+.src-row {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    line-height: 1.3;
+    min-width: 0;
+}
+
+.src-label {
+    color: var(--dark-gray-color);
+    flex-shrink: 0;
+}
+
+/* 第一行：名称，可水平滚动 */
+.src-row1 {
+    overflow: hidden;
+}
+
+.src-name {
+    color: var(--black-color);
+    white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1 1 0;
+    min-width: 0;
+    scrollbar-width: none;
+}
+
+.src-name::-webkit-scrollbar {
+    display: none;
+}
+
+/* 第二行：颜色名称（左）+ 新旧状态圆形图标（右） */
+.src-row2 {
+    justify-content: space-between;
+}
+
+.src-color-name {
+    color: var(--black-color);
+    white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1 1 0;
+    min-width: 0;
+    scrollbar-width: none;
+}
+
+.src-color-name::-webkit-scrollbar {
+    display: none;
+}
+
+.src-status {
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.src-status.new { background-color: #4CAF50; }
+.src-status.used { background-color: #FF9800; }
+
+/* 第三行：仓库 */
+.src-row3 {
+    justify-content: flex-start;
+}
+
+.src-repo {
+    color: var(--black-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+/* 第四行：盒子（左）+ 数量（右，预留 5 位数字） */
+.src-row4 {
+    justify-content: flex-start;
+}
+
+.src-box {
+    color: var(--black-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.src-qty-wrap {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.src-qty {
+    display: inline-block;
+    min-width: 5ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: bold;
+}
+
+.no-search-results {
+    text-align: center;
+    padding: 30px;
+    color: var(--gray-color);
 }
 
 .settings-tab {
@@ -835,15 +1312,87 @@ body {
 /* 添加零件表单样式 */
 .add-part-modal {
     max-width: 500px !important;
+    width: 92%;
+    box-sizing: border-box;
 }
 
 .add-part-body {
     max-height: 60vh;
     overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 添加零件-标题栏（取消左 + 标题中 + 保存右） */
+.add-part-modal .modal-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 10px;
+}
+
+.add-part-modal .modal-title {
+    font-size: 23px;
+    font-weight: 600;
+    color: #34495e;
+    text-align: center;
+}
+
+/* 取消按钮：红色底色，与称重计算风格一致 */
+.add-part-modal .btn-cancel {
+    background: #f44336;
+    color: white;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    height: 36px;
+    white-space: nowrap;
+}
+
+/* 保存按钮：蓝色底色，与称重计算风格一致 */
+.add-part-modal .btn-save {
+    background: #2196F3;
+    color: white;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    height: 36px;
+    white-space: nowrap;
+}
+
+/* 选择颜色按钮：与称重计算风格一致 */
+.add-part-modal .btn-color-pick {
+    background: #BDBDBD;
+    color: white;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 36px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    transition: background-color 0.3s;
+}
+
+.add-part-modal .btn-color-pick.color-white {
+    color: #000 !important;
 }
 
 .form-section {
     margin-bottom: 16px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
 }
 
 .form-row {
@@ -1002,12 +1551,17 @@ body {
 
 /* 零件名称提示 */
 .part-name-hint {
+    position: absolute;
+    top: 38px;
+    left: 0;
+    right: 0;
     font-size: 12px;
     color: #888;
-    max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    pointer-events: none;
+    z-index: 1;
 }
 
 /* 状态按钮 */
@@ -1052,11 +1606,93 @@ body {
 /* 数量行 */
 .quantity-weight-row {
     display: flex;
-    gap: 20px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
-.quantity-weight-row > div {
+.quantity-weight-row > .form-label {
+    flex-shrink: 0;
+}
+
+/* 数量输入框与称重计算按钮并排 */
+.quantity-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex: 1;
+    min-width: 0;
+}
+
+.quantity-input-row .form-input {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 称重计算按钮：紧贴零件数量输入框右侧 */
+.add-part-modal .btn-weight-calc {
+    background: #27ae60;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 36px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.add-part-modal .btn-weight-calc:hover {
+    background: #229954;
+}
+
+/* 称重计算弹窗 */
+.weight-calc-modal {
+    max-width: 460px !important;
+}
+
+.weight-calc-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.weight-calc-modal .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #34495e;
+}
+
+.weight-calc-modal .btn-cancel {
+    background: #f44336;
+    color: white;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.weight-calc-modal .btn-save {
+    background: #27ae60;
+    color: white;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.weight-calc-modal .form-row {
+    align-items: center;
 }
 
 /* 零件信息预览 */
@@ -1100,10 +1736,6 @@ body {
     flex-shrink: 0;
 }
 
-.part-number-row .status-group {
-    margin-left: auto;
-}
-
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -1111,11 +1743,6 @@ body {
     
     .form-row {
         flex-wrap: wrap;
-    }
-    
-    .part-number-row .status-group {
-        margin-left: 0;
-        width: 100%;
     }
 }
 
@@ -1202,4 +1829,737 @@ body {
 
 .color-card:active {
     transform: scale(0.95);
+}
+
+/* ============ 零件详情弹窗（正方形 1:1） ============ */
+.part-detail-modal {
+    width: min(92vw, 380px);
+    height: min(92vw, 380px);
+    max-width: 380px;
+    padding: 12px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.pd-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    flex-shrink: 0;
+}
+
+/* 第一行：关闭(左) + 标题(中) + 删(右) */
+.pd-title-row {
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pd-title-btns {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+}
+
+.modal-content .pd-close-btn,
+.modal-content .pd-merge-btn,
+.modal-content .pd-del-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.pd-close-btn {
+    background: #FF9800;
+}
+
+.pd-merge-btn {
+    background: #2196F3;
+}
+
+.pd-del-btn {
+    background: #f44336;
+}
+
+.pd-title {
+    font-size: 26px;
+    font-weight: bold;
+    color: #34495e;
+    line-height: 1.3;
+    text-align: left;
+}
+
+/* 第二行：图片（左滑显示变更按钮） */
+.pd-image-row {
+    height: 168px;
+    justify-content: flex-start;
+    align-items: center;
+    background: transparent;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+.pd-image-content {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.pd-image-action {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 90px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.pd-img-del-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #f44336;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.pd-img-change-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #2196F3;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.pd-image {
+    max-height: 168px;
+    max-width: 100%;
+    object-fit: contain;
+}
+
+.pd-no-image {
+    color: #999;
+    font-size: 14px;
+}
+
+/* 第三行：型号 + 新旧状态 */
+.pd-model-row {
+    justify-content: space-between;
+}
+
+.pd-left {
+    color: #333;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.pd-model {
+    font-weight: 600;
+}
+
+/* 圆形新旧图标 */
+.pd-status {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.pd-status-new {
+    background: #4CAF50;
+}
+
+.pd-status-used {
+    background: #FF9800;
+}
+
+/* 第四行：名称 */
+.pd-name-row {
+    overflow: hidden;
+}
+
+.pd-label {
+    color: #333;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.pd-scroll {
+    overflow-x: auto;
+    white-space: nowrap;
+    color: #000;
+    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.pd-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* 第五行：颜色(2/3) + 数量(1/3) */
+.pd-color-row {
+    justify-content: space-between;
+}
+
+/* 第三/四/五行：行高占比1，内容下对齐 */
+.pd-model-row,
+.pd-name-row,
+.pd-color-row {
+    flex: 1 1 0;
+    align-items: flex-end;
+}
+
+/* 第六行：行高占比2 */
+.pd-actions {
+    flex: 2 1 0;
+}
+
+/* 第四/五/六行：上缩4px */
+.pd-name-row,
+.pd-color-row,
+.pd-actions {
+    margin-top: -4px;
+}
+
+.pd-color-left {
+    display: flex;
+    align-items: flex-end;
+    flex: 2;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.pd-color-id {
+    color: #2196F3;
+    font-size: 14px;
+    font-weight: 600;
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.pd-color-name {
+    color: #000;
+}
+
+.pd-qty {
+    display: flex;
+    align-items: flex-end;
+    flex: 1;
+    justify-content: space-between;
+    min-width: 0;
+}
+
+.pd-qty .pd-label {
+    flex-shrink: 0;
+}
+
+.pd-qty-val {
+    font-size: 18px;
+    font-weight: bold;
+    display: inline-block;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    min-width: 5ch;
+}
+
+.qty-red { color: #f44336; }
+.qty-orange { color: #FF9800; }
+.qty-green { color: #4CAF50; }
+
+.pd-actions-left {
+    display: flex;
+    gap: 28px;
+    align-items: flex-end;
+    flex: 2;
+}
+
+.pd-actions-right {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex: 1;
+}
+
+.modal-content .pd-btn {
+    border: none;
+    border-radius: 6px;
+    height: 36px;
+    padding: 0 16px;
+    font-size: 14px;
+    cursor: pointer;
+    color: #fff;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pd-btn-search {
+    background: #4CAF50;
+}
+
+.pd-btn-save {
+    background: #2196F3;
+}
+
+.modal-content .pd-circle-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    color: white;
+    font-size: 20px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.pd-minus-btn {
+    background: #f44336;
+}
+
+.pd-plus-btn {
+    background: #4CAF50;
+}
+
+/* 密码确认弹窗按钮 */
+.pd-password-modal .pd-btn-close {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    background: #f44336;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.pd-password-modal .pd-btn-delete {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    background: #2196F3;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.pd-password-modal .pd-btn-group {
+    display: flex;
+    gap: 6px;
+}
+
+/* 删除密码确认弹窗 */
+.pd-password-modal {
+    width: min(92vw, 320px);
+    padding: 14px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pd-password-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pd-password-hint {
+    margin: 0;
+    font-size: 14px;
+    color: #555;
+    text-align: center;
+}
+
+.pd-password-input {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 16px;
+    text-align: center;
+    letter-spacing: 2px;
+}
+
+.pd-password-input:focus {
+    border-color: #2196F3;
+    outline: none;
+}
+
+.pd-password-error {
+    color: #f44336;
+    font-size: 12px;
+    text-align: center;
+    min-height: 16px;
+}
+
+/* ============ 批量导入弹窗 ============ */
+.csv-importer-modal {
+    width: 92%;
+    max-width: 500px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+/* 第一行：标题居中 + 返回按钮 */
+.csv-imp-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.csv-imp-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #34495e;
+    text-align: center;
+}
+
+.csv-imp-btn-back {
+    background: #FF9800;
+    color: white;
+    height: 36px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* 第二行：格式模版 + 导入文件 */
+.csv-imp-toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.csv-imp-btn-template {
+    flex: 1;
+    background: #2196F3;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.csv-imp-btn-import {
+    flex: 1;
+    background: #4CAF50;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* 内容区 */
+.csv-imp-body {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 100px;
+}
+
+.csv-imp-tip {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    padding: 30px 0;
+}
+
+.csv-imp-loading {
+    text-align: center;
+    color: #999;
+    font-size: 14px;
+    padding: 30px 0;
+}
+
+/* 确认表 - 零件卡片列表 */
+.csv-imp-confirm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.csv-imp-card {
+    display: flex;
+    gap: 10px;
+    padding: 8px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.csv-imp-card-img {
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.csv-imp-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.csv-imp-img-loading {
+    font-size: 11px;
+    color: #aaa;
+}
+
+.csv-imp-no-img {
+    font-size: 11px;
+    color: #ccc;
+}
+
+.csv-imp-card-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+}
+
+.csv-imp-card-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.csv-imp-card-label {
+    color: #888;
+    flex-shrink: 0;
+}
+
+.csv-imp-card-value {
+    color: #333;
+    word-break: break-all;
+}
+
+.csv-imp-qty {
+    font-weight: 600;
+    color: #2196F3;
+}
+
+.csv-imp-card-color-chip {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.csv-imp-card-status {
+    margin-left: auto;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.csv-imp-card-status.new {
+    background: #4CAF50;
+    color: white;
+}
+
+.csv-imp-card-status.used {
+    background: #FF9800;
+    color: white;
+}
+
+/* 确认/取消按钮 */
+.csv-imp-confirm-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+.csv-imp-btn-cancel {
+    flex: 1;
+    background: #9E9E9E;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.csv-imp-btn-confirm {
+    flex: 1;
+    background: #4CAF50;
+    color: white;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* 导入结果 */
+.csv-imp-success,
+.csv-imp-error {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.csv-imp-success-icon {
+    font-size: 36px;
+    color: #4CAF50;
+    margin-bottom: 8px;
+}
+
+.csv-imp-error-icon {
+    font-size: 36px;
+    color: #f44336;
+    margin-bottom: 8px;
+}
+
+.csv-imp-error-list {
+    text-align: left;
+    max-height: 150px;
+    overflow-y: auto;
+    margin: 8px 0;
+    padding: 8px;
+    background: #fff3e0;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #e65100;
+}
+
+.csv-imp-btn-close {
+    background: #2196F3;
+    color: white;
+    height: 36px;
+    padding: 0 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 12px;
+}
+
+/* 重复零件提示 */
+.csv-imp-duplicate-tip {
+    background: #fff3e0;
+    color: #e65100;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+/* 重复零件卡片高亮 */
+.csv-imp-card-duplicate {
+    border: 2px solid #FF9800 !important;
+    background: #fff8e1 !important;
+}
+
+/* 重复操作行 */
+.csv-imp-duplicate-row {
+    flex-wrap: wrap;
+    gap: 8px !important;
+    margin-top: 4px;
+}
+
+/* 合并/新增选择器 */
+.csv-imp-action-switch {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.csv-imp-action-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 12px;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    background: #fff;
+    color: #666;
+}
+
+.csv-imp-action-item.active {
+    color: white;
+    border-color: transparent;
+}
+
+.csv-imp-action-item:first-child.active {
+    background: #4CAF50;
+}
+
+.csv-imp-action-item:last-child.active {
+    background: #2196F3;
 }

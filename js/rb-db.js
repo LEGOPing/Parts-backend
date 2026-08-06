@@ -1,5 +1,5 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 1;
+const RB_DB_VERSION = 2;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -7,7 +7,8 @@ const RB_STORES = {
     INVENTORY_PARTS: 'rb_inventory_parts',
     PART_CATEGORIES: 'rb_part_categories',
     PART_RELATIONSHIPS: 'rb_part_relationships',
-    PARTS: 'rb_parts'
+    PARTS: 'rb_parts',
+    WEIGHTS: 'rb_weights'
 };
 
 const RB_STORE_KEYS = {
@@ -16,7 +17,8 @@ const RB_STORE_KEYS = {
     'rb_part_categories': 'part_categories',
     'rb_elements': 'elements',
     'rb_inventory_parts': 'inventory_parts',
-    'rb_part_relationships': 'part_relationships'
+    'rb_part_relationships': 'part_relationships',
+    'rb_weights': 'weights'
 };
 
 let rbDbInstance = null;
@@ -54,6 +56,9 @@ function openRBDatabase() {
             }
             if (!db.objectStoreNames.contains(RB_STORES.PARTS)) {
                 db.createObjectStore(RB_STORES.PARTS, { keyPath: 'part_num' });
+            }
+            if (!db.objectStoreNames.contains(RB_STORES.WEIGHTS)) {
+                db.createObjectStore(RB_STORES.WEIGHTS, { keyPath: 'part_num' });
             }
         };
 
@@ -168,7 +173,8 @@ async function getRBStats() {
             'rb_part_categories': RB_STORES.PART_CATEGORIES,
             'rb_elements': RB_STORES.ELEMENTS,
             'rb_inventory_parts': RB_STORES.INVENTORY_PARTS,
-            'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS
+            'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
+            'rb_weights': RB_STORES.WEIGHTS
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -317,7 +323,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'part_categories': RB_STORES.PART_CATEGORIES,
         'elements': RB_STORES.ELEMENTS,
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
-        'part_relationships': RB_STORES.PART_RELATIONSHIPS
+        'part_relationships': RB_STORES.PART_RELATIONSHIPS,
+        'weights': RB_STORES.WEIGHTS
     };
     
     const results = {};
@@ -362,7 +369,8 @@ async function exportRBDatabaseToJSON() {
         'part_categories': RB_STORES.PART_CATEGORIES,
         'elements': RB_STORES.ELEMENTS,
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
-        'part_relationships': RB_STORES.PART_RELATIONSHIPS
+        'part_relationships': RB_STORES.PART_RELATIONSHIPS,
+        'weights': RB_STORES.WEIGHTS
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
@@ -625,8 +633,72 @@ async function getPartColorCount(partNum) {
     }
 }
 
-// 根据 part_num 和 color_id 查询图片URL
+// ===== 零件图片缓存机制 =====
+const PART_IMAGE_CACHE_NAME = 'part-images-cache-v1';
+
+// 构造 Gitee Parts-img 仓库中的零件图片地址
+function buildPartsImgUrl(partNum, colorId) {
+    return `${GITEE_IMG_URL}parts/${partNum}_${colorId}.jpg`;
+}
+
+// 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
+async function savePartImageToOfflineCache(partNum, colorId, imageData) {
+    try {
+        const cache = await caches.open(PART_IMAGE_CACHE_NAME);
+        const response = imageData instanceof Response
+            ? imageData
+            : new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+        await cache.put(buildPartsImgUrl(partNum, colorId), response);
+        return true;
+    } catch (error) {
+        console.error('保存零件图片到离线缓存失败:', error);
+        return false;
+    }
+}
+
+// 从浏览器离线缓存读取零件图片
+async function getPartImageFromOfflineCache(partNum, colorId) {
+    try {
+        const cache = await caches.open(PART_IMAGE_CACHE_NAME);
+        return await cache.match(buildPartsImgUrl(partNum, colorId));
+    } catch (error) {
+        return null;
+    }
+}
+
+// 从浏览器离线缓存删除零件图片
+async function deletePartImageFromOfflineCache(partNum, colorId) {
+    try {
+        const cache = await caches.open(PART_IMAGE_CACHE_NAME);
+        return await cache.delete(buildPartsImgUrl(partNum, colorId));
+    } catch (error) {
+        console.error('删除零件图片离线缓存失败:', error);
+        return false;
+    }
+}
+
+// 检查 Gitee Parts-img 仓库是否存在该零件图片
+async function checkPartsImgOnGitee(partNum, colorId) {
+    try {
+        const response = await fetch(buildPartsImgUrl(partNum, colorId), { cache: 'no-store' });
+        return response.ok;
+    } catch (error) {
+        return false;
+    }
+}
+
+// 根据 part_num 和 color_id 查询图片URL（三级读取：① 浏览器离线缓存 → ② Gitee Parts-img → ③ RB数据库）
 async function getPartImageUrl(partNum, colorId) {
+    // ① 浏览器离线缓存（人工添加的图片优先）
+    const cached = await getPartImageFromOfflineCache(partNum, colorId);
+    if (cached) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ② Gitee Parts-img 仓库
+    if (await checkPartsImgOnGitee(partNum, colorId)) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ③ RB数据库
     try {
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
         // 精确匹配 part_num 和 color_id
@@ -641,5 +713,46 @@ async function getPartImageUrl(partNum, colorId) {
     } catch (error) {
         console.error('查询零件图片URL失败:', error);
         return null;
+    }
+}
+
+// 根据 part_num 查询离线重量（克），返回 number 或 null
+async function getPartWeightByNum(partNum) {
+    try {
+        const cleanNum = String(partNum).replace(/[^a-zA-Z0-9]/g, '');
+        if (!cleanNum) return null;
+        const record = await getByKey(RB_STORES.WEIGHTS, cleanNum);
+        if (record && typeof record.weight === 'number' && record.weight > 0) {
+            return record.weight;
+        }
+        return null;
+    } catch (error) {
+        console.error('查询离线零件重量失败:', error);
+        return null;
+    }
+}
+
+// 从 weights.json 对象导入到 rb_weights store
+// weightsJson 格式: { "3001": 2.32, ... }
+async function importWeightsFromJSON(weightsJson, onProgress) {
+    try {
+        if (!weightsJson || typeof weightsJson !== 'object') {
+            throw new Error('weights.json 数据无效');
+        }
+        const data = [];
+        for (const [partNum, weight] of Object.entries(weightsJson)) {
+            const num = String(partNum).replace(/[^a-zA-Z0-9]/g, '');
+            const w = parseFloat(weight);
+            if (num && !isNaN(w) && w > 0) {
+                data.push({ part_num: num, weight: w });
+            }
+        }
+        if (onProgress) onProgress(0.5, `导入重量数据 (${data.length}条)...`);
+        await importRBData(RB_STORES.WEIGHTS, data);
+        if (onProgress) onProgress(1, '重量数据导入完成');
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入重量数据失败:', error);
+        return { success: false, count: 0, error: error.message };
     }
 }

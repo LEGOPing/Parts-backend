@@ -2073,9 +2073,23 @@ body {
     width: 90px;
     height: 100%;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 10px;
     flex-shrink: 0;
+}
+
+.pd-img-del-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #f44336;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
 }
 
 .pd-img-change-btn {

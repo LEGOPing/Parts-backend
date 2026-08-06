@@ -2,13 +2,18 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-const BACKEND_URL = 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
+// 本地开发（localhost）走本机 FastAPI，可利用本机 IP 抓取 Bricklink 重量；
+// 生产环境走 CloudBase 云托管（依赖 Supabase part_weights 缓存）。
+const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? `http://${location.hostname}:8000`
+    : 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
 const GITEE_RB_RAW_URL = 'https://gitee.com/legoping/parts-rb/raw/main';
 const CORS_PROXY = 'https://corsproxy.io/?url=';
+
 const RB_DATABASE_FILE = 'rb_database.json';
 const DEFAULT_GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0';
 
@@ -390,7 +395,7 @@ async function getBoxes(repoId) {
             select: 'id,box_number,name,repository_id',
             order: 'box_number'
         };
-        if (repoId) {
+        if (repoId != null) {
             options.filters = { repository_id: repoId };
         }
         return await supabaseRequest('boxes', options);
@@ -465,7 +470,7 @@ async function getParts(boxId) {
             select: 'id,part_num,name,color_id,is_new,quantity,box_id',
             order: 'part_num'
         };
-        if (boxId) {
+        if (boxId != null) {
             options.filters = { box_id: boxId };
         }
         return await supabaseRequest('parts', options);
@@ -712,6 +717,174 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
         return { success: true, sha: result.sha };
     } catch (error) {
         console.error('更新Parts-json上的RB数据库失败:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// 查询单个零件重量（克）。
+// 策略（按用户指定顺序）：
+// 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）
+// 2. 其次尝试 Bricklink：优先读 Supabase part_weights 缓存（零后端）；
+//    缓存未命中时，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）并回写缓存；
+// 3. 以上都失败/出错，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
+// 返回 { part_number, weight } 或 { part_number, weight: null, error }
+async function fetchBricklinkPartWeight(partNumber) {
+    const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) {
+        return { part_number: '', weight: null, error: '零件型号无效' };
+    }
+
+    // 1. 优先查离线 RB 数据库（rb_weights store）
+    try {
+        if (typeof getPartWeightByNum === 'function') {
+            const offlineWeight = await getPartWeightByNum(cleanNum);
+            if (offlineWeight !== null && offlineWeight > 0) {
+                return { part_number: cleanNum, weight: offlineWeight, source: 'offline' };
+            }
+        }
+    } catch (e) {
+        console.warn('离线重量查询失败:', e.message);
+    }
+
+    // 2. 尝试 Bricklink：先查 Supabase part_weights 缓存（前端直连，零后端）
+    try {
+        const cached = await supabaseRequest('part_weights', {
+            select: 'weight',
+            filters: { part_num: cleanNum }
+        });
+        if (cached && cached.length > 0 && cached[0].weight != null) {
+            return { part_number: cleanNum, weight: cached[0].weight, source: 'supabase' };
+        }
+    } catch (e) {
+        console.warn('重量缓存查询失败:', e.message);
+    }
+
+    // 2.1 缓存未命中：仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.weight != null && data.weight > 0) {
+                    return data;
+                }
+            }
+        } catch (e) {
+            console.warn('FastAPI 重量抓取失败:', e.message);
+        }
+    }
+
+    // 3. 全部失败：返回空，调用方回退到手工输入
+    return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
+}
+
+// 重置 Supabase 自增序列（通过 RPC 函数，无需 CloudBase 后端）
+async function resetSequencesViaSupabase() {
+    try {
+        const response = await fetch(`${API_BASE}/rpc/reset_sequences`, {
+            method: 'POST',
+            headers: supabaseHeaders(),
+            body: JSON.stringify({})
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('重置序列失败:', error.message);
+        throw error;
+    }
+}
+
+// ===== Parts-img 仓库图片上传/删除 =====
+const GITEE_IMG_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-img/contents';
+const GITEE_IMG_BRANCH = 'main';
+
+// 上传零件图片到 Gitee Parts-img 仓库（POST 新建 / PUT 更新）
+async function uploadPartImageToGitee(partNum, colorId, imageBase64) {
+    try {
+        const token = getGiteeToken();
+        if (!token) {
+            throw new Error('缺少 Gitee Token，无法上传');
+        }
+        // 兼容 dataURL 或纯 base64
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+        const filePath = `parts/${partNum}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}`;
+
+        // 检查文件是否已存在，获取 sha 用于更新
+        const checkResp = await fetch(`${apiUrl}?ref=${GITEE_IMG_BRANCH}`, {
+            headers: { 'Authorization': `token ${token}` }
+        });
+        const existing = checkResp.ok ? await checkResp.json() : null;
+
+        const body = {
+            message: existing ? `更新零件图片 ${partNum}_${colorId}` : `添加零件图片 ${partNum}_${colorId}`,
+            content: base64Data,
+            branch: GITEE_IMG_BRANCH
+        };
+        if (existing && existing.sha) {
+            body.sha = existing.sha;
+        }
+
+        const response = await fetch(apiUrl, {
+            method: existing ? 'PUT' : 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        const result = await response.json();
+        return { success: true, sha: result.sha };
+    } catch (error) {
+        console.error('上传零件图片到Parts-img失败:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// 从 Gitee Parts-img 仓库删除零件图片
+async function deletePartImageFromGitee(partNum, colorId) {
+    try {
+        const token = getGiteeToken();
+        if (!token) {
+            throw new Error('缺少 Gitee Token，无法删除');
+        }
+        const filePath = `parts/${partNum}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}`;
+
+        // 先获取 sha（删除必须携带 sha）
+        const checkResp = await fetch(`${apiUrl}?ref=${GITEE_IMG_BRANCH}`, {
+            headers: { 'Authorization': `token ${token}` }
+        });
+        if (!checkResp.ok) {
+            return { success: false, error: '文件不存在，无需删除' };
+        }
+        const existing = await checkResp.json();
+
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify({
+                message: `删除零件图片 ${partNum}_${colorId}`,
+                sha: existing.sha,
+                branch: GITEE_IMG_BRANCH
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('删除零件图片失败:', error);
         return { success: false, error: error.message };
     }
 }

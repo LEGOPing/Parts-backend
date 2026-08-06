@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v45';
+const CACHE_NAME = 'lego-parts-v71';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -26,9 +26,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
+            // 清理所有旧版本缓存（包括v41/v43等遗留缓存）
             return Promise.all(
                 cacheNames.map((cacheName) => {
                     if (cacheName !== CACHE_NAME) {
+                        console.log('删除旧缓存:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
@@ -55,8 +57,8 @@ self.addEventListener('fetch', (event) => {
     }
     
     if (request.method === 'GET') {
-        // JS/CSS files: network-first strategy to ensure updates (fix RB_STORES caching issue)
-        const isDynamicResource = (url.pathname.endsWith('.js') || url.pathname.endsWith('.css'));
+        // 导航请求(HTML页面)和JS/CSS: network-first, 确保界面更新
+        const isDynamicResource = request.mode === 'navigate' || url.pathname.endsWith('.js') || url.pathname.endsWith('.css');
         
         if (isDynamicResource) {
             event.respondWith(
@@ -70,7 +72,7 @@ self.addEventListener('fetch', (event) => {
                     }
                     return caches.match(request);
                 }).catch(() => {
-                    return caches.match(request);
+                    return caches.match(request).then((cached) => cached || caches.match('./index.html'));
                 })
             );
         } else {
