@@ -2233,6 +2233,7 @@ async function showPartDetail(part) {
                 ${imageHtml}
             </div>
             <div class="pd-image-action">
+                <button class="pd-img-del-btn" onclick="deletePartDetailImage('${part.part_num}', ${part.color_id})">删除图片</button>
                 <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
             </div>
         </div>
@@ -2390,6 +2391,31 @@ async function changePartImage(partNum, colorId) {
     } else {
         addCustomImage(partNum, colorId);
     }
+}
+
+// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 详情显示暂无图片）
+async function deletePartDetailImage(partNum, colorId) {
+    if (!confirm('确定要删除该图片吗？')) return;
+    // 删除浏览器离线缓存
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
+    await deletePartImageFromGitee(partNum, colorId);
+    // 关闭左滑并更新当前详情：图片区显示"暂无图片"，按钮恢复为"添加图片"
+    const sheet = document.querySelector('.part-detail-modal');
+    if (sheet) {
+        const imageContent = sheet.querySelector('.pd-image-content');
+        if (imageContent) imageContent.innerHTML = '<div class="pd-no-image">暂无图片</div>';
+        const changeBtn = sheet.querySelector('.pd-img-change-btn');
+        if (changeBtn) changeBtn.textContent = '添加图片';
+        const imageSwipe = sheet.querySelector('#pd-image-swipe');
+        if (imageSwipe) {
+            const content = imageSwipe.querySelector('.pd-image-content');
+            const action = imageSwipe.querySelector('.pd-image-action');
+            if (content) content.style.transform = 'translateX(0)';
+            if (action) action.style.transform = 'translateX(90px)';
+        }
+    }
+    showToast('图片已删除');
 }
 
 async function searchFromDetail(partNum, colorId, partName) {
