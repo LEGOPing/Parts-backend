@@ -2233,7 +2233,7 @@ async function showPartDetail(part) {
                 ${imageHtml}
             </div>
             <div class="pd-image-action">
-                <button class="pd-img-del-btn" onclick="deletePartDetailImage('${part.part_num}', ${part.color_id})">删除图片</button>
+                <button class="pd-img-del-btn" onclick="deletePartDetailImage('${part.part_num}', ${part.color_id}, ${part.id})">删除图片</button>
                 <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
             </div>
         </div>
@@ -2393,8 +2393,8 @@ async function changePartImage(partNum, colorId) {
     }
 }
 
-// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 详情显示暂无图片）
-async function deletePartDetailImage(partNum, colorId) {
+// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 详情显示暂无图片 + 更新零件卡片）
+async function deletePartDetailImage(partNum, colorId, partId) {
     if (!confirm('确定要删除该图片吗？')) return;
     // 删除浏览器离线缓存
     await deletePartImageFromOfflineCache(partNum, colorId);
@@ -2413,6 +2413,14 @@ async function deletePartDetailImage(partNum, colorId) {
             const action = imageSwipe.querySelector('.pd-image-action');
             if (content) content.style.transform = 'translateX(0)';
             if (action) action.style.transform = 'translateX(90px)';
+        }
+    }
+    // 更新零件管理页面对应卡片的图片为"暂无图片"
+    if (partId != null) {
+        const card = document.querySelector(`.part-card[data-id="${partId}"]`);
+        if (card) {
+            const imageContainer = card.querySelector('.part-image');
+            if (imageContainer) imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
         }
     }
     showToast('图片已删除');
