@@ -2235,6 +2235,7 @@ async function showPartDetail(part) {
             <div class="pd-image-action">
                 <button class="pd-img-del-btn" onclick="deletePartDetailImage('${part.part_num}', ${part.color_id}, ${part.id})">删除图片</button>
                 <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
+                <button class="pd-img-url-btn" onclick="showPartImageUrl('${part.part_num}', ${part.color_id})">图片URL</button>
             </div>
         </div>
         <div class="pd-row pd-model-row">
@@ -2430,6 +2431,47 @@ async function deletePartDetailImage(partNum, colorId, partId) {
     } else {
         showToast('图片已删除');
     }
+}
+
+// 显示零件在RB数据库中的图片URL
+async function showPartImageUrl(partNum, colorId) {
+    let url = null;
+    try {
+        const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
+        let record = inventory.find(i =>
+            i.part_num === partNum && String(i.color_id) === String(colorId)
+        );
+        if (!record) {
+            record = inventory.find(i => i.part_num === partNum);
+        }
+        url = record ? record.img_url : null;
+    } catch (e) {
+        console.warn('获取RB数据库图片URL失败:', e);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content';
+    sheet.style.maxWidth = '350px';
+
+    sheet.innerHTML = `
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span class="modal-title" style="font-size:16px;font-weight:600;">RB数据库图片URL</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+        </div>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}</div>
+            ${url
+                ? `<div style="word-break:break-all;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:10px;font-size:13px;color:#333;margin-bottom:12px;">${url}</div>
+                   <button onclick="navigator.clipboard.writeText('${url.replace(/'/g, "\\'")}').then(()=>{this.closest('.modal-overlay').remove();showToast('已复制图片URL')})" style="width:100%;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">复制URL</button>`
+                : `<div style="font-size:14px;color:#999;text-align:center;padding:12px 0;">RB数据库中未找到该零件的图片URL</div>`}
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
 }
 
 async function searchFromDetail(partNum, colorId, partName) {
