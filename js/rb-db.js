@@ -687,35 +687,32 @@ async function checkPartsImgOnGitee(partNum, colorId) {
     }
 }
 
-// 从 RB 数据库查询零件图片URL：优先 elements 表（part_num+color_id → element_id 的元素级图片，颜色准确），
-// 无匹配时回退 inventory_parts 的 img_url（零件级默认图，颜色可能不准确）
-async function getRBPartImageUrl(partNum, colorId) {
+// 从 RB 数据库查询零件图片URL：通过型号和颜色匹配 inventory_parts 表
+// 同一 part+color 可能有多条记录（不同 inventory 或不同 element），返回去重后的 img_url 列表，供弹窗卡片让用户选择
+async function getRBPartImageUrls(partNum, colorId) {
     try {
         const normPart = String(partNum).trim().toLowerCase();
         const normColor = String(colorId).trim().toLowerCase();
-        // ① elements 表：元素级图片（inventory_parts.img_url 是零件级默认图，如 3001 会错误返回 color 15 的图）
-        const allElements = await getAll(RB_STORES.ELEMENTS);
-        const matches = allElements.filter(e =>
-            String(e.part_num).trim().toLowerCase() === normPart &&
-            String(e.color_id).trim().toLowerCase() === normColor &&
-            !e._deleted // 用户删除过图片的 element 标记为 _deleted，跳过
-        );
-        // 同 part+color 可能有多个 element，取较新的（elements.csv 中靠后，如 3001/13 取 4205032 而非 4119698）
-        const element = matches.length ? matches[matches.length - 1] : null;
-        if (element) {
-            return `https://cdn.rebrickable.com/media/parts/elements/${element.element_id}.jpg`;
-        }
-        // ② inventory_parts 表：零件级默认图（回退）
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        const record = inventory.find(i =>
-            String(i.part_num).trim().toLowerCase() === normPart &&
-            String(i.color_id).trim().toLowerCase() === normColor
-        );
-        return record ? record.img_url : null;
+        const urls = [];
+        inventory.forEach(i => {
+            if (String(i.part_num).trim().toLowerCase() === normPart &&
+                String(i.color_id).trim().toLowerCase() === normColor &&
+                i.img_url && !urls.includes(i.img_url)) {
+                urls.push(i.img_url);
+            }
+        });
+        return urls;
     } catch (error) {
         console.error('查询RB数据库图片URL失败:', error);
-        return null;
+        return [];
     }
+}
+
+// 取第一条作为默认图片URL（零件卡片/详情图展示用）
+async function getRBPartImageUrl(partNum, colorId) {
+    const urls = await getRBPartImageUrls(partNum, colorId);
+    return urls.length ? urls[0] : null;
 }
 
 // 根据 part_num 和 color_id 查询图片URL（三级读取：① 浏览器离线缓存 → ② Gitee Parts-img → ③ RB数据库）
@@ -729,58 +726,40 @@ async function getPartImageUrl(partNum, colorId) {
     if (await checkPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ③ RB数据库（elements 元素级图片优先，回退 inventory_parts）
+    // ③ RB数据库（inventory_parts 表按型号+颜色匹配）
     return await getRBPartImageUrl(partNum, colorId);
 }
 
 // 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
-// ① inventory_parts 置 img_url=null ② elements 匹配记录标记 _deleted=true
+// 将 inventory_parts 中匹配记录（优先 part_num+color_id 精确匹配，否则 part_num 匹配）的 img_url 置 null
 async function clearPartImageUrlInRB(partNum, colorId) {
     try {
         const db = await openRBDatabase();
         const normPart = String(partNum).trim().toLowerCase();
         const normColor = String(colorId).trim().toLowerCase();
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([RB_STORES.INVENTORY_PARTS, RB_STORES.ELEMENTS], 'readwrite');
+            const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
+            const store = transaction.objectStore(RB_STORES.INVENTORY_PARTS);
+            const cursorRequest = store.openCursor();
             let updated = false;
-
-            // ① inventory_parts：清空精确匹配（part_num + color_id）的 img_url
-            const invStore = transaction.objectStore(RB_STORES.INVENTORY_PARTS);
             let exactMatch = null;
             let fallbackMatch = null;
-            const invCursor = invStore.openCursor();
-            invCursor.onsuccess = (event) => {
+
+            cursorRequest.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (!cursor) {
-                    // 优先清除精确匹配，否则清除 part_num 匹配
+                    // 优先清除精确匹配（part_num + color_id），否则清除 part_num 匹配
                     const target = exactMatch || fallbackMatch;
                     if (target && target.record.img_url) {
                         target.cursor.update({ ...target.record, img_url: null });
                         updated = true;
                     }
-                    // ② elements：匹配记录标记 _deleted，避免回退链再次命中元素级图片
-                    const eleStore = transaction.objectStore(RB_STORES.ELEMENTS);
-                    const eleCursor = eleStore.openCursor();
-                    eleCursor.onsuccess = (e2) => {
-                        const cur = e2.target.result;
-                        if (!cur) {
-                            resolve(updated);
-                            return;
-                        }
-                        const rec = cur.value;
-                        if (String(rec.part_num).trim().toLowerCase() === normPart &&
-                            String(rec.color_id).trim().toLowerCase() === normColor) {
-                            cur.update({ ...rec, _deleted: true });
-                            updated = true;
-                        }
-                        cur.continue();
-                    };
-                    eleCursor.onerror = (e2) => reject(e2.target.error);
+                    resolve(updated);
                     return;
                 }
                 const record = cursor.value;
-                if (record.part_num === partNum) {
-                    if (String(record.color_id) === String(colorId)) {
+                if (String(record.part_num).trim().toLowerCase() === normPart) {
+                    if (String(record.color_id).trim().toLowerCase() === normColor) {
                         if (!exactMatch) exactMatch = { record, cursor };
                     } else if (!fallbackMatch) {
                         fallbackMatch = { record, cursor };
@@ -788,7 +767,7 @@ async function clearPartImageUrlInRB(partNum, colorId) {
                 }
                 cursor.continue();
             };
-            invCursor.onerror = (event) => reject(event.target.error);
+            cursorRequest.onerror = (event) => reject(event.target.error);
         });
     } catch (error) {
         console.error('清除RB数据库零件图片URL失败:', error);
