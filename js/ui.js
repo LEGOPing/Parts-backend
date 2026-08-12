@@ -2425,21 +2425,30 @@ async function deletePartDetailImage(partNum, colorId) {
     }
 }
 
-// 显示零件在RB数据库中的图片URL
+// 显示零件图片三级URL（①离线缓存区 ②Gitee ③RB数据库）
 async function showPartImageUrl(partNum, colorId) {
-    let url = null;
+    const giteeUrl = buildPartsImgUrl(partNum, colorId);
+    let cached = false, giteeOk = false, rbUrl = null;
     try {
-        const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        const normPart = String(partNum).trim().toLowerCase();
-        const normColor = String(colorId).trim().toLowerCase();
-        const record = inventory.find(i =>
-            String(i.part_num).trim().toLowerCase() === normPart &&
-            String(i.color_id).trim().toLowerCase() === normColor
-        );
-        url = record ? record.img_url : null;
+        [cached, giteeOk, rbUrl] = await Promise.all([
+            getPartImageFromOfflineCache(partNum, colorId).then(r => !!r),
+            checkPartsImgOnGitee(partNum, colorId),
+            (async () => {
+                const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
+                const normPart = String(partNum).trim().toLowerCase();
+                const normColor = String(colorId).trim().toLowerCase();
+                const record = inventory.find(i =>
+                    String(i.part_num).trim().toLowerCase() === normPart &&
+                    String(i.color_id).trim().toLowerCase() === normColor
+                );
+                return record ? record.img_url : null;
+            })()
+        ]);
     } catch (e) {
-        console.warn('获取RB数据库图片URL失败:', e);
+        console.warn('获取零件图片URL失败:', e);
     }
+    // 当前生效URL（与详情页 getPartImageUrl 三级读取顺序一致）
+    const activeUrl = cached ? giteeUrl : (giteeOk ? giteeUrl : rbUrl);
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
@@ -2448,17 +2457,28 @@ async function showPartImageUrl(partNum, colorId) {
     sheet.className = 'modal-content';
     sheet.style.maxWidth = '350px';
 
+    const row = (label, status, ok, url) => `
+        <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-size:13px;font-weight:600;color:#333;">${label}</span>
+                <span style="font-size:12px;padding:2px 8px;border-radius:10px;${ok ? 'background:#E8F5E9;color:#2E7D32;' : 'background:#F5F5F5;color:#999;'}">${status}</span>
+            </div>
+            <div style="word-break:break-all;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:8px;font-size:12px;color:#555;">${url}</div>
+        </div>`;
+
     sheet.innerHTML = `
         <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span class="modal-title" style="font-size:16px;font-weight:600;">RB数据库图片URL</span>
+            <span class="modal-title" style="font-size:16px;font-weight:600;">零件图片URL</span>
             <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
         </div>
         <div class="modal-body">
             <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}</div>
-            ${url
-                ? `<div style="word-break:break-all;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:10px;font-size:13px;color:#333;margin-bottom:12px;">${url}</div>
-                   <button onclick="navigator.clipboard.writeText('${url.replace(/'/g, "\\'")}').then(()=>{this.closest('.modal-overlay').remove();showToast('已复制图片URL')})" style="width:100%;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">复制URL</button>`
-                : `<div style="font-size:14px;color:#999;text-align:center;padding:12px 0;">RB数据库中未找到该零件的图片URL</div>`}
+            ${row('① 离线缓存区', cached ? '已缓存' : '未缓存', cached, giteeUrl)}
+            ${row('② Gitee', giteeOk ? '存在' : '不存在', giteeOk, giteeUrl)}
+            ${row('③ RB数据库', rbUrl ? '有记录' : '无记录', !!rbUrl, rbUrl || '（无）')}
+            ${activeUrl
+                ? `<button onclick="navigator.clipboard.writeText('${activeUrl.replace(/'/g, "\\'")}').then(()=>{this.closest('.modal-overlay').remove();showToast('已复制当前图片URL')})" style="width:100%;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">复制当前图片URL</button>`
+                : `<div style="font-size:14px;color:#999;text-align:center;padding:12px 0;">三级均未找到该零件图片</div>`}
         </div>
     `;
 
