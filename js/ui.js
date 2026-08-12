@@ -2433,16 +2433,7 @@ async function showPartImageUrl(partNum, colorId) {
         [cached, giteeOk, rbUrl] = await Promise.all([
             getPartImageFromOfflineCache(partNum, colorId).then(r => !!r),
             checkPartsImgOnGitee(partNum, colorId),
-            (async () => {
-                const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-                const normPart = String(partNum).trim().toLowerCase();
-                const normColor = String(colorId).trim().toLowerCase();
-                const record = inventory.find(i =>
-                    String(i.part_num).trim().toLowerCase() === normPart &&
-                    String(i.color_id).trim().toLowerCase() === normColor
-                );
-                return record ? record.img_url : null;
-            })()
+            getRBPartImageUrl(partNum, colorId)
         ]);
     } catch (e) {
         console.warn('获取零件图片URL失败:', e);
