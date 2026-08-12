@@ -716,6 +716,49 @@ async function getPartImageUrl(partNum, colorId) {
     }
 }
 
+// 清除 RB 数据库中该零件的 img_url（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
+async function clearPartImageUrlInRB(partNum, colorId) {
+    try {
+        const db = await openRBDatabase();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
+            const store = transaction.objectStore(RB_STORES.INVENTORY_PARTS);
+            const cursorRequest = store.openCursor();
+            let updated = false;
+            let exactMatch = null;
+            let fallbackMatch = null;
+
+            cursorRequest.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor) {
+                    // 优先清除精确匹配（part_num + color_id），否则清除 part_num 匹配
+                    const target = exactMatch || fallbackMatch;
+                    if (target && target.record.img_url) {
+                        const updatedRecord = { ...target.record, img_url: null };
+                        target.cursor.update(updatedRecord);
+                        updated = true;
+                    }
+                    resolve(updated);
+                    return;
+                }
+                const record = cursor.value;
+                if (record.part_num === partNum) {
+                    if (String(record.color_id) === String(colorId)) {
+                        if (!exactMatch) exactMatch = { record, cursor };
+                    } else if (!fallbackMatch) {
+                        fallbackMatch = { record, cursor };
+                    }
+                }
+                cursor.continue();
+            };
+            cursorRequest.onerror = (event) => reject(event.target.error);
+        });
+    } catch (error) {
+        console.error('清除RB数据库零件图片URL失败:', error);
+        return false;
+    }
+}
+
 // 根据 part_num 查询离线重量（克），返回 number 或 null
 async function getPartWeightByNum(partNum) {
     try {
