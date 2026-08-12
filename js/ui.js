@@ -2430,12 +2430,12 @@ async function showPartImageUrl(partNum, colorId) {
     let url = null;
     try {
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        let record = inventory.find(i =>
-            i.part_num === partNum && String(i.color_id) === String(colorId)
+        const normPart = String(partNum).trim().toLowerCase();
+        const normColor = String(colorId).trim().toLowerCase();
+        const record = inventory.find(i =>
+            String(i.part_num).trim().toLowerCase() === normPart &&
+            String(i.color_id).trim().toLowerCase() === normColor
         );
-        if (!record) {
-            record = inventory.find(i => i.part_num === partNum);
-        }
         url = record ? record.img_url : null;
     } catch (e) {
         console.warn('获取RB数据库图片URL失败:', e);

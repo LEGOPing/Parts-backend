@@ -701,14 +701,14 @@ async function getPartImageUrl(partNum, colorId) {
     // ③ RB数据库
     try {
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        // 精确匹配 part_num 和 color_id
-        let record = inventory.find(i => 
-            i.part_num === partNum && String(i.color_id) === String(colorId)
+        // 归一化匹配：part_num 与 color_id 都统一转字符串并 trim/小写，避免类型/格式差异导致匹配失败
+        const normPart = String(partNum).trim().toLowerCase();
+        const normColor = String(colorId).trim().toLowerCase();
+        const record = inventory.find(i =>
+            String(i.part_num).trim().toLowerCase() === normPart &&
+            String(i.color_id).trim().toLowerCase() === normColor
         );
-        // 如果没找到，尝试只匹配 part_num
-        if (!record) {
-            record = inventory.find(i => i.part_num === partNum);
-        }
+        // 精确匹配失败不降级到任意颜色，避免返回与颜色ID不符的图片
         return record ? record.img_url : null;
     } catch (error) {
         console.error('查询零件图片URL失败:', error);
