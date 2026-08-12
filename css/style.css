@@ -2104,6 +2104,18 @@ body {
     line-height: 1;
 }
 
+.pd-img-url-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #9C27B0;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
+}
+
 .pd-image {
     max-height: 168px;
     max-width: 100%;
