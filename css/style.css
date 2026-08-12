@@ -498,6 +498,148 @@ body {
     color: #000;
 }
 
+/* 盒子转仓模式样式 */
+.transfer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    background: #EAF7EE;
+    border: 1px solid #34C759;
+    border-radius: 8px;
+}
+
+.transfer-tip {
+    font-size: 13px;
+    color: #1E7A34;
+}
+
+.transfer-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.transfer-target-btn {
+    background: #34C759;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.transfer-target-btn:disabled {
+    background: #9E9E9E;
+    cursor: not-allowed;
+}
+
+.transfer-cancel-btn {
+    background: #E74C3C;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.box-card.transfer-selected {
+    background-color: #34C759 !important;
+}
+
+.box-check-badge {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    color: #34C759;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: bold;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+/* 转仓目标选择弹窗 */
+.transfer-target-modal {
+    max-width: 380px;
+}
+
+.transfer-target-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.transfer-target-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #34495e;
+}
+
+.transfer-target-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.transfer-target-close:hover {
+    color: #333;
+}
+
+.transfer-target-empty {
+    text-align: center;
+    color: var(--gray-color);
+    padding: 20px 0;
+}
+
+.transfer-target-list {
+    max-height: 50vh;
+    overflow-y: auto;
+    margin: 12px 0;
+}
+
+.transfer-repo-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.transfer-repo-option:has(input:checked) {
+    border-color: #34C759;
+    background: #EAF7EE;
+}
+
+.transfer-confirm-btn {
+    background: #34C759;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+}
+
 .no-repository-selected {
     text-align: center;
     color: var(--gray-color);

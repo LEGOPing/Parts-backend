@@ -5,9 +5,10 @@
 这是一个基于 **PWA + 混合存储** 的乐高零件管理系统，专为 **iPhone/iPad** 终端优化。系统采用 **Supabase 云数据库 + 本地 IndexedDB** 双存储设计：
 
 - **动态数据**（仓库、盒子、零件库存）存储在 **Supabase PostgreSQL**，前端通过 **原生 fetch 直连 REST API**
-- **静态数据**（Rebrickable 零件基础信息 6 张表）缓存在本地 **IndexedDB**（`RB_Database`），支持离线查询
+- **静态数据**（Rebrickable 零件基础信息 7 张表）缓存在本地 **IndexedDB**（`RB_Database`），支持离线查询
+- **零件重量**（Bricklink 数据源）三级缓存：离线 `rb_weights` → Supabase `part_weights` → 本机 FastAPI 抓取
 - **辅助后端**（FastAPI + CloudBase 云托管）负责数据库备份/恢复/序列重置等运维任务
-- **静态资源**（颜色/零件 JSON、零件图片）托管在 **Gitee** 仓库
+- **静态资源**（颜色/零件 JSON、零件图片、重量 JSON）托管在 **Gitee** 仓库
 
 **系统版本**：3.0.0 (Supabase版)
 **开发者**：LEGOPing
@@ -22,7 +23,8 @@
 | 数据类型 | 存储位置 | 数据来源 | 原因 |
 |---------|---------|---------|------|
 | 仓库/盒子/零件库存 | Supabase PostgreSQL | 用户录入 | 多设备同步、数据安全 |
-| Rebrickable 基础信息(6表) | IndexedDB (`RB_Database`) | Gitee parts-rb 仓库 (CSV) | 离线查询、数据量大 |
+| Rebrickable 基础信息(7表) | IndexedDB (`RB_Database`) | Gitee parts-rb 仓库 (CSV) | 离线查询、数据量大 |
+| 零件重量 (Bricklink) | 三级缓存 (rb_weights → part_weights → FastAPI) | Bricklink 抓取 | 离线可用、避免反爬 |
 | 颜色定义 (前端用) | 内存缓存 + Gitee JSON | Gitee Parts-json 仓库 | 轻量、带1小时缓存 |
 | 零件目录 (前端用) | 内存 + Gitee JSON | Gitee Parts-json 仓库 | 轻量、按需加载 |
 | 零件图片 | Gitee Parts-img 仓库 | Rebrickable 图片 | CDN 加速 |
@@ -67,21 +69,25 @@
     │    动态数据层           │    │    静态数据层           │
     │   (Supabase REST)     │    │   (本地 IndexedDB)     │
     │                       │    │                       │
-    │  repositories         │    │  RB_Database (6表)     │
+    │  repositories         │    │  RB_Database (7表)     │
     │  - id, name           │    │  - rb_colors           │
     │                       │    │  - rb_parts            │
     │  boxes                │    │  - rb_part_categories  │
     │  - id, box_number     │    │  - rb_elements         │
     │  - name, repository_id│    │  - rb_inventory_parts  │
     │                       │    │  - rb_part_relationships│
-    │  parts                │    │                       │
-    │  - id, part_num, name │    │  原生 IndexedDB API    │
-    │  - color_id, is_new   │    │  (rb-db.js)           │
-    │  - quantity, box_id   │    │                       │
+    │  parts                │    │  - rb_weights          │
+    │  - id, part_num, name │    │                       │
+    │  - color_id, is_new   │    │  原生 IndexedDB API    │
+    │  - quantity, box_id   │    │  (rb-db.js)           │
     │                       │    │                       │
     │  colors               │    │                       │
     │  - id, color_name     │    │                       │
     │  - rgb, bricklink_id  │    │                       │
+    │                       │    │                       │
+    │  part_weights         │    │                       │
+    │  - part_num (PK)      │    │                       │
+    │  - weight, updated_at │    │                       │
     └──────────┬───────────┘    └──────────┬───────────┘
                │                            │
                │  fetch (REST)              │  IndexedDB
@@ -201,7 +207,52 @@ ui.js → rb-db.js
 渲染 UI (零件选择器/颜色选择器)
 ```
 
-### 2.6 离线行为说明
+### 2.6 零件重量数据流向（Bricklink）
+
+零件重量用于称重计算弹窗，采用**三级缓存**策略，兼顾离线可用与反爬规避：
+
+```
+用户查询零件重量 (称重计算弹窗)
+    │
+    ▼
+fetchBricklinkPartWeight(partNumber)  (api.js)
+    │
+    ├── ① 离线 RB 数据库 rb_weights (IndexedDB, 来自 weights.json)
+    │      命中 → 返回 { weight, source: 'offline' }  (完全离线)
+    │
+    ├── ② Supabase part_weights 缓存 (前端直连 REST, 零后端)
+    │      命中 → 返回 { weight, source: 'supabase' }
+    │
+    ├── ③ 本机 FastAPI 抓取 Bricklink (仅 localhost/127.0.0.1)
+    │      本机 IP 可避开 Bricklink 反爬 → 抓取成功 → 回写 part_weights 缓存
+    │
+    └── 全部失败 → 返回 weight=null，调用方回退到手工输入
+```
+
+**重量数据来源链路**：
+```
+fetch_weights.py (本机批量抓取 Bricklink)
+    │  断点续传 + 反爬规避 + 失败重试
+    ▼
+RB/weights.json  +  RB/weights_failed.json
+    │
+    ├── push_weights_to_gitee.py → Gitee parts-rb 仓库
+    │      前端 fetchRBFile 读取 → importWeightsFromJSON → rb_weights store
+    │
+    └── (可选) 前端称重时经 FastAPI 单条抓取 → 回写 Supabase part_weights
+```
+
+**重量相关组件**：
+| 组件 | 作用 |
+|------|------|
+| `fetch_weights.py` | 本机批量抓取 Bricklink 重量，生成 weights.json（断点续传/反爬/重试） |
+| `push_weights_to_gitee.py` | 将 weights.json 推送到 Gitee parts-rb 仓库 |
+| `rb_weights` store | IndexedDB 第 7 张表，离线重量缓存（keyPath: part_num） |
+| `part_weights` 表 | Supabase 重量缓存表（part_num 主键 + weight + updated_at） |
+| `GET /api/parts/weight` | FastAPI 单条抓取端点（本机 IP 避开反爬，回写缓存） |
+| Supabase Edge Function `get-part-weight` | 云端抓取端点（带内存缓存，生产备用） |
+
+### 2.7 离线行为说明
 
 | 功能 | 在线时 | 离线时 | 说明 |
 |------|--------|--------|------|
@@ -221,7 +272,7 @@ ui.js → rb-db.js
 
 > 注：当前版本未实现离线写入队列（pending_ops），离线时动态数据操作会失败。
 
-### 2.7 Service Worker 缓存策略
+### 2.8 Service Worker 缓存策略
 
 ```javascript
 // frontend/service-worker.js (v66)
@@ -289,6 +340,15 @@ ASSETS_TO_CACHE = [
 
 > 注：Supabase 的 colors 表预置 15 种常见颜色（红/蓝/绿/黄/白/黑/灰/深灰/棕/粉/橙/紫/青/金/银）。前端实际颜色查询优先走 Gitee 的 colors.json。
 
+#### part_weights（零件重量缓存表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| part_num | VARCHAR PRIMARY KEY | 零件型号（主键） |
+| weight | FLOAT NOT NULL | 零件重量（克） |
+| updated_at | TIMESTAMP | 更新时间（自动） |
+
+> 数据源为 Bricklink。本机 FastAPI 用本机 IP 抓取后回写此表；生产环境 PWA 直接读取缓存，避免云服务器 IP 被 Bricklink 反爬拦截。建表由 `app/models/part_weight.py` ORM 自动创建（`Base.metadata.create_all`）。
+
 ### 3.2 Supabase 索引
 
 ```sql
@@ -313,10 +373,10 @@ CREATE INDEX idx_colors_color_name ON colors(color_name);
 ### 3.3 本地 IndexedDB - RB_Database
 
 数据库名称：`RB_Database`
-版本号：`1`
-数据来源：Gitee parts-rb 仓库（6 个 CSV 文件，需 Token 访问）
+版本号：`2`（v1 为 6 表，v2 新增 `rb_weights`）
+数据来源：Gitee parts-rb 仓库（6 个 CSV 文件 + weights.json，需 Token 访问）
 
-| Object Store | 主键 | 对应 CSV | 说明 |
+| Object Store | 主键 | 对应 CSV/JSON | 说明 |
 |--------------|------|---------|------|
 | rb_colors | `id` | colors.csv | Rebrickable 颜色数据 |
 | rb_parts | `part_num` | parts.csv | Rebrickable 零件基础数据 |
@@ -324,6 +384,7 @@ CREATE INDEX idx_colors_color_name ON colors(color_name);
 | rb_elements | `element_id` | elements.csv | 元素数据（零件+颜色组合） |
 | rb_inventory_parts | 自增 | inventory_parts.csv | 库存零件（含图片URL） |
 | rb_part_relationships | 自增 | part_relationships.csv | 零件关系 |
+| rb_weights | `part_num` | weights.json | 零件重量缓存（Bricklink 数据源） |
 
 #### RB 数据类型 Schema（类型转换）
 

@@ -35,6 +35,25 @@ function getEditingBox() {
     return editingBox;
 }
 
+let boxTransferMode = false;
+let selectedTransferBoxes = [];
+
+function setBoxTransferMode(mode) {
+    boxTransferMode = mode;
+}
+
+function getBoxTransferMode() {
+    return boxTransferMode;
+}
+
+function setSelectedTransferBoxes(boxes) {
+    selectedTransferBoxes = boxes;
+}
+
+function getSelectedTransferBoxes() {
+    return selectedTransferBoxes;
+}
+
 function clearSelection() {
     selectedRepository = null;
     selectedBox = null;

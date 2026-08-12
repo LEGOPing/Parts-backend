@@ -389,15 +389,19 @@ async function loadBoxes(repoId) {
     }));
     
     uniqueBoxes.forEach(box => {
+        const transferMode = getBoxTransferMode();
+        const isSelectedForTransfer = transferMode && getSelectedTransferBoxes().some(b => b.id === box.id);
         const card = document.createElement('div');
-        card.className = `box-card ${box.name === '新盒子' ? 'default' : ''}`;
+        card.className = `box-card ${box.name === '新盒子' ? 'default' : ''} ${isSelectedForTransfer ? 'transfer-selected' : ''}`;
         card.dataset.id = box.id;
         
         const isTempBox = box.name === '临时盒子';
-        const deleteBtn = isTempBox ? '' : `<button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>`;
+        const deleteBtn = (isTempBox || transferMode) ? '' : `<button class="box-delete-btn" onclick="event.stopPropagation(); deleteBoxConfirm('${box.id}')">×</button>`;
+        const checkBadge = `<div class="box-check-badge" style="display:${isSelectedForTransfer ? 'flex' : 'none'};">✓</div>`;
         
         card.innerHTML = `
                 ${deleteBtn}
+                ${checkBadge}
                 <div class="box-card-name">${box.name}</div>
                 <div class="box-card-footer">
                     <span class="box-id">ID: ${box.box_number}</span>
@@ -406,6 +410,10 @@ async function loadBoxes(repoId) {
             `;
         
         card.addEventListener('click', () => {
+            if (getBoxTransferMode()) {
+                toggleTransferBoxSelection(box, card);
+                return;
+            }
             if (!editingBox) {
                 setSelectedBox(box);
                 document.getElementById('selected-box-name').textContent = box.name;
@@ -433,14 +441,183 @@ async function loadBoxes(repoId) {
             }
         });
         
-        setupLongPress(card, () => {
-            if (box.name !== '临时盒子') {
-                startEditBox(card, box);
-            }
-        });
+        if (!transferMode) {
+            setupLongPress(card, () => {
+                if (box.name !== '临时盒子') {
+                    startEditBox(card, box);
+                }
+            });
+        }
         
         grid.appendChild(card);
     });
+}
+
+// ===== 盒子转仓 =====
+async function toggleBoxTransferMode() {
+    const mode = !getBoxTransferMode();
+    setBoxTransferMode(mode);
+    if (mode) {
+        setSelectedTransferBoxes([]);
+    }
+    
+    const btn = document.getElementById('transfer-box-btn');
+    const toolbar = document.getElementById('transfer-toolbar');
+    if (btn) btn.textContent = mode ? '取消转仓' : '盒子转仓';
+    if (toolbar) toolbar.style.display = mode ? 'flex' : 'none';
+    const targetBtn = document.getElementById('transfer-target-btn');
+    if (targetBtn) {
+        targetBtn.disabled = true;
+        targetBtn.textContent = '选择目标仓库(0)';
+    }
+    
+    if (selectedRepository) {
+        await loadBoxes(selectedRepository.id);
+    }
+}
+
+function toggleTransferBoxSelection(box, card) {
+    if (box.name === '临时盒子') {
+        alert('临时盒子不可转仓');
+        return;
+    }
+    const selected = getSelectedTransferBoxes();
+    const idx = selected.findIndex(b => b.id === box.id);
+    if (idx >= 0) {
+        selected.splice(idx, 1);
+        card.classList.remove('transfer-selected');
+        card.querySelector('.box-check-badge').style.display = 'none';
+    } else {
+        selected.push(box);
+        card.classList.add('transfer-selected');
+        card.querySelector('.box-check-badge').style.display = 'flex';
+    }
+    setSelectedTransferBoxes(selected);
+    
+    const targetBtn = document.getElementById('transfer-target-btn');
+    if (targetBtn) {
+        targetBtn.textContent = `选择目标仓库(${selected.length})`;
+        targetBtn.disabled = selected.length === 0;
+    }
+}
+
+function showTransferTargetPicker() {
+    const boxes = getSelectedTransferBoxes();
+    if (boxes.length === 0) {
+        alert('请先选择需要转仓的盒子');
+        return;
+    }
+    if (!selectedRepository) return;
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content transfer-target-modal';
+    
+    let repoListHtml = '';
+    getRepositories().then(repos => {
+        // 排除当前仓库和临时仓库
+        const candidates = repos.filter(r => r.id !== selectedRepository.id && r.name !== '临时仓库');
+        if (candidates.length === 0) {
+            sheet.innerHTML = `
+                <div class="transfer-target-header">
+                    <span class="transfer-target-title">盒子转仓</span>
+                    <button class="transfer-target-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                </div>
+                <div class="transfer-target-empty">没有可用的目标仓库</div>
+            `;
+            overlay.appendChild(sheet);
+            document.body.appendChild(overlay);
+            return;
+        }
+        candidates.forEach((repo, i) => {
+            repoListHtml += `
+                <label class="transfer-repo-option ${i === 0 ? 'checked' : ''}">
+                    <input type="radio" name="transfer-target-repo" value="${repo.id}" ${i === 0 ? 'checked' : ''}>
+                    <span>${repo.name}</span>
+                </label>
+            `;
+        });
+        sheet.innerHTML = `
+            <div class="transfer-target-header">
+                <span class="transfer-target-title">选择目标仓库（已选 ${boxes.length} 个盒子）</span>
+                <button class="transfer-target-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+            </div>
+            <div class="transfer-target-list">${repoListHtml}</div>
+            <button class="transfer-confirm-btn" onclick="performBoxTransfer()">确认转仓</button>
+        `;
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+    });
+}
+
+async function performBoxTransfer() {
+    const radio = document.querySelector('input[name="transfer-target-repo"]:checked');
+    if (!radio) {
+        alert('请选择目标仓库');
+        return;
+    }
+    const targetRepoId = parseInt(radio.value);
+    const boxes = getSelectedTransferBoxes();
+    
+    if (!confirm(`确定将 ${boxes.length} 个盒子转入所选仓库吗？`)) {
+        return;
+    }
+    
+    try {
+        // 获取目标仓库已有盒子，收集已占用的 box_number
+        // 注意：Supabase int8(bigint) 列会以字符串返回，统一转字符串 key，避免 Set 严格相等检测失效导致重复 ID
+        const numKey = (n) => (n === null || n === undefined || n === '') ? null : String(n);
+        const targetBoxes = await getBoxes(targetRepoId);
+        const usedNumbers = new Set(targetBoxes.map(b => numKey(b.box_number)).filter(k => k !== null));
+        
+        // 按当前 ID 排序，尽量保留原 ID
+        const sortedBoxes = [...boxes].sort((a, b) => (parseInt(a.box_number, 10) || 0) - (parseInt(b.box_number, 10) || 0));
+        let maxNumber = targetBoxes.reduce((max, b) => {
+            const n = parseInt(b.box_number, 10);
+            return isNaN(n) ? max : Math.max(max, n);
+        }, 0);
+        
+        let renumbered = 0;
+        for (const box of sortedBoxes) {
+            let newNumber = box.box_number;
+            // 原 ID 被占用或无效时，分配目标仓库下一个可用 ID
+            if (!numKey(newNumber) || usedNumbers.has(numKey(newNumber))) {
+                maxNumber += 1;
+                newNumber = maxNumber;
+                renumbered++;
+            }
+            usedNumbers.add(numKey(newNumber));
+            const success = await updateBox(box.id, { repository_id: targetRepoId, box_number: newNumber });
+            if (!success) {
+                throw new Error(`盒子 ${box.name || box.box_number} 更新失败`);
+            }
+        }
+        
+        // 退出转仓模式并重置 UI
+        setBoxTransferMode(false);
+        setSelectedTransferBoxes([]);
+        const btn = document.getElementById('transfer-box-btn');
+        const toolbar = document.getElementById('transfer-toolbar');
+        if (btn) btn.textContent = '盒子转仓';
+        if (toolbar) toolbar.style.display = 'none';
+        
+        // 刷新仓库列表并自动打开目标仓库，展示转仓后的盒子情况
+        await loadRepositories();
+        const repos = await getRepositories();
+        const targetRepo = repos.find(r => r.id == targetRepoId);
+        if (targetRepo) {
+            await selectRepository(targetRepo);
+        } else if (selectedRepository) {
+            await loadBoxes(selectedRepository.id);
+        }
+        
+        alert(`转仓成功：${boxes.length} 个盒子已转入目标仓库` + (renumbered > 0 ? `，其中 ${renumbered} 个盒子因 ID 冲突已重新编号` : ''));
+    } catch (error) {
+        console.error('转仓失败:', error);
+        alert('转仓失败：' + error.message);
+    }
 }
 
 function startEditBox(card, box) {

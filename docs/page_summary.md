@@ -76,6 +76,12 @@
 - 点击"添加盒子" → 弹出输入框创建盒子（`addBox`）
 - 点击盒子卡片 → 切换到零件管理标签页
 
+**盒子转仓**（`toggleBoxTransferMode` / `toggleTransferBoxSelection` / `showTransferTargetPicker` / `performBoxTransfer`）：
+- 点击"盒子转仓"进入转仓模式，勾选要转移的盒子（临时盒子不可转仓）
+- 选择目标仓库（排除当前仓库与临时仓库）
+- 转移时处理 ID 冲突：若目标仓库已占用相同 `box_number`，自动分配下一个可用编号（`numKey` 统一处理 Supabase int8 字符串返回）
+- 转仓成功后自动打开目标仓库展示结果
+
 **自动清理机制**（`loadRepositories` 中）：
 - 按仓库名去重，重复仓库的盒子自动转移到第一个同名仓库后删除
 - 自动清理"待定盒子"仓库
@@ -110,9 +116,10 @@
 
 **交互特性**：
 - 点击零件卡片 → 显示零件详情弹窗（`showPartDetail`）
-- 长按零件卡片 → 快速编辑数量（+/- 按钮，`editPartQuantity`）
 - 零件图片从 Gitee Parts-img 加载（通过 `getPartImageUrl` 查询 RB 库）
 - 零件名称/型号联想基于本地 RB_Database（`searchPartsByNumber` / `getPartNameSuggestions`）
+- **左右滑动切换盒子**：在零件管理页水平滑动（阈值 60px）切换上一个/下一个盒子（`initPartsSwipeGesture` / `switchBox`），带滑动动画与序号显示（`updateBoxSequence`）
+- **称重计算**：添加零件面板中通过"称重计算"按钮打开计算器（`showWeightCalculator`），从 Bricklink 查询单个重量（`fetchPartWeightForCalculator`，支持离线/缓存/在线来源），根据总重量自动计算数量并填入（`calculateWeightQuantity`）
 
 ### 2.3 零件搜索页面（search-tab）
 
@@ -213,9 +220,11 @@
 | **零件选择器** | `showPartSelector()` | 搜索并选择零件型号 |
 | **颜色选择器** | `showColorPicker()` | 网格展示零件可用颜色 |
 | **搜索颜色选择器** | `showSearchColorPicker()` | 搜索页专用颜色选择 |
-| **数量编辑** | `editPartQuantity()` | 长按零件卡片快速增减数量 |
-| **零件详情** | `showPartDetail()` | 查看零件完整信息+编辑数量+删除 |
+| **零件详情** | `showPartDetail()` | 查看零件完整信息+编辑数量+删除+合并+图片管理 |
 | **CSV导入** | `showCSVImporter()` | 文件选择 + 预览 + 确认导入 |
+| **称重计算** | `showWeightCalculator()` | 根据总重量和单个重量计算零件数量 |
+| **合并零件** | `showMergePartSelector()` | 合并相同零件（型号+颜色+状态一致） |
+| **图片管理** | `manageCustomImage()` | 管理自定义零件图片（URL/本地上传） |
 
 ### 3.1 添加零件面板
 
@@ -259,21 +268,22 @@
 
 ```
 ┌─────────────────────────────────────┐
-│  零件详情                  [关闭]    │
+│  零件详情              [删][并][返]  │
 ├─────────────────────────────────────┤
 │        [零件图片]                   │
-│ 型号: 3001                          │
+│   [删除图片] [变更图片/添加图片]     │
+│ 型号: 3001                    [新]  │
 │ 名称: Brick 2x4                     │
-│ 颜色: 红色 (色块)                   │
-│ 状态: 新品                          │
-│ 数量: [-] 5 [+]                     │
-├─────────────────────────────────────┤
-│              [删除]                 │
+│ 颜色: 红色 (色块)    数量: [-] 5 [+]│
+│ [搜索] [保存]                        │
 └─────────────────────────────────────┘
 ```
 
-- 支持直接编辑数量（+/- 按钮，`updateDetailQuantityDisplay`）
-- 删除按钮带确认（`deletePartConfirm` → `executeDeletePart`）
+- 支持直接编辑数量（+/- 按钮，内部 `updateQtyDisplay()` 更新显示），数量颜色分级（<10 红 / 10-50 橙 / ≥50 绿）
+- 删除按钮带确认（`deletePartConfirm` → `executeDeletePart`，需密码验证）
+- **合并按钮**：`showMergePartSelector` 在当前盒子中查找相同零件（型号+颜色+状态一致）合并，数量累加后删除当前零件
+- **搜索按钮**：`searchFromDetail` 以当前零件型号+颜色跳转搜索页
+- **图片管理**：图片区域左滑显示变更按钮（`changePartImage`），支持 URL 添加（`saveImageFromUrl`）/ 本地上传（`uploadLocalImage`）/ 删除（`deletePartDetailImage`，同时清理离线缓存与 Gitee）
 
 ### 3.4 CSV 导入流程
 
@@ -281,7 +291,7 @@
 点击"批量导入"
     │
     ▼
-showCSVImporter() → 文件选择器
+showCSVImporter() → 文件选择器（可下载模板 downloadCSVTemplate）
     │
     ▼
 processCSVFile(file) → 读取文件内容
@@ -290,14 +300,19 @@ processCSVFile(file) → 读取文件内容
 parseCSVContent(content) → 解析 CSV
     │
     ▼
-showCSVPreview(headers, data) → 预览表格
+showImportConfirmation(data) → 加载颜色/名称/图片，检测重复，渲染确认表
     │
     ▼
-用户确认 → confirmCSVImport()
+用户选择合并/新增 → confirmCSVImport() → doConfirmCSVImport()
     │
     ▼
 batchCreateParts(partsData) → Supabase 批量插入
 ```
+
+**确认表特性**（`showImportConfirmation`）：
+- 每个零件卡片显示：型号、名称（始终从 RB 库获取，忽略 CSV 中的 name）、颜色色块、数量、新旧标签、图片
+- **重复检测**：型号+颜色+新旧状态三者一致视为重复，提示"已有 N 个"
+- **合并/新增选择**：重复零件可逐条选择"合并"（数量累加）或"新增"（新建记录），默认选合并（`setImportAction`）
 
 ---
 
@@ -439,13 +454,13 @@ let editingBox = null;          // 正在编辑的盒子
 | **PWA** | SW v66 离线缓存、强制更新机制、全局错误捕获 |
 | **搜索** | 按钮（重置/搜索）位于标题右侧，搜索在最右 |
 | **RB管理** | 设置页集成更新/导出 RB，启动时自动检查 |
-| **扩展性** | 预留转仓、转盒功能入口（开发中） |
+| **扩展性** | 盒子转仓已实现；零件转盒功能入口预留（开发中） |
 
 ---
 
 ## 八、UI 函数清单（ui.js）
 
-系统 UI 交互逻辑全部集中在 `frontend/js/ui.js`，共 56 个函数：
+系统 UI 交互逻辑全部集中在 `frontend/js/ui.js`，共 81 个函数：
 
 ### 8.1 布局与导航
 | 函数 | 功能 |
@@ -453,6 +468,7 @@ let editingBox = null;          // 正在编辑的盒子
 | `calculateP()` | 计算 P 单位（基于 DPI） |
 | `switchTab(tabName, btn)` | 切换标签页 |
 | `goBackToRepositories()` | 返回仓库管理页 |
+| `showToast(msg)` | 轻量提示（滑动切换盒子时使用） |
 
 ### 8.2 仓库管理
 | 函数 | 功能 |
@@ -466,26 +482,37 @@ let editingBox = null;          // 正在编辑的盒子
 ### 8.3 盒子管理
 | 函数 | 功能 |
 |------|------|
-| `loadBoxes(repoId)` | 加载盒子列表 |
+| `loadBoxes(repoId)` | 加载盒子列表（含去重） |
 | `startEditBox` / `saveBoxName` | 盒子重命名 |
 | `addBox()` | 添加盒子 |
 | `deleteBoxConfirm(id)` | 删除盒子（带确认） |
+| `toggleBoxTransferMode()` | 切换盒子转仓模式 |
+| `toggleTransferBoxSelection(box, card)` | 勾选/取消转仓盒子 |
+| `showTransferTargetPicker()` | 显示目标仓库选择器 |
+| `performBoxTransfer()` | 执行盒子转仓（处理 ID 冲突重新编号） |
 
 ### 8.4 零件管理
 | 函数 | 功能 |
 |------|------|
 | `loadParts(boxId)` | 加载零件列表 |
 | `setupLongPress(element, callback)` | 长按事件绑定 |
-| `editPartQuantity(part)` | 长按快速编辑数量 |
-| `savePartQuantity` / `updatePartQuantity` | 保存数量 |
 | `showAddPartSheet()` | 显示添加零件面板 |
 | `initAddPartSuggestions()` | 初始化联想输入 |
-| `saveNewPart(button)` | 保存新零件 |
-| `showPartDetail(part)` | 显示零件详情 |
-| `editPartQuantityFromDetail` | 详情页编辑数量 |
-| `deletePartConfirm` / `executeDeletePart` | 删除零件 |
+| `togglePartNewStatus(isNew)` | 切换新旧状态 |
+| `saveNewPart(button)` | 保存新零件（含重复检测与合并对话框） |
+| `showPartDetail(part)` | 显示零件详情（含 +/- 数量编辑、删除、合并、图片管理） |
+| `deletePartConfirm` / `executeDeletePart` | 删除零件（密码验证） |
+| `showMergePartSelector(currentPart)` | 合并相同零件 |
+| `searchFromDetail(partNum, colorId, partName)` | 从详情跳转搜索 |
 
-### 8.5 选择器
+### 8.5 称重计算
+| 函数 | 功能 |
+|------|------|
+| `showWeightCalculator()` | 显示称重计算器 |
+| `fetchPartWeightForCalculator()` | 从 Bricklink 查询零件重量（离线/缓存/在线） |
+| `calculateWeightQuantity()` | 根据总重量计算数量并填入 |
+
+### 8.6 选择器
 | 函数 | 功能 |
 |------|------|
 | `showPartSelector()` | 零件型号选择器 |
@@ -493,27 +520,54 @@ let editingBox = null;          // 正在编辑的盒子
 | `showColorPicker()` | 颜色选择器（添加零件用） |
 | `loadColorGrid(partNum)` | 加载颜色网格 |
 | `filterColors(searchText)` | 过滤颜色 |
+| `updateColorButtonColor(colorId)` | 更新添加零件页颜色按钮 |
 | `showSearchColorPicker()` | 颜色选择器（搜索页用） |
 | `loadSearchColorGrid` | 搜索页颜色网格 |
+| `updateColorPickButton(colorId)` | 更新搜索页颜色按钮 |
 
-### 8.6 搜索
+### 8.7 搜索
 | 函数 | 功能 |
 |------|------|
 | `handleAdvancedSearch()` | 执行高级搜索 |
 | `resetSearchFilters()` | 重置搜索条件 |
 | `renderSearchResults(parts)` | 渲染搜索结果 |
 | `clearSearchResults()` | 清空搜索结果 |
+| `updateSearchResultQuantity(partId, quantity)` | 更新搜索结果数量 |
 
-### 8.7 CSV 导入
+### 8.8 零件图片管理
+| 函数 | 功能 |
+|------|------|
+| `changePartImage(partNum, colorId)` | 变更零件图片 |
+| `addCustomImage(partNum, colorId)` | 添加自定义图片（URL/本地上传） |
+| `saveImageFromUrl(partNum, colorId)` | 从 URL 保存图片 |
+| `uploadLocalImage(partNum, colorId)` | 本地上传图片 |
+| `manageCustomImage(partNum, colorId)` | 管理自定义图片 |
+| `changeCustomImage(partNum, colorId)` | 更换自定义图片 |
+| `removeCustomImage(partNum, colorId)` | 移除自定义图片 |
+| `deletePartDetailImage(partNum, colorId)` | 删除详情图片（离线缓存 + Gitee） |
+| `refreshPartDetailWithCustomImage(partNum, colorId)` | 刷新详情自定义图片 |
+
+### 8.9 左右滑动切换盒子
+| 函数 | 功能 |
+|------|------|
+| `getSortedBoxes()` | 获取排序去重后的盒子列表 |
+| `updateBoxSequence()` | 更新盒子序号显示 |
+| `switchBox(direction)` | 切换上一个/下一个盒子 |
+| `initPartsSwipeGesture()` | 初始化零件页滑动手势 |
+
+### 8.10 CSV 导入
 | 函数 | 功能 |
 |------|------|
 | `showCSVImporter()` | 显示 CSV 导入器 |
+| `downloadCSVTemplate()` | 下载 CSV 模板 |
 | `parseCSVContent` / `parseCSVLine` | 解析 CSV |
 | `processCSVFile(file)` | 处理 CSV 文件 |
-| `showCSVPreview` | 预览 CSV 数据 |
-| `confirmCSVImport()` | 确认导入 |
+| `showImportConfirmation(data)` | 显示导入确认表（含重复检测） |
+| `setImportAction(idx, action)` | 设置合并/新增操作 |
+| `getColorBrightness(hex)` | 计算颜色亮度（用于文字颜色） |
+| `confirmCSVImport()` / `doConfirmCSVImport()` | 确认导入 |
 
-### 8.8 系统设置与 RB 管理
+### 8.11 系统设置与 RB 管理
 | 函数 | 功能 |
 |------|------|
 | `initializeApp()` | 应用初始化入口 |
@@ -530,4 +584,4 @@ let editingBox = null;          // 正在编辑的盒子
 
 ---
 
-当前页面规划已完成核心功能实现，四个标签页（仓库管理、零件管理、零件搜索、系统设置）均已可用。预留的转仓和转盒功能入口待后续开发。
+当前页面规划已完成核心功能实现，四个标签页（仓库管理、零件管理、零件搜索、系统设置）均已可用。盒子转仓、左右滑动切换盒子、称重计算、合并零件、零件图片管理、CSV 重复检测与合并导入等高级功能均已实现。仅"零件转盒"功能入口仍为开发中（alert 提示）。
