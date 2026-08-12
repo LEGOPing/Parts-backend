@@ -2400,6 +2400,8 @@ async function deletePartDetailImage(partNum, colorId) {
     await deletePartImageFromOfflineCache(partNum, colorId);
     // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
     await deletePartImageFromGitee(partNum, colorId);
+    // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
+    await clearPartImageUrlInRB(partNum, colorId);
     // 关闭左滑并更新当前详情：图片区显示"暂无图片"，按钮恢复为"添加图片"
     const sheet = document.querySelector('.part-detail-modal');
     if (sheet) {
@@ -2626,6 +2628,8 @@ async function removeCustomImage(partNum, colorId) {
     await deletePartImageFromOfflineCache(partNum, colorId);
     // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
     await deletePartImageFromGitee(partNum, colorId);
+    // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
+    await clearPartImageUrlInRB(partNum, colorId);
     
     const overlay = document.querySelector('.modal-overlay.active');
     if (overlay) overlay.remove();
