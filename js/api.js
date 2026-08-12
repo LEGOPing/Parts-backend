@@ -803,7 +803,7 @@ const GITEE_IMG_BRANCH = 'main';
 // 上传零件图片到 Gitee Parts-img 仓库（POST 新建 / PUT 更新）
 async function uploadPartImageToGitee(partNum, colorId, imageBase64) {
     try {
-        const token = getGiteeToken();
+        const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
         if (!token) {
             throw new Error('缺少 Gitee Token，无法上传');
         }
@@ -850,7 +850,7 @@ async function uploadPartImageToGitee(partNum, colorId, imageBase64) {
 // 从 Gitee Parts-img 仓库删除零件图片
 async function deletePartImageFromGitee(partNum, colorId) {
     try {
-        const token = getGiteeToken();
+        const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
         if (!token) {
             throw new Error('缺少 Gitee Token，无法删除');
         }

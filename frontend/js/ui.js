@@ -2398,8 +2398,8 @@ async function deletePartDetailImage(partNum, colorId, partId) {
     if (!confirm('确定要删除该图片吗？')) return;
     // 删除浏览器离线缓存
     await deletePartImageFromOfflineCache(partNum, colorId);
-    // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
-    await deletePartImageFromGitee(partNum, colorId);
+    // 删除 Gitee Parts-img 仓库图片
+    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
     // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
     await clearPartImageUrlInRB(partNum, colorId);
     // 关闭左滑并更新当前详情：图片区显示"暂无图片"，按钮恢复为"添加图片"
@@ -2425,7 +2425,11 @@ async function deletePartDetailImage(partNum, colorId, partId) {
             if (imageContainer) imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
         }
     }
-    showToast('图片已删除');
+    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
+        showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
+    } else {
+        showToast('图片已删除');
+    }
 }
 
 async function searchFromDetail(partNum, colorId, partName) {
