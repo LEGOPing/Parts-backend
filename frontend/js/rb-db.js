@@ -687,6 +687,34 @@ async function checkPartsImgOnGitee(partNum, colorId) {
     }
 }
 
+// 从 RB 数据库查询零件图片URL：通过型号和颜色匹配 inventory_parts 表
+// 同一 part+color 可能有多条记录（不同 inventory 或不同 element），返回去重后的 img_url 列表，供弹窗卡片让用户选择
+async function getRBPartImageUrls(partNum, colorId) {
+    try {
+        const normPart = String(partNum).trim().toLowerCase();
+        const normColor = String(colorId).trim().toLowerCase();
+        const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
+        const urls = [];
+        inventory.forEach(i => {
+            if (String(i.part_num).trim().toLowerCase() === normPart &&
+                String(i.color_id).trim().toLowerCase() === normColor &&
+                i.img_url && !urls.includes(i.img_url)) {
+                urls.push(i.img_url);
+            }
+        });
+        return urls;
+    } catch (error) {
+        console.error('查询RB数据库图片URL失败:', error);
+        return [];
+    }
+}
+
+// 取第一条作为默认图片URL（零件卡片/详情图展示用）
+async function getRBPartImageUrl(partNum, colorId) {
+    const urls = await getRBPartImageUrls(partNum, colorId);
+    return urls.length ? urls[0] : null;
+}
+
 // 根据 part_num 和 color_id 查询图片URL（三级读取：① 浏览器离线缓存 → ② Gitee Parts-img → ③ RB数据库）
 async function getPartImageUrl(partNum, colorId) {
     // ① 浏览器离线缓存（人工添加的图片优先）
@@ -698,28 +726,17 @@ async function getPartImageUrl(partNum, colorId) {
     if (await checkPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ③ RB数据库
-    try {
-        const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
-        // 精确匹配 part_num 和 color_id
-        let record = inventory.find(i => 
-            i.part_num === partNum && String(i.color_id) === String(colorId)
-        );
-        // 如果没找到，尝试只匹配 part_num
-        if (!record) {
-            record = inventory.find(i => i.part_num === partNum);
-        }
-        return record ? record.img_url : null;
-    } catch (error) {
-        console.error('查询零件图片URL失败:', error);
-        return null;
-    }
+    // ③ RB数据库（inventory_parts 表按型号+颜色匹配）
+    return await getRBPartImageUrl(partNum, colorId);
 }
 
-// 清除 RB 数据库中该零件的 img_url（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
+// 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
+// 将 inventory_parts 中匹配记录（优先 part_num+color_id 精确匹配，否则 part_num 匹配）的 img_url 置 null
 async function clearPartImageUrlInRB(partNum, colorId) {
     try {
         const db = await openRBDatabase();
+        const normPart = String(partNum).trim().toLowerCase();
+        const normColor = String(colorId).trim().toLowerCase();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
             const store = transaction.objectStore(RB_STORES.INVENTORY_PARTS);
@@ -734,16 +751,15 @@ async function clearPartImageUrlInRB(partNum, colorId) {
                     // 优先清除精确匹配（part_num + color_id），否则清除 part_num 匹配
                     const target = exactMatch || fallbackMatch;
                     if (target && target.record.img_url) {
-                        const updatedRecord = { ...target.record, img_url: null };
-                        target.cursor.update(updatedRecord);
+                        target.cursor.update({ ...target.record, img_url: null });
                         updated = true;
                     }
                     resolve(updated);
                     return;
                 }
                 const record = cursor.value;
-                if (record.part_num === partNum) {
-                    if (String(record.color_id) === String(colorId)) {
+                if (String(record.part_num).trim().toLowerCase() === normPart) {
+                    if (String(record.color_id).trim().toLowerCase() === normColor) {
                         if (!exactMatch) exactMatch = { record, cursor };
                     } else if (!fallbackMatch) {
                         fallbackMatch = { record, cursor };
