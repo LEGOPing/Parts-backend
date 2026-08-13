@@ -2394,30 +2394,17 @@ async function changePartImage(partNum, colorId) {
     }
 }
 
-// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 详情显示暂无图片）
+// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 清除RB img_url）
 async function deletePartDetailImage(partNum, colorId) {
     if (!confirm('确定要删除该图片吗？')) return;
     // 删除浏览器离线缓存
     await deletePartImageFromOfflineCache(partNum, colorId);
     // 删除 Gitee Parts-img 仓库图片
     const giteeResult = await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
+    // 清除 RB 数据库中的 img_url（所有匹配记录），避免 getPartImageUrl 回退到旧图
     await clearPartImageUrlInRB(partNum, colorId);
-    // 关闭左滑并更新当前详情：图片区显示"暂无图片"，按钮恢复为"添加图片"
-    const sheet = document.querySelector('.part-detail-modal');
-    if (sheet) {
-        const imageContent = sheet.querySelector('.pd-image-content');
-        if (imageContent) imageContent.innerHTML = '<div class="pd-no-image">暂无图片</div>';
-        const changeBtn = sheet.querySelector('.pd-img-change-btn');
-        if (changeBtn) changeBtn.textContent = '添加图片';
-        const imageSwipe = sheet.querySelector('#pd-image-swipe');
-        if (imageSwipe) {
-            const content = imageSwipe.querySelector('.pd-image-content');
-            const action = imageSwipe.querySelector('.pd-image-action');
-            if (content) content.style.transform = 'translateX(0)';
-            if (action) action.style.transform = 'translateX(90px)';
-        }
-    }
+    // 刷新详情页
+    await refreshPartDetailWithCustomImage(partNum, colorId);
     if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
         showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
     } else {
@@ -2554,10 +2541,27 @@ async function saveImageFromUrl(partNum, colorId) {
         alert('请输入有效的URL（以http://或https://开头）');
         return;
     }
-    
+
     const statusEl = document.getElementById('custom-img-status');
-    statusEl.textContent = '⏳ 正在下载并保存图片...';
+    statusEl.textContent = '⏳ 正在处理...';
     statusEl.style.color = '#2196F3';
+
+    // rebrickable CDN 图片（含 CORS 限制，无法 fetch 下载）→ 直接更新 RB 数据库 img_url
+    if (/cdn\.rebrickable\.com\//i.test(url)) {
+        const updated = await updateRBPartImageUrl(partNum, colorId, url);
+        statusEl.textContent = updated > 0
+            ? `✓ 已更新RB数据库图片URL（${updated}条记录）`
+            : '✗ 数据库无匹配记录，未能更新';
+        statusEl.style.color = updated > 0 ? '#4CAF50' : '#f44336';
+        setTimeout(() => {
+            const overlays = document.querySelectorAll('.modal-overlay.active');
+            overlays.forEach(o => o.remove());
+            refreshPartDetailWithCustomImage(partNum, colorId);
+        }, 1000);
+        return;
+    }
+    
+    statusEl.textContent = '⏳ 正在下载并保存图片...';
     
     try {
         // 下载图片并转为 base64
