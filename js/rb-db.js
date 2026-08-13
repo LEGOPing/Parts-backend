@@ -730,13 +730,43 @@ async function getRBPartImageUrls(partNum, colorId) {
 }
 
 // 取第一条作为默认图片URL（零件卡片/详情图展示用）
-async function getRBPartImageUrl(partNum, colorId) {
+// confirmOnMultiple=true 时，若 inventory_parts 精确匹配到多个不同URL，弹窗让用户确认选择
+async function getRBPartImageUrl(partNum, colorId, confirmOnMultiple) {
     const urls = await getRBPartImageUrls(partNum, colorId);
-    return urls.length ? urls[0] : null;
+    if (!urls.length) return null;
+    if (confirmOnMultiple && urls.length > 1) {
+        return await confirmChooseRBImageUrl(partNum, colorId, urls);
+    }
+    return urls[0];
+}
+
+// 匹配到多个RB图片URL时，弹窗让用户确认选择（返回用户选中的URL）
+function confirmChooseRBImageUrl(partNum, colorId, urls) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        const sheet = document.createElement('div');
+        sheet.className = 'modal-content';
+        sheet.style.maxWidth = '350px';
+        sheet.innerHTML = `
+            <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span class="modal-title" style="font-size:16px;font-weight:600;">选择图片</span>
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove();resolve(null)" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">取消</button>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}　匹配到 ${urls.length} 条图片，请选择：</div>
+                ${urls.map(u => `
+                <div onclick="this.closest('.modal-overlay').remove();resolve('${u.replace(/'/g, "\\'")}')" style="word-break:break-all;background:#FFF8E1;border:1px solid #FFE082;border-radius:6px;padding:8px;font-size:12px;color:#795548;margin-bottom:6px;cursor:pointer;">${u}</div>`).join('')}
+            </div>
+        `;
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+    });
 }
 
 // 根据 part_num 和 color_id 查询图片URL（三级读取：① 浏览器离线缓存 → ② Gitee Parts-img → ③ RB数据库）
-async function getPartImageUrl(partNum, colorId) {
+// confirmOnMultiple=true 时，RB数据库匹配到多个不同URL会弹窗让用户确认
+async function getPartImageUrl(partNum, colorId, confirmOnMultiple) {
     // ① 浏览器离线缓存（人工添加的图片优先）
     const cached = await getPartImageFromOfflineCache(partNum, colorId);
     if (cached) {
@@ -747,7 +777,7 @@ async function getPartImageUrl(partNum, colorId) {
         return buildPartsImgUrl(partNum, colorId);
     }
     // ③ RB数据库（inventory_parts 表按型号+颜色匹配）
-    return await getRBPartImageUrl(partNum, colorId);
+    return await getRBPartImageUrl(partNum, colorId, confirmOnMultiple);
 }
 
 // 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）

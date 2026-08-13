@@ -2190,7 +2190,7 @@ async function showPartDetail(part) {
     let imgUrl = null;
     let hasCustomImage = false;
     try {
-        imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+        imgUrl = await getPartImageUrl(part.part_num, part.color_id, true);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
