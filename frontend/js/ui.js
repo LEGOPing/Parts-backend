@@ -3748,6 +3748,144 @@ function reloadApp() {
     }
 }
 
+// RB分片：选择本地 inventory_parts.csv，分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
+// 分片命名 inventory_parts_1.csv ...（序号从1开始），上传后写入清单，更新RB按清单合并读取
+function splitAndUploadRB() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.csv,text/csv';
+    fileInput.style.display = 'none';
+    fileInput.onchange = () => {
+        document.body.removeChild(fileInput);
+        const file = fileInput.files && fileInput.files[0];
+        if (file) {
+            showSplitUploadConfirm(file);
+        }
+    };
+    document.body.appendChild(fileInput);
+    fileInput.click();
+}
+
+// 分片上传确认弹窗（展示文件信息与预计分片数）
+function showSplitUploadConfirm(file) {
+    const estimatedShards = Math.max(1, Math.ceil(file.size / (4 * 1024 * 1024)));
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">RB分片上传</span>
+            </div>
+            <div class="modal-body">
+                <div style="font-size: 13px; color: #666; text-align: left; line-height: 2;">
+                    <div>文件名：${file.name}</div>
+                    <div>文件大小：${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                    <div>预计分片数：${estimatedShards} 个（每个 &lt;4MB）</div>
+                </div>
+                <div style="font-size: 12px; color: #999; margin-top: 10px; line-height: 1.8;">
+                    将分割上传到 Gitee parts-rb 仓库，命名为 inventory_parts_1.csv、inventory_parts_2.csv ...，
+                    完成后自动写入分片清单，更新RB将按清单合并读取。
+                </div>
+                <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;">
+                    <button class="btn-save" id="split-upload-start" style="padding: 8px 24px;">开始上传</button>
+                    <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const startBtn = overlay.querySelector('#split-upload-start');
+    startBtn.onclick = () => {
+        overlay.remove();
+        doSplitUploadRB(file);
+    };
+}
+
+// 执行分片上传，展示进度（含429限流重试提示）
+async function doSplitUploadRB(file) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">RB分片上传</span>
+            </div>
+            <div class="modal-body">
+                <div style="padding: 20px 0;">
+                    <div class="rb-progress-bar" style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; margin: 10px 0;">
+                        <div id="split-upload-progress-fill" style="background: #FF5722; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="split-upload-progress-text" style="font-size: 14px; color: #666; margin-top: 10px;">准备分割...</div>
+                    <div id="split-upload-progress-detail" style="font-size: 12px; color: #999; margin-top: 5px;"></div>
+                </div>
+                <div id="split-upload-result" style="display: none;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const updateProgress = (percent, text, detail) => {
+        const fill = document.getElementById('split-upload-progress-fill');
+        const textEl = document.getElementById('split-upload-progress-text');
+        const detailEl = document.getElementById('split-upload-progress-detail');
+        if (fill) fill.style.width = Math.round(percent * 100) + '%';
+        if (text && textEl) textEl.textContent = text;
+        if (detail && detailEl) detailEl.textContent = detail;
+    };
+
+    try {
+        updateProgress(0.03, '正在分割文件...', file.name);
+
+        const result = await uploadRBInventoryShards(file, {
+            onProgress: (p) => {
+                let percent;
+                if (p.phase === 'manifest') {
+                    percent = 0.95;
+                } else if (p.shardTotal > 0) {
+                    percent = 0.03 + (p.shardIndex / p.shardTotal) * 0.92;
+                } else {
+                    percent = 0.5;
+                }
+                updateProgress(percent, p.message || '', '');
+            }
+        });
+
+        updateProgress(1, '分片上传完成！', '');
+
+        setTimeout(() => {
+            const resultDiv = document.getElementById('split-upload-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✓ 上传成功</div>
+                    <div style="font-size: 12px; color: #666; text-align: left; line-height: 1.8;">
+                        <div>分片数量：${result.count} 个</div>
+                        <div>数据行数：${result.rows} 条</div>
+                        <div style="word-break: break-all;">文件：${result.files.join(', ')}</div>
+                    </div>
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 500);
+
+    } catch (error) {
+        console.error('RB分片上传失败:', error);
+        updateProgress(1, '上传失败', error.message);
+
+        setTimeout(() => {
+            const resultDiv = document.getElementById('split-upload-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px; color: #f44336;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✗ 上传失败</div>
+                    <div style="font-size: 12px; margin: 10px 0; word-break: break-all;">${error.message}</div>
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 500);
+    }
+}
+
 // 更新 RB 数据库（从 Parts-RB 读取 CSV，更新离线数据库）
 async function updateRB() {
     if (!confirm('确定要从 Parts-RB 读取最新的 CSV 数据吗？\n这将更新本地 RB 数据库。')) {
