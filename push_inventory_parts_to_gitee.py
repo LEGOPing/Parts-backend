@@ -38,7 +38,7 @@ GITEE_BRANCH = "main"
 DEFAULT_GITEE_TOKEN = "5e8fe75044a023e2c992c1b5d11c95f0"
 
 # 分片配置：每个分片目标小于 8MB（Gitee contents API 截断阈值约 10MiB，留出安全余量）
-MAX_SHARD_BYTES = 8 * 1024 * 1024
+MAX_SHARD_BYTES = 7 * 1024 * 1024
 
 # 分片文件名模板（与前端 frontend/js/api.js 保持一致）
 SHARD_BASE = "inventory_parts_"
@@ -149,10 +149,14 @@ def dedup_and_split(csv_path):
     header_bytes = len(header_line.encode("utf-8"))
 
     # 逐行切分，保证每个分片（含表头）< MAX_SHARD_BYTES
+    # 注意：full_text 首行是原始表头（与 header_line 重复），需跳过，仅切分数据行
+    all_lines = full_text.splitlines(keepends=True)
+    data_lines = all_lines[1:] if all_lines else []
+
     shards = []
     current = [header_line]
     current_size = header_bytes
-    for line in full_text.splitlines(keepends=True):
+    for line in data_lines:
         line_size = len(line.encode("utf-8"))
         if current_size + line_size > MAX_SHARD_BYTES and len(current) > 1:
             shards.append("".join(current))
