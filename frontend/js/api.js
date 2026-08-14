@@ -187,14 +187,19 @@ async function fetchRBInventoryParts() {
         return null;
     }
 
-    // 保留第一个分片的表头，其余分片去掉表头行后拼接
-    const first = shardTexts[0];
-    const rest = shardTexts.slice(1).map(text => {
-        const newlineIdx = text.indexOf('\n');
-        if (newlineIdx === -1) return text;
-        return text.slice(newlineIdx + 1);
-    });
-    return first + rest.join('');
+    // 保留第一个分片的表头，其余分片去掉表头行后拼接。
+    // 分片文件本身不含结尾换行，直接拼接会导致边界行粘连，因此分片间用换行衔接
+    const mergedLines = [];
+    for (let i = 0; i < shardTexts.length; i++) {
+        let text = shardTexts[i].replace(/\r?\n$/, '');
+        if (i === 0) {
+            mergedLines.push(text);
+        } else {
+            const newlineIdx = text.indexOf('\n');
+            mergedLines.push(newlineIdx === -1 ? '' : text.slice(newlineIdx + 1));
+        }
+    }
+    return mergedLines.join('\n') + '\n';
 }
 
 // Gitee API 请求重试封装：处理写操作限流（HTTP 429）与连接重置（HTTP 000/网络异常）
@@ -280,7 +285,7 @@ async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
     let currentSize = new Blob([headerLine + '\n']).size;
     for (const line of dataLines) {
         const lineSize = new Blob([line + '\n']).size;
-        if (currentSize + lineSize > MAX_SHARD_BYTES && current.length > 1) {
+        if (currentSize + lineSize >= MAX_SHARD_BYTES && current.length > 1) {
             shards.push(current.join('\n'));
             current = [headerLine];
             currentSize = new Blob([headerLine + '\n']).size;
