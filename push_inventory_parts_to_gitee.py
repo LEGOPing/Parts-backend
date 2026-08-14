@@ -96,27 +96,41 @@ def get_file_sha(token, filename):
 
 def download_full_csv_from_gitee():
     """通过 git sparse checkout 从 Gitee 拉取完整的 inventory_parts.csv（contents API 会截断，raw 需登录）"""
-    tmpdir = tempfile.mkdtemp(prefix="rb_inventory_")
-    try:
-        log("通过 git sparse checkout 拉取完整 inventory_parts.csv ...")
-        repo_url = f"https://gitee.com/legoping/parts-rb.git"
-        subprocess.run(
-            ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", repo_url, "repo"],
-            cwd=tmpdir, check=True, capture_output=True
-        )
-        subprocess.run(
-            ["git", "sparse-checkout", "set", "inventory_parts.csv"],
-            cwd=os.path.join(tmpdir, "repo"), check=True, capture_output=True
-        )
-        csv_path = os.path.join(tmpdir, "repo", "inventory_parts.csv")
-        if not os.path.exists(csv_path):
-            raise FileNotFoundError("sparse checkout 未获取到 inventory_parts.csv")
-        log(f"完整文件已就绪: {csv_path} ({os.path.getsize(csv_path)} 字节)")
-        return csv_path
-    except Exception as e:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        log(f"✗ 从 Gitee 拉取完整 CSV 失败: {e}")
-        raise
+    import time
+
+    max_retries = 3
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        tmpdir = tempfile.mkdtemp(prefix="rb_inventory_")
+        try:
+            log(f"通过 git sparse checkout 拉取完整 inventory_parts.csv (第 {attempt}/{max_retries} 次尝试) ...")
+            repo_url = f"https://gitee.com/legoping/parts-rb.git"
+            subprocess.run(
+                ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", repo_url, "repo"],
+                cwd=tmpdir, check=True, capture_output=True, text=True
+            )
+            subprocess.run(
+                ["git", "sparse-checkout", "set", "inventory_parts.csv"],
+                cwd=os.path.join(tmpdir, "repo"), check=True, capture_output=True, text=True
+            )
+            csv_path = os.path.join(tmpdir, "repo", "inventory_parts.csv")
+            if not os.path.exists(csv_path):
+                raise FileNotFoundError("sparse checkout 未获取到 inventory_parts.csv")
+            log(f"完整文件已就绪: {csv_path} ({os.path.getsize(csv_path)} 字节)")
+            return csv_path
+        except subprocess.CalledProcessError as e:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            last_err = e
+            log(f"✗ git 命令失败: {e.stderr}")
+        except Exception as e:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            last_err = e
+            log(f"✗ 从 Gitee 拉取完整 CSV 失败: {e}")
+        if attempt < max_retries:
+            wait = 15 * attempt
+            log(f"等待 {wait} 秒后重试...")
+            time.sleep(wait)
+    raise last_err if last_err else RuntimeError("无法从 Gitee 拉取完整 CSV")
 
 
 def dedup_and_split(csv_path):
