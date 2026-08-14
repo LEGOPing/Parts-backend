@@ -3449,7 +3449,10 @@ async function loadRBOnStartup() {
 
         for (const file of csvFiles) {
             try {
-                const csvText = await fetchRBFile(file.name);
+                // inventory_parts 已分片（避免 Gitee contents API 10MiB 截断），需合并下载
+                const csvText = file.schemaKey === 'inventory_parts'
+                    ? await fetchRBInventoryParts()
+                    : await fetchRBFile(file.name);
                 if (!csvText) {
                     failCount++;
                     continue;
@@ -3802,7 +3805,10 @@ async function updateRB() {
             updateProgress(progress, `读取 ${file.label} (${i + 1}/${csvFiles.length})...`, file.name);
 
             try {
-                const csvText = await fetchRBFile(file.name);
+                // inventory_parts 已分片（避免 Gitee contents API 10MiB 截断），需合并下载
+                const csvText = file.schemaKey === 'inventory_parts'
+                    ? await fetchRBInventoryParts()
+                    : await fetchRBFile(file.name);
                 if (!csvText) {
                     failCount++;
                     importResults[file.schemaKey] = false;

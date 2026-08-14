@@ -145,6 +145,57 @@ async function fetchRBFile(fileName) {
     }
 }
 
+// 分片文件命名常量（与 push_inventory_parts_to_gitee.py 保持一致）
+const INVENTORY_SHARD_BASE = 'inventory_parts_';
+const INVENTORY_SHARD_SUFFIX = '.csv';
+const INVENTORY_SHARDS_MANIFEST = 'inventory_parts_shards.json';
+
+async function fetchRBShardsManifest() {
+    try {
+        const text = await fetchRBFile(INVENTORY_SHARDS_MANIFEST);
+        if (!text) return null;
+        const manifest = JSON.parse(text);
+        if (!manifest || !Array.isArray(manifest.files) || manifest.files.length === 0) {
+            return null;
+        }
+        return manifest;
+    } catch (error) {
+        console.error(`加载库存分片清单失败: ${INVENTORY_SHARDS_MANIFEST}`, error);
+        return null;
+    }
+}
+
+// 依次下载库存分片并合并（每个分片都带表头，仅保留第一个分片的表头）
+async function fetchRBInventoryParts() {
+    const manifest = await fetchRBShardsManifest();
+    if (!manifest) {
+        return null;
+    }
+
+    const shardTexts = [];
+    for (const fileName of manifest.files) {
+        const text = await fetchRBFile(fileName);
+        if (text === null || text === undefined) {
+            console.error(`下载库存分片失败: ${fileName}`);
+            return null;
+        }
+        shardTexts.push(text);
+    }
+
+    if (shardTexts.length === 0) {
+        return null;
+    }
+
+    // 保留第一个分片的表头，其余分片去掉表头行后拼接
+    const first = shardTexts[0];
+    const rest = shardTexts.slice(1).map(text => {
+        const newlineIdx = text.indexOf('\n');
+        if (newlineIdx === -1) return text;
+        return text.slice(newlineIdx + 1);
+    });
+    return first + rest.join('');
+}
+
 function parseRBCSVLine(line) {
     const result = [];
     let currentField = '';
