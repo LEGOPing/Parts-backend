@@ -1837,6 +1837,101 @@ body {
     align-items: center;
 }
 
+/* 图片预览区：Gitee / RB 双列 + 编辑（宽比 4:4:2） */
+.part-img-preview {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    align-items: stretch;
+}
+
+.part-img-col {
+    flex: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+    min-width: 0;
+}
+
+.part-img-edit-col {
+    flex: 2;
+    justify-content: center;
+    align-items: center;
+    cursor: default;
+}
+
+.part-img-label {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+}
+
+.part-img-box {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.part-img-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.part-img-empty {
+    font-size: 12px;
+    color: #999;
+    text-align: center;
+    padding: 0 4px;
+}
+
+/* 右上角圆形勾选 */
+.part-img-check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid #ccc;
+    box-sizing: border-box;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #fff;
+    line-height: 1;
+}
+
+.part-img-check.active {
+    display: flex;
+    background: #27ae60;
+    border-color: #27ae60;
+}
+
+.part-img-check.active::after {
+    content: '✓';
+}
+
+.btn-preview-edit {
+    background: #3498db;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 20px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
 /* 零件信息预览 */
 .part-info-preview {
     background: #f8f9fa;

@@ -939,7 +939,7 @@ function showAddPartSheet() {
                 <div class="form-row part-number-row">
                     <label class="form-label">零件型号：</label>
                     <div class="part-number-input-wrapper">
-                        <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" />
+                        <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" oninput="updatePartImagePreview()" />
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
@@ -975,8 +975,28 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
+            <div class="part-img-preview" id="part-img-preview" style="display: none;">
+                <div class="part-img-col" onclick="selectPartPreviewImage('gitee')">
+                    <div class="part-img-label">Gitee</div>
+                    <div class="part-img-box">
+                        <img id="preview-gitee-img" alt="Gitee图" />
+                        <span class="part-img-empty" id="preview-gitee-empty" style="display: none;">无图片</span>
+                        <div class="part-img-check" id="preview-gitee-check"></div>
+                    </div>
+                </div>
+                <div class="part-img-col" onclick="selectPartPreviewImage('rb')">
+                    <div class="part-img-label">RB</div>
+                    <div class="part-img-box">
+                        <img id="preview-rb-img" alt="RB图" />
+                        <span class="part-img-empty" id="preview-rb-empty" style="display: none;">无图片</span>
+                        <div class="part-img-check" id="preview-rb-check"></div>
+                    </div>
+                </div>
+                <div class="part-img-col part-img-edit-col">
+                    <button type="button" class="btn-preview-edit" onclick="showAddPartImageEditor()">编辑</button>
+                </div>
+            </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
-            <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
     
@@ -1314,6 +1334,237 @@ function initAddPartSuggestions() {
     });
 }
 
+// ===== 添加零件弹窗：图片预览区（Gitee / RB 双列 + 编辑） =====
+
+// 根据型号+颜色刷新图片预览；两者非空才显示
+async function updatePartImagePreview() {
+    const partNumEl = document.getElementById('new-part-num');
+    const colorEl = document.getElementById('new-part-color');
+    const container = document.getElementById('part-img-preview');
+    if (!partNumEl || !colorEl || !container) return;
+    const partNum = partNumEl.value.trim();
+    const colorId = colorEl.value.trim();
+    if (!partNum || !colorId) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'flex';
+
+    // 型号/颜色变化时重置选择（重新计算默认值）
+    const key = partNum + ':' + colorId;
+    if (window._partImgKey !== key) {
+        window._partImgKey = key;
+        window.newPartImgExplicit = false;
+        window.newPartImageUrl = '';
+    }
+
+    // 左列：Gitee
+    const giteeUrl = buildPartsImgUrl(partNum, colorId);
+    const giteeOk = await checkPartsImgOnGitee(partNum, colorId);
+    const giteeImg = document.getElementById('preview-gitee-img');
+    const giteeEmpty = document.getElementById('preview-gitee-empty');
+    if (giteeOk) {
+        giteeImg.src = giteeUrl;
+        giteeImg.style.display = 'block';
+        giteeEmpty.style.display = 'none';
+    } else {
+        giteeImg.removeAttribute('src');
+        giteeImg.style.display = 'none';
+        giteeEmpty.style.display = 'block';
+    }
+
+    // 中列：RB
+    const rbUrl = await getRBPartImageUrl(partNum, colorId);
+    const rbImg = document.getElementById('preview-rb-img');
+    const rbEmpty = document.getElementById('preview-rb-empty');
+    if (rbUrl) {
+        rbImg.src = rbUrl;
+        rbImg.style.display = 'block';
+        rbEmpty.style.display = 'none';
+    } else {
+        rbImg.removeAttribute('src');
+        rbImg.style.display = 'none';
+        rbEmpty.style.display = 'block';
+    }
+
+    // 未手动选择时计算默认值：已有零件→Gitee，全新零件→RB
+    if (!window.newPartImgExplicit) {
+        let isExisting = false;
+        try {
+            const boxParts = selectedBox ? await getParts(selectedBox.id) : [];
+            isExisting = boxParts.some(p => p.part_num === partNum);
+        } catch (e) {}
+        if (isExisting) {
+            window.newPartImageUrl = giteeOk ? giteeUrl : (rbUrl || '');
+        } else {
+            window.newPartImageUrl = rbUrl ? rbUrl : (giteeOk ? giteeUrl : '');
+        }
+    }
+    renderPartPreviewChecks();
+}
+
+// 刷新两个图片列右上角的勾选状态
+function renderPartPreviewChecks() {
+    const giteeCheck = document.getElementById('preview-gitee-check');
+    const rbCheck = document.getElementById('preview-rb-check');
+    if (!giteeCheck || !rbCheck) return;
+    const giteeUrl = document.getElementById('preview-gitee-img').getAttribute('src') || '';
+    const rbUrl = document.getElementById('preview-rb-img').getAttribute('src') || '';
+    giteeCheck.classList.toggle('active', !!giteeUrl && window.newPartImageUrl === giteeUrl);
+    rbCheck.classList.toggle('active', !!rbUrl && window.newPartImageUrl === rbUrl);
+}
+
+// 用户点击图片确认选择，所选图片URL作为该零件的URL
+function selectPartPreviewImage(source) {
+    const giteeImg = document.getElementById('preview-gitee-img');
+    const rbImg = document.getElementById('preview-rb-img');
+    const giteeUrl = giteeImg ? giteeImg.getAttribute('src') : '';
+    const rbUrl = rbImg ? rbImg.getAttribute('src') : '';
+    if (source === 'gitee' && giteeUrl) {
+        window.newPartImageUrl = giteeUrl;
+        window.newPartImgExplicit = true;
+    } else if (source === 'rb' && rbUrl) {
+        window.newPartImageUrl = rbUrl;
+        window.newPartImgExplicit = true;
+    }
+    renderPartPreviewChecks();
+}
+
+// 编辑图片URL弹窗（添加 / 更改 / 删除）
+function showAddPartImageEditor() {
+    const partNumEl = document.getElementById('new-part-num');
+    const colorEl = document.getElementById('new-part-color');
+    const partNum = partNumEl ? partNumEl.value.trim() : '';
+    const colorId = colorEl ? colorEl.value.trim() : '';
+    if (!partNum || !colorId) {
+        showToast('请先填写零件型号和颜色');
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'add-part-img-editor-overlay';
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content add-part-modal';
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">编辑图片URL</span>
+            <button class="btn-cancel" onclick="closeAddPartImageEditor()">返回</button>
+        </div>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}</div>
+            <div class="form-row" style="align-items:flex-start;">
+                <label class="form-label">图片URL：</label>
+                <input type="text" id="edit-img-url-input" class="form-input" placeholder="https://..." value="${window.newPartImageUrl || ''}" autocomplete="off" />
+            </div>
+            <div id="edit-img-status" style="margin-top:8px;font-size:13px;color:#666;"></div>
+            <div style="display:flex;gap:10px;margin-top:14px;">
+                <button class="btn-save" style="flex:1;" onclick="saveEditedPartImage()">添加/更改</button>
+                <button class="btn-save" style="flex:1;background-color:#e74c3c;" onclick="deleteEditedPartImage()">删除</button>
+            </div>
+        </div>
+    `;
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+}
+
+// 关闭编辑弹窗并刷新预览区
+function closeAddPartImageEditor() {
+    const overlay = document.getElementById('add-part-img-editor-overlay');
+    if (overlay) overlay.remove();
+    updatePartImagePreview();
+}
+
+// 添加/更改：将输入URL保存为该零件图片（rebrickable→RB数据库；其他→离线缓存+Gitee）
+async function saveEditedPartImage() {
+    const urlInput = document.getElementById('edit-img-url-input');
+    const statusEl = document.getElementById('edit-img-status');
+    const url = urlInput ? urlInput.value.trim() : '';
+    if (!url) {
+        statusEl.textContent = '请输入图片URL';
+        statusEl.style.color = '#f44336';
+        return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+        statusEl.textContent = '请输入以 http:// 或 https:// 开头的有效URL';
+        statusEl.style.color = '#f44336';
+        return;
+    }
+    const partNum = document.getElementById('new-part-num').value.trim();
+    const colorId = document.getElementById('new-part-color').value.trim();
+    statusEl.textContent = '⏳ 正在处理...';
+    statusEl.style.color = '#2196F3';
+
+    // rebrickable CDN 图片（含CORS限制无法fetch下载）→ 直接更新 RB 数据库 img_url
+    if (/cdn\.rebrickable\.com\//i.test(url)) {
+        const updated = await updateRBPartImageUrl(partNum, colorId, url);
+        statusEl.textContent = updated > 0 ? '✓ 已更新RB数据库图片URL' : '✗ 数据库无匹配记录，未能更新';
+        statusEl.style.color = updated > 0 ? '#4CAF50' : '#f44336';
+        if (updated > 0) {
+            window.newPartImageUrl = url;
+            window.newPartImgExplicit = true;
+            renderPartPreviewChecks();
+        }
+        updatePartImagePreview();
+        return;
+    }
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('图片下载失败');
+        const blob = await response.blob();
+        const imageBase64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+        // ① 保存到浏览器离线缓存 ② 上传到 Gitee Parts-img
+        await savePartImageToOfflineCache(partNum, colorId, imageBase64);
+        const uploadResult = await uploadPartImageToGitee(partNum, colorId, imageBase64);
+        window.newPartImageUrl = buildPartsImgUrl(partNum, colorId);
+        window.newPartImgExplicit = true;
+        renderPartPreviewChecks();
+        statusEl.textContent = uploadResult.success
+            ? '✓ 图片已保存'
+            : '✓ 已存入离线缓存（Gitee上传失败: ' + uploadResult.error + '）';
+        statusEl.style.color = uploadResult.success ? '#4CAF50' : '#FF9800';
+        updatePartImagePreview();
+    } catch (e) {
+        statusEl.textContent = '✗ 保存失败：' + e.message;
+        statusEl.style.color = '#f44336';
+    }
+}
+
+// 删除：删离线缓存 + 删Gitee + 清除RB img_url
+async function deleteEditedPartImage() {
+    if (!confirm('确定删除该零件的图片吗？')) return;
+    const statusEl = document.getElementById('edit-img-status');
+    if (!statusEl) return;
+    const partNum = document.getElementById('new-part-num').value.trim();
+    const colorId = document.getElementById('new-part-color').value.trim();
+    statusEl.textContent = '⏳ 正在删除...';
+    statusEl.style.color = '#2196F3';
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
+    await clearPartImageUrlInRB(partNum, colorId);
+    statusEl.textContent = '✓ 图片已删除';
+    statusEl.style.color = '#4CAF50';
+    window.newPartImageUrl = '';
+    window.newPartImgExplicit = false;
+    updatePartImagePreview();
+    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
+        showToast('图片已删除，但云端(Gitee)删除失败');
+    }
+}
+
+// 保存零件时，若用户选择了图片URL，将其写入RB数据库作为该零件的生效URL
+async function persistSelectedPartImage(partNum, colorId) {
+    if (window.newPartImageUrl) {
+        try { await updateRBPartImageUrl(partNum, colorId, window.newPartImageUrl); } catch (e) {}
+    }
+}
+
 function togglePartNewStatus(isNew) {
     window.newPartIsNew = isNew;
     document.getElementById('status-new').classList.toggle('active', isNew);
@@ -1477,6 +1728,7 @@ async function saveNewPart(button) {
     }
 
     // 无重复，直接创建新零件
+    await persistSelectedPartImage(newPartData.part_num, newPartData.color_id);
     const newPart = await createPart(newPartData);
     
     if (newPart) {
