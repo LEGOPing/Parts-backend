@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v73';
+const CACHE_NAME = 'lego-parts-v74';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -26,10 +26,10 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
-            // 清理所有旧版本缓存（包括v41/v43等遗留缓存）
+            // 清理旧版本缓存，但保留零件图片离线缓存（part-images-cache-*）
             return Promise.all(
                 cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME) {
+                    if (cacheName !== CACHE_NAME && !cacheName.startsWith('part-images-cache')) {
                         console.log('删除旧缓存:', cacheName);
                         return caches.delete(cacheName);
                     }

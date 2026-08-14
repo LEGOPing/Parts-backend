@@ -678,10 +678,16 @@ async function deletePartImageFromOfflineCache(partNum, colorId) {
 }
 
 // 检查 Gitee Parts-img 仓库是否存在该零件图片
+// 用 API 端点检查：raw URL 302→raw.giteeusercontent.com 无 CORS 头会被浏览器拦截；
+// API 端点返回 Access-Control-Allow-Origin:*，文件存在返回 JSON 对象，不存在返回空数组 []
 async function checkPartsImgOnGitee(partNum, colorId) {
     try {
-        const response = await fetch(buildPartsImgUrl(partNum, colorId), { cache: 'no-store' });
-        return response.ok;
+        const filePath = `parts/${partNum}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}?ref=${GITEE_IMG_BRANCH}`;
+        const response = await fetch(apiUrl, { cache: 'no-store' });
+        if (!response.ok) return false;
+        const data = await response.json();
+        return Array.isArray(data) ? data.length > 0 : !!data;
     } catch (error) {
         return false;
     }
