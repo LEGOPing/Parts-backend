@@ -955,7 +955,7 @@ function showAddPartSheet() {
                 </div>
                 <div class="form-row">
                     <label class="form-label">零件颜色：</label>
-                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value)" />
+                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value); updatePartImagePreview()" />
                     <button id="color-pick-btn" class="btn-color-pick" onclick="showColorPicker()">选择颜色</button>
                 </div>
             </div>
