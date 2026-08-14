@@ -687,9 +687,9 @@ async function checkPartsImgOnGitee(partNum, colorId) {
     }
 }
 
-// 从 RB 数据库查询零件图片URL：通过型号和颜色匹配 inventory_parts 表
+// 从 RB 数据库查询零件图片URL：通过型号和颜色精确匹配 inventory_parts 表
 // 同一 part+color 可能有多条记录（不同 inventory 或不同 element），返回去重后的 img_url 列表，供弹窗卡片让用户选择
-// 若 inventory_parts 无匹配（该 part+color 组合未出现在任何 inventory 中），回退到 elements 表按 element_id 构造 URL
+// 无匹配或 img_url 为空（暂时失效）时按暂无图片处理，返回空列表
 async function getRBPartImageUrls(partNum, colorId) {
     try {
         const normPart = String(partNum).trim().toLowerCase();
@@ -703,25 +703,6 @@ async function getRBPartImageUrls(partNum, colorId) {
                 urls.push(i.img_url);
             }
         });
-        // inventory_parts 无匹配时，回退 elements 表（element 级图片，按 part_num+color_id 匹配 element_id）
-        if (urls.length === 0) {
-            const elements = await getAll(RB_STORES.ELEMENTS);
-            elements.forEach(e => {
-                if (String(e.part_num).trim().toLowerCase() === normPart &&
-                    String(e.color_id).trim().toLowerCase() === normColor &&
-                    e.element_id) {
-                    const url = `https://cdn.rebrickable.com/media/parts/elements/${e.element_id}.jpg`;
-                    if (!urls.includes(url)) {
-                        urls.push(url);
-                    }
-                }
-            });
-            // 追加 rebrickable 标准 part 级图片（ldraw 目录），作为首选候选
-            const ldrawUrl = `https://cdn.rebrickable.com/media/parts/ldraw/${normColor}/${normPart}.png`;
-            if (!urls.includes(ldrawUrl)) {
-                urls.unshift(ldrawUrl);
-            }
-        }
         return urls;
     } catch (error) {
         console.error('查询RB数据库图片URL失败:', error);
