@@ -166,10 +166,11 @@ async function fetchRBShardsManifest() {
 }
 
 // 依次下载库存分片并合并（每个分片都带表头，仅保留第一个分片的表头）
+// 若分片清单不存在（尚未分片上传），回退读取旧单文件 inventory_parts.csv，避免更新RB失败
 async function fetchRBInventoryParts() {
     const manifest = await fetchRBShardsManifest();
     if (!manifest) {
-        return null;
+        return await fetchRBFile('inventory_parts.csv');
     }
 
     const shardTexts = [];
@@ -194,6 +195,147 @@ async function fetchRBInventoryParts() {
         return text.slice(newlineIdx + 1);
     });
     return first + rest.join('');
+}
+
+// Gitee API 请求重试封装：处理写操作限流（HTTP 429）与连接重置（HTTP 000/网络异常）
+// 429 响应为 HTML 且无 Retry-After 头，实测采用指数退避重试；400/401/404 等确定性错误不重试
+async function giteeRequestWithRetry(fetchFn, { maxRetries = 5, onRetry = null } = {}) {
+    let delay = 1000;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await fetchFn();
+            if (response.ok) {
+                return response;
+            }
+            if (response.status !== 429) {
+                throw new Error(`HTTP ${response.status}: ${await response.text().catch(() => '')}`);
+            }
+            if (attempt >= maxRetries) {
+                throw new Error(`HTTP 429 (限流) 重试${maxRetries}次后仍失败`);
+            }
+            if (onRetry) onRetry(attempt + 1, delay);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay = Math.min(delay * 2, 60000);
+        } catch (e) {
+            const isNetworkError = e instanceof TypeError || !e.status;
+            if (isNetworkError && attempt < maxRetries) {
+                if (onRetry) onRetry(attempt + 1, delay);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay = Math.min(delay * 2, 60000);
+                continue;
+            }
+            throw e;
+        }
+    }
+    throw new Error('Gitee请求重试次数用尽');
+}
+
+// 上传单个分片到 Gitee parts-rb 仓库（POST 创建 / PUT 更新，幂等）
+async function uploadRBShardToGitee(fileName, csvText, token) {
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/${fileName}`;
+    const base64Data = btoa(unescape(encodeURIComponent(csvText)));
+
+    const checkResp = await fetch(`${apiUrl}?ref=main`, {
+        headers: { 'Authorization': `token ${token}` }
+    });
+    const existing = checkResp.ok ? await checkResp.json() : null;
+
+    const body = {
+        message: `feat: 更新RB库存分片 ${fileName} [skip ci]`,
+        content: base64Data,
+        branch: 'main'
+    };
+    if (existing && existing.sha) {
+        body.sha = existing.sha;
+    }
+
+    return giteeRequestWithRetry(() => fetch(apiUrl, {
+        method: existing ? 'PUT' : 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `token ${token}`
+        },
+        body: JSON.stringify(body)
+    }));
+}
+
+// 将本地 inventory_parts.csv 分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
+// 分片命名 inventory_parts_1.csv、inventory_parts_2.csv ...（序号从1开始，每片都带表头）
+// 上传完成后写入清单 inventory_parts_shards.json，前端读取逻辑按清单合并
+async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
+    const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!token) {
+        throw new Error('缺少 Gitee Token，无法上传分片');
+    }
+
+    const MAX_SHARD_BYTES = 4 * 1024 * 1024;
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/);
+    const headerLine = lines[0];
+    const dataLines = lines.slice(1).filter(line => line.trim() !== '');
+
+    const shards = [];
+    let current = [headerLine];
+    let currentSize = new Blob([headerLine + '\n']).size;
+    for (const line of dataLines) {
+        const lineSize = new Blob([line + '\n']).size;
+        if (currentSize + lineSize > MAX_SHARD_BYTES && current.length > 1) {
+            shards.push(current.join('\n'));
+            current = [headerLine];
+            currentSize = new Blob([headerLine + '\n']).size;
+        }
+        current.push(line);
+        currentSize += lineSize;
+    }
+    if (current.length > 1) {
+        shards.push(current.join('\n'));
+    }
+
+    if (shards.length === 0) {
+        throw new Error('文件为空或仅含表头');
+    }
+
+    const manifest = {
+        count: shards.length,
+        files: shards.map((_, i) => `${INVENTORY_SHARD_BASE}${i + 1}${INVENTORY_SHARD_SUFFIX}`),
+        rows: dataLines.length,
+        generated_at: new Date().toISOString()
+    };
+
+    for (let i = 0; i < shards.length; i++) {
+        const fileName = manifest.files[i];
+        const onRetry = (retryNum, waitMs) => {
+            if (onProgress) onProgress({
+                phase: 'retry',
+                shardIndex: i,
+                shardTotal: shards.length,
+                retryNum,
+                waitMs,
+                message: `分片 ${i + 1}/${shards.length} 触发限流，${Math.round(waitMs / 1000)}秒后第 ${retryNum} 次重试...`
+            });
+        };
+        if (onProgress) onProgress({
+            phase: 'upload',
+            shardIndex: i,
+            shardTotal: shards.length,
+            message: `上传分片 ${i + 1}/${shards.length} (${fileName})...`
+        });
+        await uploadRBShardToGitee(fileName, shards[i], token);
+        // 分片间间隔，避免连续写触发 Gitee 限流
+        if (i < shards.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2500));
+        }
+    }
+
+    if (onProgress) onProgress({
+        phase: 'manifest',
+        shardTotal: shards.length,
+        message: '上传分片清单...'
+    });
+    await uploadRBShardToGitee(INVENTORY_SHARDS_MANIFEST, JSON.stringify(manifest), token);
+
+    return { count: shards.length, rows: dataLines.length, files: manifest.files };
 }
 
 function parseRBCSVLine(line) {
