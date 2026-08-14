@@ -45,12 +45,18 @@ shards.forEach((s, i) => {
     if (s.split('\n')[0] !== headerLine) throw new Error(`${name} 缺少表头`);
 });
 
-const first = shards[0];
-const rest = shards.slice(1).map(t => {
-    const idx = t.indexOf('\n');
-    return idx === -1 ? t : t.slice(idx + 1);
-});
-const merged = first + rest.join('');
+// 模拟 api.js 修复后的合并：分片间用换行衔接，避免边界行粘连
+const mergedLines = [];
+for (let i = 0; i < shards.length; i++) {
+    let t = shards[i].replace(/\r?\n$/, '');
+    if (i === 0) {
+        mergedLines.push(t);
+    } else {
+        const idx = t.indexOf('\n');
+        mergedLines.push(idx === -1 ? '' : t.slice(idx + 1));
+    }
+}
+const merged = mergedLines.join('\n') + '\n';
 
 const mergedRows = merged.split(/\r?\n/).filter(l => l.trim() !== '');
 console.log('原始数据行:', dataLines.length, '合并后行数:', mergedRows.length, '合并后表头:', mergedRows[0]);
