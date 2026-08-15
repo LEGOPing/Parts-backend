@@ -747,6 +747,224 @@ async function loadParts(boxId) {
     });
 }
 
+// ===== 零件转盒 =====
+let partTransferSelected = new Set();      // 已选中的零件 id
+let partTransferTargetRepo = null;         // 目标仓库对象
+let partTransferTargetBox = null;          // 目标盒子对象
+let partTransferBoxesCache = {};           // repoId -> boxes 缓存
+
+// 打开零件转盒弹窗
+async function showPartTransferModal() {
+    if (!selectedBox || !selectedRepository) {
+        alert('请先选择需要转盒的零件所在盒子');
+        return;
+    }
+
+    // 重置状态
+    partTransferSelected = new Set();
+    partTransferTargetRepo = null;
+    partTransferTargetBox = null;
+    partTransferBoxesCache = {};
+
+    const parts = await getParts(selectedBox.id);
+    if (parts.length === 0) {
+        alert('当前盒子没有零件可转盒');
+        return;
+    }
+    const repos = (await getRepositories()).filter(r => r.name !== '临时仓库' && r.id !== selectedRepository.id);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'part-transfer-overlay';
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closePartTransferModal();
+    });
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content part-transfer-modal';
+    sheet.innerHTML = `
+        <div class="part-transfer-header">
+            <span class="part-transfer-title">零件转盒</span>
+            <span class="part-transfer-count" id="pt-selected-count">已选 0 个零件</span>
+            <button class="part-transfer-close" onclick="closePartTransferModal()">×</button>
+        </div>
+        <div class="part-transfer-body">
+            <div class="pt-section">
+                <div class="pt-section-title">选择需要转盒的零件（可多选）</div>
+                <div class="pt-part-grid" id="pt-parts-grid"></div>
+            </div>
+            <div class="pt-target-section">
+                <div class="pt-row">
+                    <div class="pt-row-label">仓库</div>
+                    <div class="pt-row-scroll" id="pt-repo-row"></div>
+                </div>
+                <div class="pt-row">
+                    <div class="pt-row-label">盒子</div>
+                    <div class="pt-row-scroll" id="pt-box-row"></div>
+                </div>
+            </div>
+        </div>
+        <div class="part-transfer-footer">
+            <button class="btn-secondary" onclick="closePartTransferModal()">取消</button>
+            <button class="btn-primary pt-confirm-btn" onclick="performPartTransfer()">确认转盒</button>
+        </div>
+    `;
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    renderPartTransferParts(parts);
+    renderPartTransferRepos(repos);
+}
+
+// 渲染零件选择卡片（多选）
+async function renderPartTransferParts(parts) {
+    const grid = document.getElementById('pt-parts-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const colors = await getAllColors();
+    const colorMap = {};
+    colors.forEach(c => colorMap[c.id] = c);
+
+    for (const part of parts) {
+        const color = colorMap[part.color_id];
+        const colorName = color ? color.name : '未知颜色';
+        const card = document.createElement('div');
+        card.className = 'pt-part-card';
+        card.dataset.id = part.id;
+        card.innerHTML = `
+            <div class="pt-part-num">${part.part_num}</div>
+            <div class="pt-part-image"><div class="no-image">暂无图片</div></div>
+            <div class="pt-part-name">${part.name}</div>
+            <div class="pt-part-info">
+                <span class="pt-part-status ${part.is_new ? 'new' : 'used'}">${part.is_new ? '新' : '旧'}</span>
+                <span class="pt-part-qty">x${part.quantity}</span>
+            </div>
+            <div class="pt-part-check"></div>
+        `;
+        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+        const imgBox = card.querySelector('.pt-part-image');
+        if (imgUrl) {
+            imgBox.innerHTML = `<img src="${imgUrl}" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+        }
+        card.addEventListener('click', () => togglePartTransferSelection(part.id, card));
+        grid.appendChild(card);
+    }
+}
+
+// 零件多选切换
+function togglePartTransferSelection(partId, card) {
+    if (partTransferSelected.has(partId)) {
+        partTransferSelected.delete(partId);
+        card.classList.remove('selected');
+    } else {
+        partTransferSelected.add(partId);
+        card.classList.add('selected');
+    }
+    const countEl = document.getElementById('pt-selected-count');
+    if (countEl) countEl.textContent = `已选 ${partTransferSelected.size} 个零件`;
+}
+
+// 渲染仓库行（横向滚动，单选）
+function renderPartTransferRepos(repos) {
+    const row = document.getElementById('pt-repo-row');
+    if (!row) return;
+    row.innerHTML = '';
+    if (repos.length === 0) {
+        row.innerHTML = '<div class="pt-row-empty">没有可用的目标仓库</div>';
+        return;
+    }
+    repos.forEach(repo => {
+        const item = document.createElement('div');
+        item.className = 'pt-repo-card';
+        item.dataset.id = repo.id;
+        item.textContent = repo.name;
+        item.title = repo.name;
+        item.addEventListener('click', () => selectPartTransferRepo(repo, item));
+        row.appendChild(item);
+    });
+}
+
+// 选中仓库并加载其盒子
+async function selectPartTransferRepo(repo, card) {
+    partTransferTargetRepo = repo;
+    partTransferTargetBox = null;
+    document.querySelectorAll('#pt-repo-row .pt-repo-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+
+    let boxes = partTransferBoxesCache[repo.id];
+    if (!boxes) {
+        boxes = await getBoxes(repo.id);
+        partTransferBoxesCache[repo.id] = boxes;
+    }
+    renderPartTransferBoxes(boxes);
+}
+
+// 渲染盒子行（横向滚动，单选）
+function renderPartTransferBoxes(boxes) {
+    const row = document.getElementById('pt-box-row');
+    if (!row) return;
+    row.innerHTML = '';
+    if (!boxes || boxes.length === 0) {
+        row.innerHTML = '<div class="pt-row-empty">该仓库暂无盒子</div>';
+        return;
+    }
+    boxes.forEach(box => {
+        const item = document.createElement('div');
+        item.className = 'pt-box-card';
+        item.dataset.id = box.id;
+        item.textContent = `${box.box_number} ${box.name || ''}`;
+        item.title = box.name || box.box_number;
+        item.addEventListener('click', () => {
+            partTransferTargetBox = box;
+            document.querySelectorAll('#pt-box-row .pt-box-card').forEach(c => c.classList.remove('selected'));
+            item.classList.add('selected');
+        });
+        row.appendChild(item);
+    });
+}
+
+// 执行零件转盒
+async function performPartTransfer() {
+    if (partTransferSelected.size === 0) {
+        alert('请先选择需要转盒的零件');
+        return;
+    }
+    if (!partTransferTargetBox) {
+        alert('请选择目标盒子');
+        return;
+    }
+    const ids = Array.from(partTransferSelected);
+    const boxName = partTransferTargetBox.name || partTransferTargetBox.box_number;
+    if (!confirm(`确定将 ${ids.length} 个零件转移到 "${boxName}" 盒子吗？`)) {
+        return;
+    }
+
+    let successCount = 0;
+    for (const id of ids) {
+        const ok = await updatePart(id, { box_id: partTransferTargetBox.id });
+        if (ok) successCount++;
+    }
+
+    closePartTransferModal();
+    if (successCount > 0) {
+        await loadParts(selectedBox.id);
+        alert(`转盒成功：${successCount} 个零件已转移到目标盒子`);
+    } else {
+        alert('转盒失败，请重试');
+    }
+}
+
+// 关闭零件转盒弹窗
+function closePartTransferModal() {
+    const overlay = document.getElementById('part-transfer-overlay');
+    if (overlay) overlay.remove();
+    partTransferSelected = new Set();
+    partTransferTargetRepo = null;
+    partTransferTargetBox = null;
+    partTransferBoxesCache = {};
+}
+
 // 获取当前仓库的去重盒子列表（按 box_number 排序）
 async function getSortedBoxes() {
     if (!selectedRepository) return [];
