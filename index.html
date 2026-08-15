@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026080610">
+    <link rel="stylesheet" href="css/style.css?v=2026081601">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -43,7 +43,7 @@
     <script src="js/api.js?v=2026081401"></script>
     <script src="js/store.js?v=2026081401"></script>
     <script src="js/rb-db.js?v=2026081401"></script>
-    <script src="js/ui.js?v=2026081401"></script>
+    <script src="js/ui.js?v=2026081601"></script>
 </head>
 <body>
     <div class="container">
@@ -132,7 +132,7 @@
                         <div class="part-action-buttons">
                             <button onclick="goBackToRepositories()" class="action-btn">返回</button>
                             <button onclick="showCSVImporter()" class="action-btn">批量导入</button>
-                            <button onclick="alert('转盒功能开发中...')" class="action-btn">零件转盒</button>
+                            <button onclick="showPartTransferModal()" class="action-btn">零件转盒</button>
                             <button onclick="showAddPartSheet()" class="action-btn">添加零件</button>
                         </div>
                         <div class="part-grid-wrapper">
