@@ -771,7 +771,8 @@ async function showPartTransferModal() {
         alert('当前盒子没有零件可转盒');
         return;
     }
-    const repos = (await getRepositories()).filter(r => r.name !== '临时仓库' && r.id !== selectedRepository.id);
+    // 允许转移到同仓库的其他盒子，因此不排除当前仓库；仅排除临时仓库
+    const repos = (await getRepositories()).filter(r => r.name !== '临时仓库');
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
