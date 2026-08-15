@@ -3783,7 +3783,9 @@ function showSplitUploadConfirm(file) {
                     <div>预计分片数：${estimatedShards} 个（每个 &lt;4MB）</div>
                 </div>
                 <div style="font-size: 12px; color: #999; margin-top: 10px; line-height: 1.8;">
-                    将分割上传到 Gitee parts-rb 仓库，命名为 inventory_parts_1.csv、inventory_parts_2.csv ...，
+                    上传前将按 (part_num, color_id, img_url) 去重：仅移除完全重复的行，
+                    保留全部不同零件/颜色/图片记录，确保数据完整。去重后再分割上传到 Gitee
+                    parts-rb 仓库，命名为 inventory_parts_1.csv、inventory_parts_2.csv ...，
                     完成后自动写入分片清单，更新RB将按清单合并读取。
                 </div>
                 <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;">
@@ -3860,7 +3862,7 @@ async function doSplitUploadRB(file) {
                     <div style="font-size: 16px; margin-bottom: 10px;">✓ 上传成功</div>
                     <div style="font-size: 12px; color: #666; text-align: left; line-height: 1.8;">
                         <div>分片数量：${result.count} 个</div>
-                        <div>数据行数：${result.rows} 条</div>
+                        <div>数据行数：${result.rows} 条（去重前 ${result.source_rows} 条）</div>
                         <div style="word-break: break-all;">文件：${result.files.join(', ')}</div>
                     </div>
                     <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>

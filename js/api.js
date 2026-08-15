@@ -264,7 +264,7 @@ async function uploadRBShardToGitee(fileName, csvText, token) {
     }));
 }
 
-// 将本地 inventory_parts.csv 分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
+// 将本地 inventory_parts.csv 去重后分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
 // 分片命名 inventory_parts_1.csv、inventory_parts_2.csv ...（序号从1开始，每片都带表头）
 // 上传完成后写入清单 inventory_parts_shards.json，前端读取逻辑按清单合并
 async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
@@ -278,7 +278,38 @@ async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
     const text = await file.text();
     const lines = text.split(/\r?\n/);
     const headerLine = lines[0];
-    const dataLines = lines.slice(1).filter(line => line.trim() !== '');
+    const rawLines = lines.slice(1).filter(line => line.trim() !== '');
+
+    // 去重：仅移除完全重复的行，确保数据完整。
+    // 关键列存在时按 (part_num, color_id, img_url) 去重——同一 part+color 的不同图片
+    // （img_url 不同）全部保留（前端按 part+color 查询图片依赖多图），只剔除
+    // "同零件同颜色同图片"在不同 inventory 中重复出现的行（当前用途无需 inventory_id/quantity）。
+    // 若表头缺少关键列，退化为按整行去重，保证不会误删任何不同记录。
+    const headerFields = parseRBCSVLine(headerLine);
+    const keyIdx = {
+        part: headerFields.indexOf('part_num'),
+        color: headerFields.indexOf('color_id'),
+        img: headerFields.indexOf('img_url')
+    };
+    const hasKeyCols = keyIdx.part >= 0 && keyIdx.color >= 0;
+    const seen = new Set();
+    const dataLines = [];
+    for (const line of rawLines) {
+        let key;
+        if (hasKeyCols) {
+            const f = parseRBCSVLine(line);
+            const part = keyIdx.part < f.length ? f[keyIdx.part] : '';
+            const color = keyIdx.color < f.length ? f[keyIdx.color] : '';
+            const img = (keyIdx.img >= 0 && keyIdx.img < f.length) ? f[keyIdx.img] : '';
+            key = part + '\u0000' + color + '\u0000' + img;
+        } else {
+            key = line;
+        }
+        if (!seen.has(key)) {
+            seen.add(key);
+            dataLines.push(line);
+        }
+    }
 
     const shards = [];
     let current = [headerLine];
@@ -305,6 +336,7 @@ async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
         count: shards.length,
         files: shards.map((_, i) => `${INVENTORY_SHARD_BASE}${i + 1}${INVENTORY_SHARD_SUFFIX}`),
         rows: dataLines.length,
+        source_rows: rawLines.length,
         generated_at: new Date().toISOString()
     };
 
@@ -340,7 +372,7 @@ async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
     });
     await uploadRBShardToGitee(INVENTORY_SHARDS_MANIFEST, JSON.stringify(manifest), token);
 
-    return { count: shards.length, rows: dataLines.length, files: manifest.files };
+    return { count: shards.length, rows: dataLines.length, source_rows: rawLines.length, files: manifest.files };
 }
 
 function parseRBCSVLine(line) {
