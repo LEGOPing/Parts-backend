@@ -648,15 +648,13 @@ async function performBoxTransfer() {
                 if (btn) btn.textContent = '盒子转仓';
                 if (toolbar) toolbar.style.display = 'none';
                 
-                // 刷新仓库列表并自动打开目标仓库，展示转仓后的盒子情况
+                // 刷新仓库列表并退回仓库管理页面（隐藏盒子管理，展示仓库列表）
+                clearSelection();
+                const boxManagement = document.getElementById('box-management');
+                const noRepo = document.getElementById('no-repository-selected');
+                if (boxManagement) boxManagement.style.display = 'none';
+                if (noRepo) noRepo.style.display = 'block';
                 await loadRepositories();
-                const repos = await getRepositories();
-                const targetRepo = repos.find(r => r.id == targetRepoId);
-                if (targetRepo) {
-                    await selectRepository(targetRepo);
-                } else if (selectedRepository) {
-                    await loadBoxes(selectedRepository.id);
-                }
                 
                 alert(`转仓成功：${boxes.length} 个盒子已转入目标仓库` + (renumbered > 0 ? `，其中 ${renumbered} 个盒子因 ID 冲突已重新编号` : ''));
             } catch (error) {
