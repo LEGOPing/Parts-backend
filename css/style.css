@@ -60,7 +60,7 @@ body {
 }
 
 .title-main {
-    font-size: 46px;
+    font-size: 36px;
     font-weight: bold;
     color: var(--black-color);
     margin: 0;
@@ -68,7 +68,7 @@ body {
 }
 
 .title-sub {
-    font-size: 23px;
+    font-size: 18px;
     font-weight: normal;
     color: var(--black-color);
     margin: 0;
