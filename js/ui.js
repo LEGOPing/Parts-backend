@@ -907,7 +907,6 @@ async function showPartTransferModal() {
         <div class="part-transfer-header">
             <span class="part-transfer-title">零件转盒</span>
             <span class="part-transfer-count" id="pt-selected-count">已选 0 个零件</span>
-            <button class="part-transfer-close" onclick="closePartTransferModal()">×</button>
         </div>
         <div class="part-transfer-body">
             <div class="pt-section">
@@ -1034,8 +1033,8 @@ function renderPartTransferBoxes(boxes) {
         const item = document.createElement('div');
         item.className = 'pt-box-card';
         item.dataset.id = box.id;
-        item.textContent = `${box.box_number} ${box.name || ''}`;
-        item.title = box.name || box.box_number;
+        item.textContent = box.name || '';
+        item.title = box.name || '';
         item.addEventListener('click', () => {
             partTransferTargetBox = box;
             document.querySelectorAll('#pt-box-row .pt-box-card').forEach(c => c.classList.remove('selected'));
