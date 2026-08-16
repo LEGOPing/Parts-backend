@@ -907,7 +907,6 @@ async function showPartTransferModal() {
         <div class="part-transfer-header">
             <span class="part-transfer-title">零件转盒</span>
             <span class="part-transfer-count" id="pt-selected-count">已选 0 个零件</span>
-            <button class="part-transfer-close" onclick="closePartTransferModal()">×</button>
         </div>
         <div class="part-transfer-body">
             <div class="pt-section">
@@ -1034,8 +1033,8 @@ function renderPartTransferBoxes(boxes) {
         const item = document.createElement('div');
         item.className = 'pt-box-card';
         item.dataset.id = box.id;
-        item.textContent = `${box.box_number} ${box.name || ''}`;
-        item.title = box.name || box.box_number;
+        item.textContent = box.name || '';
+        item.title = box.name || '';
         item.addEventListener('click', () => {
             partTransferTargetBox = box;
             document.querySelectorAll('#pt-box-row .pt-box-card').forEach(c => c.classList.remove('selected'));
@@ -1061,18 +1060,63 @@ async function performPartTransfer() {
         return;
     }
 
+    // 记录目标盒子信息，用于转盒成功后的跳转
+    const targetBox = partTransferTargetBox;
+    const targetRepoId = targetBox.repository_id;
+
+    // 先关闭目标盒子选择弹窗
+    closePartTransferModal();
+
     let successCount = 0;
     for (const id of ids) {
-        const ok = await updatePart(id, { box_id: partTransferTargetBox.id });
+        const ok = await updatePart(id, { box_id: targetBox.id });
         if (ok) successCount++;
     }
 
-    closePartTransferModal();
-    if (successCount > 0) {
-        await loadParts(selectedBox.id);
-        alert(`转盒成功：${successCount} 个零件已转移到目标盒子`);
-    } else {
+    if (successCount === 0) {
         alert('转盒失败，请重试');
+        return;
+    }
+
+    // 提示成功消息，2秒后关闭提示，然后进入目标盒子
+    showToast(`转盒成功：${successCount} 个零件已转移到目标盒子`, 2000);
+    setTimeout(() => enterTargetBox(targetBox, targetRepoId), 2000);
+}
+
+// 转盒成功后进入目标盒子，显示该盒子内的零件
+async function enterTargetBox(targetBox, targetRepoId) {
+    // 切换到目标盒子所在仓库
+    const repos = await getRepositories();
+    const targetRepo = repos.find(r => r.id === targetRepoId);
+    if (targetRepo) {
+        setSelectedRepository(targetRepo);
+        const selectedRepoNameEl = document.getElementById('selected-repository-name');
+        if (selectedRepoNameEl) {
+            selectedRepoNameEl.textContent = `${targetRepo.name} - 盒子管理`;
+        }
+    }
+
+    // 选中目标盒子并更新标题
+    setSelectedBox(targetBox);
+    const boxNameEl = document.getElementById('selected-box-name');
+    if (boxNameEl) boxNameEl.textContent = targetBox.name;
+
+    // 显示仓库名称徽章
+    const repoBadgeWrapper = document.getElementById('repo-badge-wrapper');
+    const repoText = document.getElementById('repo-name-text');
+    const repoAt = document.getElementById('repo-at');
+    if (selectedRepository && repoBadgeWrapper && repoText) {
+        repoText.textContent = selectedRepository.name;
+        repoBadgeWrapper.style.display = 'inline-flex';
+        if (repoAt) repoAt.style.display = 'inline';
+    }
+
+    // 确保零件页处于激活状态并加载目标盒子零件
+    const partsTab = document.getElementById('parts-tab');
+    if (partsTab && !partsTab.classList.contains('active')) {
+        switchTab('parts', document.querySelector('.part-btn'));
+    } else {
+        await loadParts(targetBox.id);
     }
 }
 
