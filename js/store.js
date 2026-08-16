@@ -76,22 +76,3 @@ async function loadFromLocalStorage(key) {
         return null;
     }
 }
-
-async function syncData() {
-    try {
-        const repos = await getRepositories();
-        await saveToLocalStorage('repositories', repos);
-        
-        if (selectedRepository) {
-            const boxes = await getBoxes(selectedRepository.id);
-            await saveToLocalStorage(`boxes_${selectedRepository.id}`, boxes);
-            
-            if (selectedBox) {
-                const parts = await getParts(selectedBox.id);
-                await saveToLocalStorage(`parts_${selectedBox.id}`, parts);
-            }
-        }
-    } catch (error) {
-        console.error('数据同步失败:', error);
-    }
-}
