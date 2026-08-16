@@ -4490,10 +4490,10 @@ function showPasswordWheel({ rounds = 1, messages = [], onSuccess, onCancel } = 
     display.appendChild(dots);
     display.appendChild(error);
 
-    // 数字圆盘：0-9 以半径130px顺时针分布，0在正上方
+    // 数字圆盘：0-9 以半径110px顺时针分布，0在正上方
     const stage = document.createElement('div');
     stage.className = 'pw-wheel-stage';
-    const cx = 153, cy = 153, r = 130;
+    const cx = 133, cy = 133, r = 110;
     for (let i = 0; i < 10; i++) {
         const angle = (-90 + i * 36) * Math.PI / 180;
         const x = cx + r * Math.cos(angle);

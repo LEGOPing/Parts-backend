@@ -3104,18 +3104,21 @@ body {
     background: rgba(0, 0, 0, 0.5);
     z-index: 2000;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
 }
 
 .pw-wheel-panel {
-    width: 100%;
-    max-width: 480px;
+    width: 380px;
+    height: 380px;
     background: #ffffff;
-    border-radius: 16px 16px 0 0;
-    padding: 12px 12px 24px 12px;
+    border-radius: 16px;
+    padding: 8px 16px;
     box-sizing: border-box;
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .pw-wheel-topbar {
@@ -3123,15 +3126,16 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 44px;
+    width: 100%;
+    height: 34px;
 }
 
 .pw-wheel-cancel,
 .pw-wheel-backspace {
     border: none;
     border-radius: 20px;
-    padding: 8px 20px;
-    font-size: 14px;
+    padding: 6px 16px;
+    font-size: 13px;
     cursor: pointer;
     color: #fff;
     background: #f44336;
@@ -3143,34 +3147,34 @@ body {
 
 .pw-wheel-display {
     text-align: center;
-    margin: 4px 0 10px 0;
+    margin: 2px 0 4px 0;
 }
 
 .pw-wheel-hint {
-    font-size: 13px;
+    font-size: 12px;
     color: #888;
-    margin: 0 0 6px 0;
+    margin: 0 0 2px 0;
 }
 
 .pw-wheel-dots {
-    font-size: 28px;
-    letter-spacing: 10px;
+    font-size: 20px;
+    letter-spacing: 8px;
     color: #1a365d;
-    min-height: 36px;
-    line-height: 36px;
+    min-height: 24px;
+    line-height: 24px;
 }
 
 .pw-wheel-error {
     color: #f44336;
-    font-size: 12px;
-    min-height: 16px;
-    margin: 2px 0 0 0;
+    font-size: 11px;
+    min-height: 14px;
+    margin: 0;
 }
 
 .pw-wheel-stage {
     position: relative;
-    width: 306px;
-    height: 306px;
+    width: 266px;
+    height: 266px;
     margin: 0 auto;
 }
 
