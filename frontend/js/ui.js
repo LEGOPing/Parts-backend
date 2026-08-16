@@ -18,6 +18,22 @@ function calculateP() {
 }
 
 async function switchTab(tabName, btn) {
+    // 进入系统设置需要密码
+    if (tabName === 'settings' && !pwWheelState.settingsUnlocked) {
+        showPasswordWheel({
+            rounds: 1,
+            messages: ['请输入密码进入系统设置'],
+            onSuccess: () => {
+                pwWheelState.settingsUnlocked = true;
+                switchTab('settings', btn);
+            }
+        });
+        return;
+    }
+    if (tabName !== 'settings') {
+        pwWheelState.settingsUnlocked = false;
+    }
+
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
@@ -304,63 +320,53 @@ async function addRepository() {
 }
 
 async function deleteRepositoryConfirm(id) {
-    const PASSWORD = '22332468';
-    
-    // 第一次密码验证
-    const pwd1 = prompt('请输入删除密码：');
-    if (pwd1 !== PASSWORD) {
-        alert('密码错误，操作已取消');
-        return;
-    }
-    
-    // 第二次密码验证
-    const pwd2 = prompt('请再次输入密码确认：');
-    if (pwd2 !== PASSWORD) {
-        alert('密码错误，操作已取消');
-        return;
-    }
-    
-    // 查找要删除的仓库
-    const repos = await getRepositories();
-    const repoToDelete = repos.find(r => r.id === parseInt(id));
-    if (!repoToDelete) {
-        alert('仓库不存在');
-        return;
-    }
-    
-    // 查找或创建临时仓库
-    let tempRepo = repos.find(r => r.name === '临时仓库');
-    if (!tempRepo) {
-        tempRepo = await createRepository('临时仓库');
-        if (!tempRepo) {
-            alert('创建临时仓库失败');
-            return;
+    showPasswordWheel({
+        rounds: 3,
+        messages: ['请输入删除密码（第 1/3 次）', '请再次输入密码（第 2/3 次）', '请再次输入密码（第 3/3 次）'],
+        onSuccess: async () => {
+            // 查找要删除的仓库
+            const repos = await getRepositories();
+            const repoToDelete = repos.find(r => r.id === parseInt(id));
+            if (!repoToDelete) {
+                alert('仓库不存在');
+                return;
+            }
+
+            // 查找或创建临时仓库
+            let tempRepo = repos.find(r => r.name === '临时仓库');
+            if (!tempRepo) {
+                tempRepo = await createRepository('临时仓库');
+                if (!tempRepo) {
+                    alert('创建临时仓库失败');
+                    return;
+                }
+            }
+
+            // 显示删除确认提示
+            if (!confirm(`删除后，原仓库「${repoToDelete.name}」的盒子将转入「临时仓库」，确认删除吗？`)) {
+                return;
+            }
+
+            // 将盒子转移到临时仓库
+            const boxes = await getBoxes(parseInt(id));
+            for (const box of boxes) {
+                await updateBox(box.id, { repository_id: tempRepo.id });
+            }
+
+            // 删除仓库
+            const success = await deleteRepository(id);
+            if (success) {
+                if (selectedRepository && selectedRepository.id === parseInt(id)) {
+                    setSelectedRepository(tempRepo);
+                    await loadBoxes(tempRepo.id);
+                    document.getElementById('box-management').style.display = 'block';
+                    document.getElementById('no-repository-selected').style.display = 'none';
+                    document.getElementById('selected-repository-name').textContent = `${tempRepo.name} - 盒子管理`;
+                }
+                await loadRepositories();
+            }
         }
-    }
-    
-    // 显示删除确认提示
-    if (!confirm(`删除后，原仓库「${repoToDelete.name}」的盒子将转入「临时仓库」，确认删除吗？`)) {
-        return;
-    }
-    
-    // 将盒子转移到临时仓库
-    const boxes = await getBoxes(parseInt(id));
-    for (const box of boxes) {
-        await updateBox(box.id, { repository_id: tempRepo.id });
-    }
-    
-    // 删除仓库
-    const success = await deleteRepository(id);
-    if (success) {
-        if (selectedRepository && selectedRepository.id === parseInt(id)) {
-            setSelectedRepository(tempRepo);
-            await loadBoxes(tempRepo.id);
-            document.getElementById('box-management').style.display = 'block';
-            document.getElementById('no-repository-selected').style.display = 'none';
-            document.getElementById('selected-repository-name').textContent = `${tempRepo.name} - 盒子管理`;
-        }
-        await loadRepositories();
-    }
+    });
 }
 
 async function loadBoxes(repoId) {
@@ -561,63 +567,69 @@ async function performBoxTransfer() {
     const targetRepoId = parseInt(radio.value);
     const boxes = getSelectedTransferBoxes();
     
-    if (!confirm(`确定将 ${boxes.length} 个盒子转入所选仓库吗？`)) {
-        return;
-    }
-    
-    try {
-        // 获取目标仓库已有盒子，收集已占用的 box_number
-        // 注意：Supabase int8(bigint) 列会以字符串返回，统一转字符串 key，避免 Set 严格相等检测失效导致重复 ID
-        const numKey = (n) => (n === null || n === undefined || n === '') ? null : String(n);
-        const targetBoxes = await getBoxes(targetRepoId);
-        const usedNumbers = new Set(targetBoxes.map(b => numKey(b.box_number)).filter(k => k !== null));
-        
-        // 按当前 ID 排序，尽量保留原 ID
-        const sortedBoxes = [...boxes].sort((a, b) => (parseInt(a.box_number, 10) || 0) - (parseInt(b.box_number, 10) || 0));
-        let maxNumber = targetBoxes.reduce((max, b) => {
-            const n = parseInt(b.box_number, 10);
-            return isNaN(n) ? max : Math.max(max, n);
-        }, 0);
-        
-        let renumbered = 0;
-        for (const box of sortedBoxes) {
-            let newNumber = box.box_number;
-            // 原 ID 被占用或无效时，分配目标仓库下一个可用 ID
-            if (!numKey(newNumber) || usedNumbers.has(numKey(newNumber))) {
-                maxNumber += 1;
-                newNumber = maxNumber;
-                renumbered++;
+    showPasswordWheel({
+        rounds: 2,
+        messages: ['请输入转仓密码（第 1/2 次）', '请再次输入密码确认（第 2/2 次）'],
+        onSuccess: async () => {
+            if (!confirm(`确定将 ${boxes.length} 个盒子转入所选仓库吗？`)) {
+                return;
             }
-            usedNumbers.add(numKey(newNumber));
-            const success = await updateBox(box.id, { repository_id: targetRepoId, box_number: newNumber });
-            if (!success) {
-                throw new Error(`盒子 ${box.name || box.box_number} 更新失败`);
+
+            try {
+                // 获取目标仓库已有盒子，收集已占用的 box_number
+                // 注意：Supabase int8(bigint) 列会以字符串返回，统一转字符串 key，避免 Set 严格相等检测失效导致重复 ID
+                const numKey = (n) => (n === null || n === undefined || n === '') ? null : String(n);
+                const targetBoxes = await getBoxes(targetRepoId);
+                const usedNumbers = new Set(targetBoxes.map(b => numKey(b.box_number)).filter(k => k !== null));
+                
+                // 按当前 ID 排序，尽量保留原 ID
+                const sortedBoxes = [...boxes].sort((a, b) => (parseInt(a.box_number, 10) || 0) - (parseInt(b.box_number, 10) || 0));
+                let maxNumber = targetBoxes.reduce((max, b) => {
+                    const n = parseInt(b.box_number, 10);
+                    return isNaN(n) ? max : Math.max(max, n);
+                }, 0);
+                
+                let renumbered = 0;
+                for (const box of sortedBoxes) {
+                    let newNumber = box.box_number;
+                    // 原 ID 被占用或无效时，分配目标仓库下一个可用 ID
+                    if (!numKey(newNumber) || usedNumbers.has(numKey(newNumber))) {
+                        maxNumber += 1;
+                        newNumber = maxNumber;
+                        renumbered++;
+                    }
+                    usedNumbers.add(numKey(newNumber));
+                    const success = await updateBox(box.id, { repository_id: targetRepoId, box_number: newNumber });
+                    if (!success) {
+                        throw new Error(`盒子 ${box.name || box.box_number} 更新失败`);
+                    }
+                }
+                
+                // 退出转仓模式并重置 UI
+                setBoxTransferMode(false);
+                setSelectedTransferBoxes([]);
+                const btn = document.getElementById('transfer-box-btn');
+                const toolbar = document.getElementById('transfer-toolbar');
+                if (btn) btn.textContent = '盒子转仓';
+                if (toolbar) toolbar.style.display = 'none';
+                
+                // 刷新仓库列表并自动打开目标仓库，展示转仓后的盒子情况
+                await loadRepositories();
+                const repos = await getRepositories();
+                const targetRepo = repos.find(r => r.id == targetRepoId);
+                if (targetRepo) {
+                    await selectRepository(targetRepo);
+                } else if (selectedRepository) {
+                    await loadBoxes(selectedRepository.id);
+                }
+                
+                alert(`转仓成功：${boxes.length} 个盒子已转入目标仓库` + (renumbered > 0 ? `，其中 ${renumbered} 个盒子因 ID 冲突已重新编号` : ''));
+            } catch (error) {
+                console.error('转仓失败:', error);
+                alert('转仓失败：' + error.message);
             }
         }
-        
-        // 退出转仓模式并重置 UI
-        setBoxTransferMode(false);
-        setSelectedTransferBoxes([]);
-        const btn = document.getElementById('transfer-box-btn');
-        const toolbar = document.getElementById('transfer-toolbar');
-        if (btn) btn.textContent = '盒子转仓';
-        if (toolbar) toolbar.style.display = 'none';
-        
-        // 刷新仓库列表并自动打开目标仓库，展示转仓后的盒子情况
-        await loadRepositories();
-        const repos = await getRepositories();
-        const targetRepo = repos.find(r => r.id == targetRepoId);
-        if (targetRepo) {
-            await selectRepository(targetRepo);
-        } else if (selectedRepository) {
-            await loadBoxes(selectedRepository.id);
-        }
-        
-        alert(`转仓成功：${boxes.length} 个盒子已转入目标仓库` + (renumbered > 0 ? `，其中 ${renumbered} 个盒子因 ID 冲突已重新编号` : ''));
-    } catch (error) {
-        console.error('转仓失败:', error);
-        alert('转仓失败：' + error.message);
-    }
+    });
 }
 
 function startEditBox(card, box) {
@@ -685,13 +697,19 @@ async function deleteBoxConfirm(id) {
         return;
     }
     
-    if (confirm('确定要删除这个盒子吗？')) {
-        const success = await deleteBox(id);
-        if (success && selectedRepository) {
-            await loadBoxes(selectedRepository.id);
-            await loadRepositories();
+    showPasswordWheel({
+        rounds: 2,
+        messages: ['请输入密码以删除盒子（第 1/2 次）', '请再次输入密码确认（第 2/2 次）'],
+        onSuccess: async () => {
+            if (confirm('确定要删除这个盒子吗？')) {
+                const success = await deleteBox(id);
+                if (success && selectedRepository) {
+                    await loadBoxes(selectedRepository.id);
+                    await loadRepositories();
+                }
+            }
         }
-    }
+    });
 }
 
 async function loadParts(boxId) {
@@ -2943,80 +2961,28 @@ async function refreshPartDetailWithCustomImage(partNum, colorId) {
 }
 
 async function deletePartConfirm(partId) {
-    // 关闭可能存在的旧密码弹窗
-    const oldPw = document.querySelector('.pd-password-overlay');
-    if (oldPw) oldPw.remove();
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active pd-password-overlay';
-
-    const sheet = document.createElement('div');
-    sheet.className = 'modal-content pd-password-modal';
-
-    sheet.innerHTML = `
-        <div class="pd-row pd-title">删除确认</div>
-        <div class="pd-password-body">
-            <p class="pd-password-hint">请输入密码以确认删除零件</p>
-            <input type="password" id="pd-delete-password" class="pd-password-input" placeholder="请输入密码" autocomplete="off" />
-            <div class="pd-password-error" id="pd-password-error"></div>
-        </div>
-        <div class="pd-row pd-actions">
-            <button class="pd-btn pd-btn-close" onclick="this.closest('.modal-overlay').remove()">取消</button>
-            <div class="pd-btn-group">
-                <button class="pd-btn pd-btn-delete" onclick="executeDeletePart('${partId}')">确认删除</button>
-            </div>
-        </div>
-    `;
-
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-
-    const input = document.getElementById('pd-delete-password');
-    if (input) {
-        input.focus();
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                executeDeletePart(partId);
-            }
-        });
-    }
-}
-
-async function executeDeletePart(partId) {
-    const input = document.getElementById('pd-delete-password');
-    const errorEl = document.getElementById('pd-password-error');
-    if (!input) return;
-
-    const password = input.value;
-    if (password !== '22332468') {
-        if (errorEl) errorEl.textContent = '密码错误，请重新输入';
-        input.value = '';
-        input.focus();
-        return;
-    }
-
-    // 确保 partId 为数字
     const numericPartId = parseInt(partId);
-
-    const success = await deletePart(numericPartId);
-    if (success) {
-        // 关闭密码弹窗
-        const pwOverlay = document.querySelector('.pd-password-overlay');
-        if (pwOverlay) pwOverlay.remove();
-        // 关闭详情弹窗
-        const overlay = document.querySelector('.modal-overlay.active');
-        if (overlay) overlay.remove();
-        // 刷新零件列表
-        if (selectedBox) {
-            await loadParts(selectedBox.id);
+    showPasswordWheel({
+        rounds: 1,
+        messages: ['请输入密码以确认删除零件'],
+        onSuccess: async () => {
+            const success = await deletePart(numericPartId);
+            if (success) {
+                // 关闭详情弹窗
+                const overlay = document.querySelector('.modal-overlay.active');
+                if (overlay) overlay.remove();
+                // 刷新零件列表
+                if (selectedBox) {
+                    await loadParts(selectedBox.id);
+                }
+                // 从搜索结果中移除该零件卡片
+                const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+                if (card) card.remove();
+            } else {
+                alert('删除零件失败');
+            }
         }
-        // 从搜索结果中移除该零件卡片
-        const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
-        if (card) card.remove();
-    } else {
-        if (errorEl) errorEl.textContent = '删除零件失败';
-    }
+    });
 }
 
 // 显示合并零件选择器：在当前盒子中查找相同零件（型号、颜色、状态一致），选择目标合并
@@ -3775,66 +3741,72 @@ function showRBStatusHint(status) {
 }
 
 async function initializeDatabase() {
-    if (!confirm('确定要初始化数据库吗？这将删除所有现有数据！')) {
-        return;
-    }
-    
-    try {
-        // 先删除所有零件
-        const allParts = await supabaseRequest('parts', { select: 'id' });
-        if (allParts && allParts.length > 0) {
-            for (const part of allParts) {
-                try { await deletePart(part.id); } catch (e) {}
+    showPasswordWheel({
+        rounds: 3,
+        messages: ['请输入初始化密码（第 1/3 次）', '请再次输入密码确认（第 2/3 次）', '请再次输入密码确认（第 3/3 次）'],
+        onSuccess: async () => {
+            if (!confirm('确定要初始化数据库吗？这将删除所有现有数据！')) {
+                return;
+            }
+            
+            try {
+                // 先删除所有零件
+                const allParts = await supabaseRequest('parts', { select: 'id' });
+                if (allParts && allParts.length > 0) {
+                    for (const part of allParts) {
+                        try { await deletePart(part.id); } catch (e) {}
+                    }
+                }
+                
+                // 再删除所有盒子
+                const allBoxes = await supabaseRequest('boxes', { select: 'id' });
+                if (allBoxes && allBoxes.length > 0) {
+                    for (const box of allBoxes) {
+                        try { await deleteBox(box.id); } catch (e) {}
+                    }
+                }
+                
+                // 最后删除所有仓库
+                let repos = await getRepositories();
+                for (const repo of repos) {
+                    try { await deleteRepository(repo.id); } catch (e) {}
+                }
+                
+                // 重置所有自增序列（通过 Supabase RPC，无需 CloudBase 后端）
+                try {
+                    await resetSequencesViaSupabase();
+                    console.log('序列已重置');
+                } catch (e) {
+                    console.warn('重置序列失败（ID可能不从0开始）:', e.message);
+                }
+                
+                // 验证是否清空
+                repos = await getRepositories();
+                if (repos.length > 0) {
+                    console.warn('警告：仍有仓库未被删除:', repos.map(r => r.name));
+                }
+                
+                // 创建唯一的临时仓库（指定ID为0）
+                try {
+                    await supabaseRequest('repositories', {
+                        method: 'POST',
+                        body: { id: 0, name: '临时仓库' }
+                    });
+                    console.log('已创建临时仓库，ID: 0');
+                } catch (e) {
+                    // 如果指定ID失败，回退到普通创建
+                    console.warn('指定ID创建失败，回退到普通创建:', e.message);
+                    await createRepository('临时仓库');
+                }
+                
+                alert('数据库初始化成功！已创建默认仓库"临时仓库"');
+                loadRepositories();
+            } catch (error) {
+                console.error('初始化数据库失败:', error);
+                alert('初始化数据库失败: ' + error.message);
             }
         }
-        
-        // 再删除所有盒子
-        const allBoxes = await supabaseRequest('boxes', { select: 'id' });
-        if (allBoxes && allBoxes.length > 0) {
-            for (const box of allBoxes) {
-                try { await deleteBox(box.id); } catch (e) {}
-            }
-        }
-        
-        // 最后删除所有仓库
-        let repos = await getRepositories();
-        for (const repo of repos) {
-            try { await deleteRepository(repo.id); } catch (e) {}
-        }
-        
-        // 重置所有自增序列（通过 Supabase RPC，无需 CloudBase 后端）
-        try {
-            await resetSequencesViaSupabase();
-            console.log('序列已重置');
-        } catch (e) {
-            console.warn('重置序列失败（ID可能不从0开始）:', e.message);
-        }
-        
-        // 验证是否清空
-        repos = await getRepositories();
-        if (repos.length > 0) {
-            console.warn('警告：仍有仓库未被删除:', repos.map(r => r.name));
-        }
-        
-        // 创建唯一的临时仓库（指定ID为0）
-        try {
-            await supabaseRequest('repositories', {
-                method: 'POST',
-                body: { id: 0, name: '临时仓库' }
-            });
-            console.log('已创建临时仓库，ID: 0');
-        } catch (e) {
-            // 如果指定ID失败，回退到普通创建
-            console.warn('指定ID创建失败，回退到普通创建:', e.message);
-            await createRepository('临时仓库');
-        }
-        
-        alert('数据库初始化成功！已创建默认仓库"临时仓库"');
-        loadRepositories();
-    } catch (error) {
-        console.error('初始化数据库失败:', error);
-        alert('初始化数据库失败: ' + error.message);
-    }
+    });
 }
 
 async function backupData() {
@@ -4345,3 +4317,196 @@ async function loadStats() {
 // 将函数暴露到全局
 window.updateRB = updateRB;
 window.exportRB = exportRB;
+
+// ===== 密码轮 =====
+const PW_PASSWORD = '22332468';
+
+const pwWheelState = {
+    overlay: null,
+    rounds: 1,
+    round: 1,
+    currentInput: '',
+    onSuccess: null,
+    onCancel: null,
+    roundMessages: [],
+    settingsUnlocked: false
+};
+
+// 在屏幕底部显示密码轮
+function showPasswordWheel({ rounds = 1, messages = [], onSuccess, onCancel } = {}) {
+    // 关闭可能存在的旧密码轮
+    hidePasswordWheel();
+
+    pwWheelState.rounds = Math.max(1, rounds);
+    pwWheelState.round = 1;
+    pwWheelState.currentInput = '';
+    pwWheelState.onSuccess = onSuccess || null;
+    pwWheelState.onCancel = onCancel || null;
+    pwWheelState.roundMessages = messages || [];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'pw-wheel-overlay';
+
+    const panel = document.createElement('div');
+    panel.className = 'pw-wheel-panel';
+
+    // 顶部：左取消 + 右回退
+    const topbar = document.createElement('div');
+    topbar.className = 'pw-wheel-topbar';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'pw-wheel-cancel';
+    cancelBtn.textContent = '取消';
+    cancelBtn.addEventListener('click', cancelPwWheel);
+    const backspaceBtn = document.createElement('button');
+    backspaceBtn.className = 'pw-wheel-backspace';
+    backspaceBtn.textContent = '回退';
+    backspaceBtn.addEventListener('click', backspacePwDigit);
+    topbar.appendChild(cancelBtn);
+    topbar.appendChild(backspaceBtn);
+
+    // 显示区：提示 + 圆点 + 错误
+    const display = document.createElement('div');
+    display.className = 'pw-wheel-display';
+    const hint = document.createElement('p');
+    hint.className = 'pw-wheel-hint';
+    hint.id = 'pw-wheel-hint';
+    const dots = document.createElement('div');
+    dots.className = 'pw-wheel-dots';
+    dots.id = 'pw-wheel-dots';
+    const error = document.createElement('p');
+    error.className = 'pw-wheel-error';
+    error.id = 'pw-wheel-error';
+    display.appendChild(hint);
+    display.appendChild(dots);
+    display.appendChild(error);
+
+    // 数字圆盘：0-9 以半径130px顺时针分布，0在正上方
+    const stage = document.createElement('div');
+    stage.className = 'pw-wheel-stage';
+    const cx = 153, cy = 153, r = 130;
+    for (let i = 0; i < 10; i++) {
+        const angle = (-90 + i * 36) * Math.PI / 180;
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pw-wheel-number-btn';
+        btn.textContent = i;
+        btn.style.left = x + 'px';
+        btn.style.top = y + 'px';
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            appendPwDigit(i);
+        });
+        stage.appendChild(btn);
+    }
+
+    // 圆心：确认按钮
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'pw-wheel-confirm-btn';
+    confirmBtn.textContent = '确认';
+    confirmBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        confirmPwRound();
+    });
+    stage.appendChild(confirmBtn);
+
+    panel.appendChild(topbar);
+    panel.appendChild(display);
+    panel.appendChild(stage);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    pwWheelState.overlay = overlay;
+
+    // 监听物理键盘（数字/回退/确认/取消）
+    document.addEventListener('keydown', pwWheelKeyHandler);
+
+    updatePwWheelDisplay();
+}
+
+function pwWheelKeyHandler(e) {
+    if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        appendPwDigit(parseInt(e.key, 10));
+    } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        backspacePwDigit();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmPwRound();
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelPwWheel();
+    }
+}
+
+function appendPwDigit(d) {
+    if (pwWheelState.currentInput.length >= PW_PASSWORD.length) {
+        return;
+    }
+    pwWheelState.currentInput += String(d);
+    updatePwWheelDisplay();
+}
+
+function backspacePwDigit() {
+    pwWheelState.currentInput = pwWheelState.currentInput.slice(0, -1);
+    updatePwWheelDisplay();
+}
+
+function updatePwWheelDisplay() {
+    if (!pwWheelState.overlay) return;
+    const dots = document.getElementById('pw-wheel-dots');
+    const hint = document.getElementById('pw-wheel-hint');
+    const error = document.getElementById('pw-wheel-error');
+    if (dots) dots.textContent = '●'.repeat(pwWheelState.currentInput.length);
+    if (error) error.textContent = '';
+    if (hint) {
+        const msg = pwWheelState.roundMessages[pwWheelState.round - 1];
+        if (msg) {
+            hint.textContent = msg;
+        } else if (pwWheelState.rounds > 1) {
+            hint.textContent = `请输入密码（第 ${pwWheelState.round}/${pwWheelState.rounds} 次）`;
+        } else {
+            hint.textContent = '请输入密码';
+        }
+    }
+}
+
+function confirmPwRound() {
+    if (pwWheelState.currentInput !== PW_PASSWORD) {
+        const error = document.getElementById('pw-wheel-error');
+        if (error) error.textContent = '密码错误，请重新输入';
+        pwWheelState.currentInput = '';
+        updatePwWheelDisplay();
+        return;
+    }
+    if (pwWheelState.round >= pwWheelState.rounds) {
+        const onSuccess = pwWheelState.onSuccess;
+        hidePasswordWheel();
+        if (onSuccess) onSuccess();
+    } else {
+        pwWheelState.round++;
+        pwWheelState.currentInput = '';
+        updatePwWheelDisplay();
+    }
+}
+
+function cancelPwWheel() {
+    const onCancel = pwWheelState.onCancel;
+    hidePasswordWheel();
+    if (onCancel) onCancel();
+}
+
+function hidePasswordWheel() {
+    document.removeEventListener('keydown', pwWheelKeyHandler);
+    if (pwWheelState.overlay) {
+        pwWheelState.overlay.remove();
+        pwWheelState.overlay = null;
+    }
+}
+
+// 将密码轮相关函数暴露到全局
+window.showPasswordWheel = showPasswordWheel;
+window.cancelPwWheel = cancelPwWheel;

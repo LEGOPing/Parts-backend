@@ -3093,3 +3093,129 @@ body {
     font-weight: 600;
     cursor: pointer;
 }
+
+/* ===== 密码轮 ===== */
+.pw-wheel-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.pw-wheel-panel {
+    width: 100%;
+    max-width: 480px;
+    background: #ffffff;
+    border-radius: 16px 16px 0 0;
+    padding: 12px 12px 24px 12px;
+    box-sizing: border-box;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.pw-wheel-topbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 44px;
+}
+
+.pw-wheel-cancel,
+.pw-wheel-backspace {
+    border: none;
+    border-radius: 20px;
+    padding: 8px 20px;
+    font-size: 14px;
+    cursor: pointer;
+    color: #fff;
+    background: #f44336;
+}
+
+.pw-wheel-backspace {
+    background: #9E9E9E;
+}
+
+.pw-wheel-display {
+    text-align: center;
+    margin: 4px 0 10px 0;
+}
+
+.pw-wheel-hint {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 6px 0;
+}
+
+.pw-wheel-dots {
+    font-size: 28px;
+    letter-spacing: 10px;
+    color: #1a365d;
+    min-height: 36px;
+    line-height: 36px;
+}
+
+.pw-wheel-error {
+    color: #f44336;
+    font-size: 12px;
+    min-height: 16px;
+    margin: 2px 0 0 0;
+}
+
+.pw-wheel-stage {
+    position: relative;
+    width: 306px;
+    height: 306px;
+    margin: 0 auto;
+}
+
+.pw-wheel-number-btn {
+    position: absolute;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #1a365d;
+    color: #fff;
+    border: none;
+    font-size: 20px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translate(-50%, -50%);
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.pw-wheel-number-btn:active {
+    background: #2c5282;
+    transform: translate(-50%, -50%) scale(0.92);
+}
+
+.pw-wheel-confirm-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    background: #2c5282;
+    color: #fff;
+    border: none;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.pw-wheel-confirm-btn:active {
+    transform: translate(-50%, -50%) scale(0.94);
+}
