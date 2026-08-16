@@ -601,15 +601,17 @@ async function performBoxTransfer() {
     }
     const targetRepoId = parseInt(radio.value);
     const boxes = getSelectedTransferBoxes();
-    
+
+    // 第一步：确认转移
+    if (!confirm(`确定将 ${boxes.length} 个盒子转入所选仓库吗？`)) {
+        return;
+    }
+
+    // 第二步：密码验证
     showPasswordWheel({
         rounds: 2,
         messages: ['请输入转仓密码（第 1/2 次）', '请再次输入密码确认（第 2/2 次）'],
         onSuccess: async () => {
-            if (!confirm(`确定将 ${boxes.length} 个盒子转入所选仓库吗？`)) {
-                return;
-            }
-
             try {
                 // 获取目标仓库已有盒子，收集已占用的 box_number
                 // 注意：Supabase int8(bigint) 列会以字符串返回，统一转字符串 key，避免 Set 严格相等检测失效导致重复 ID
@@ -648,15 +650,26 @@ async function performBoxTransfer() {
                 if (btn) btn.textContent = '盒子转仓';
                 if (toolbar) toolbar.style.display = 'none';
                 
-                // 刷新仓库列表并退回仓库管理页面（隐藏盒子管理，展示仓库列表）
-                clearSelection();
-                const boxManagement = document.getElementById('box-management');
-                const noRepo = document.getElementById('no-repository-selected');
-                if (boxManagement) boxManagement.style.display = 'none';
-                if (noRepo) noRepo.style.display = 'block';
-                await loadRepositories();
+                // 获取目标仓库名称用于成功提示
+                let targetRepoName = '目标仓库';
+                try {
+                    const repos = await getRepositories();
+                    const targetRepo = repos.find(r => r.id == targetRepoId);
+                    if (targetRepo) targetRepoName = targetRepo.name;
+                } catch (e) {}
                 
-                alert(`转仓成功：${boxes.length} 个盒子已转入目标仓库` + (renumbered > 0 ? `，其中 ${renumbered} 个盒子因 ID 冲突已重新编号` : ''));
+                // 提示成功信息，2 秒后自动进入目标仓库管理页面
+                const msg = `${boxes.length} 个盒子已经转入 ${targetRepoName} 仓库` + (renumbered > 0 ? `（其中 ${renumbered} 个盒子因 ID 冲突已重新编号）` : '');
+                showToast(msg, 2000);
+                
+                setTimeout(async () => {
+                    await loadRepositories();
+                    const repos = await getRepositories();
+                    const targetRepo = repos.find(r => r.id == targetRepoId);
+                    if (targetRepo) {
+                        await selectRepository(targetRepo);
+                    }
+                }, 2000);
             } catch (error) {
                 console.error('转仓失败:', error);
                 alert('转仓失败：' + error.message);
@@ -1186,7 +1199,7 @@ function initPartsSwipeGesture() {
 }
 
 // 轻量提示
-function showToast(msg) {
+function showToast(msg, duration = 1500) {
     let toast = document.getElementById('swipe-toast');
     if (!toast) {
         toast = document.createElement('div');
@@ -1199,7 +1212,7 @@ function showToast(msg) {
     clearTimeout(toast._timer);
     toast._timer = setTimeout(() => {
         toast.classList.remove('show');
-    }, 1500);
+    }, duration);
 }
 
 function setupLongPress(element, callback) {
