@@ -332,36 +332,71 @@ async function deleteRepositoryConfirm(id) {
                 return;
             }
 
-            // 查找或创建临时仓库
-            let tempRepo = repos.find(r => r.name === '临时仓库');
-            if (!tempRepo) {
-                tempRepo = await createRepository('临时仓库');
+            // 被删仓库中的盒子
+            const boxes = await getBoxes(parseInt(id));
+
+            // 有盒子时：全部转移到临时仓库并重排盒子ID；无盒子时可直接删除
+            let tempRepo = null;
+            if (boxes.length > 0) {
+                // 查找或创建临时仓库
+                tempRepo = repos.find(r => r.name === '临时仓库');
                 if (!tempRepo) {
-                    alert('创建临时仓库失败');
-                    return;
+                    tempRepo = await createRepository('临时仓库');
+                    if (!tempRepo) {
+                        alert('创建临时仓库失败');
+                        return;
+                    }
                 }
             }
 
             // 显示删除确认提示
-            if (!confirm(`删除后，原仓库「${repoToDelete.name}」的盒子将转入「临时仓库」，确认删除吗？`)) {
+            const confirmMsg = boxes.length > 0
+                ? `删除后，原仓库「${repoToDelete.name}」的 ${boxes.length} 个盒子将转入「临时仓库」并重新编号，确认删除吗？`
+                : `确定要删除空仓库「${repoToDelete.name}」吗？`;
+            if (!confirm(confirmMsg)) {
                 return;
             }
 
-            // 将盒子转移到临时仓库
-            const boxes = await getBoxes(parseInt(id));
-            for (const box of boxes) {
-                await updateBox(box.id, { repository_id: tempRepo.id });
+            // 有盒子时：将盒子转移到临时仓库，并重排盒子ID（与原 ID 冲突的重新编号）
+            if (boxes.length > 0 && tempRepo) {
+                // 注意：Supabase int8(bigint) 会以字符串返回，统一转字符串 key，避免重复判断失效
+                const numKey = (n) => (n === null || n === undefined || n === '') ? null : String(n);
+                const targetBoxes = await getBoxes(tempRepo.id);
+                const usedNumbers = new Set(targetBoxes.map(b => numKey(b.box_number)).filter(k => k !== null));
+
+                // 按当前 ID 排序，尽量保留原 ID，冲突时分配下一个可用 ID
+                const sortedBoxes = [...boxes].sort((a, b) => (parseInt(a.box_number, 10) || 0) - (parseInt(b.box_number, 10) || 0));
+                let maxNumber = targetBoxes.reduce((max, b) => {
+                    const n = parseInt(b.box_number, 10);
+                    return isNaN(n) ? max : Math.max(max, n);
+                }, 0);
+
+                for (const box of sortedBoxes) {
+                    let newNumber = box.box_number;
+                    if (!numKey(newNumber) || usedNumbers.has(numKey(newNumber))) {
+                        maxNumber += 1;
+                        newNumber = maxNumber;
+                    }
+                    usedNumbers.add(numKey(newNumber));
+                    await updateBox(box.id, { repository_id: tempRepo.id, box_number: newNumber });
+                }
             }
 
             // 删除仓库
             const success = await deleteRepository(id);
             if (success) {
                 if (selectedRepository && selectedRepository.id === parseInt(id)) {
-                    setSelectedRepository(tempRepo);
-                    await loadBoxes(tempRepo.id);
-                    document.getElementById('box-management').style.display = 'block';
-                    document.getElementById('no-repository-selected').style.display = 'none';
-                    document.getElementById('selected-repository-name').textContent = `${tempRepo.name} - 盒子管理`;
+                    // 当前选中的是被删仓库：切到临时仓库（无盒子转移时切到剩余第一个仓库）
+                    const reposAfter = await getRepositories();
+                    const nextRepo = tempRepo ? reposAfter.find(r => r.id === tempRepo.id) : null;
+                    const target = nextRepo || reposAfter[0];
+                    if (target) {
+                        setSelectedRepository(target);
+                        await loadBoxes(target.id);
+                        document.getElementById('box-management').style.display = 'block';
+                        document.getElementById('no-repository-selected').style.display = 'none';
+                        document.getElementById('selected-repository-name').textContent = `${target.name} - 盒子管理`;
+                    }
                 }
                 await loadRepositories();
             }
@@ -696,17 +731,66 @@ async function deleteBoxConfirm(id) {
         alert('临时盒子不可删除');
         return;
     }
-    
+
     showPasswordWheel({
         rounds: 2,
         messages: ['请输入密码以删除盒子（第 1/2 次）', '请再次输入密码确认（第 2/2 次）'],
         onSuccess: async () => {
-            if (confirm('确定要删除这个盒子吗？')) {
-                const success = await deleteBox(id);
-                if (success && selectedRepository) {
-                    await loadBoxes(selectedRepository.id);
-                    await loadRepositories();
+            // 被删盒子中的零件
+            const parts = await getParts(parseInt(id));
+
+            // 有零件时需先确认转入临时盒子
+            const confirmMsg = parts.length > 0
+                ? `删除后，盒子「${boxToDelete ? boxToDelete.name : ''}」内的 ${parts.length} 个零件将转入「临时仓库」的「临时盒子」，确定要删除吗？`
+                : '确定要删除这个盒子吗？';
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+
+            // 有零件时：全部转移到临时仓库的临时盒子，再删除盒子
+            if (parts.length > 0) {
+                try {
+                    // 查找或创建临时仓库
+                    let tempRepo = (await getRepositories()).find(r => r.name === '临时仓库');
+                    if (!tempRepo) {
+                        tempRepo = await createRepository('临时仓库');
+                    }
+                    if (!tempRepo) {
+                        alert('创建临时仓库失败，盒子未删除');
+                        return;
+                    }
+
+                    // 查找或创建临时盒子
+                    let tempBoxes = await getBoxes(tempRepo.id);
+                    let tempBox = tempBoxes.find(b => b.name === '临时盒子');
+                    if (!tempBox) {
+                        // 查找最大box_number
+                        const maxBoxNumber = tempBoxes.reduce((max, b) => Math.max(max, b.box_number || 0), 0);
+                        tempBox = await createBox(tempRepo.id, maxBoxNumber + 1, '临时盒子');
+                    }
+                    if (!tempBox) {
+                        alert('创建临时盒子失败，盒子未删除');
+                        return;
+                    }
+
+                    // 将零件全部转移到临时盒子
+                    const moved = await updatePartsByBox(parseInt(id), { box_id: tempBox.id });
+                    if (!moved) {
+                        alert('转移零件到临时盒子失败，盒子未删除');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('转移零件到临时盒子失败:', error);
+                    alert('转移零件到临时盒子失败，盒子未删除：' + error.message);
+                    return;
                 }
+            }
+
+            // 删除盒子
+            const success = await deleteBox(id);
+            if (success && selectedRepository) {
+                await loadBoxes(selectedRepository.id);
+                await loadRepositories();
             }
         }
     });

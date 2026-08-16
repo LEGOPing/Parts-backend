@@ -767,6 +767,21 @@ async function deletePart(partId) {
     }
 }
 
+// 批量转移某盒子内的全部零件（例如删除盒子时整体转入临时盒子）
+async function updatePartsByBox(boxId, data) {
+    try {
+        await supabaseRequest('parts', {
+            method: 'PATCH',
+            filters: { box_id: boxId },
+            body: data
+        });
+        return true;
+    } catch (error) {
+        console.error('批量更新零件失败:', error.message);
+        return false;
+    }
+}
+
 async function searchParts(params) {
     try {
         const { part_num, name, color_id, is_new } = params;
