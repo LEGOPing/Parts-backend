@@ -607,6 +607,13 @@ async function performBoxTransfer() {
         return;
     }
 
+    // 关闭目标仓库选择弹窗，避免转仓完成后仍在页面上残留
+    const targetModal = document.querySelector('.transfer-target-modal');
+    if (targetModal) {
+        const overlay = targetModal.closest('.modal-overlay');
+        if (overlay) overlay.remove();
+    }
+
     // 第二步：密码验证
     showPasswordWheel({
         rounds: 2,
