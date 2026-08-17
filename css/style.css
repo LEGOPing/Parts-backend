@@ -270,7 +270,7 @@ body {
 }
 
 .repository-card.selected .repo-id {
-    color: #000;
+    color: var(--gray-color);
 }
 
 .repository-card.selected .repo-box-count .count {
@@ -332,7 +332,7 @@ body {
 
 .repo-id {
     font-size: 9px;
-    color: #000;
+    color: var(--gray-color);
 }
 
 .repo-box-count {
@@ -475,7 +475,7 @@ body {
     transform: translate(-50%, -50%);
     width: 85%;
     text-align: center;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: bold;
     color: #333;
     white-space: nowrap;
@@ -519,7 +519,7 @@ body {
 
 .box-id {
     font-size: 9px;
-    color: #000;
+    color: var(--gray-color);
 }
 
 .box-part-count {
