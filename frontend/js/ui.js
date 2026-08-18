@@ -1326,6 +1326,7 @@ function showAddPartSheet() {
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
+                    <button type="button" class="btn-recognize" onclick="recognizePartFromPhoto()">识别</button>
                 </div>
             </div>
             <div class="form-section">
@@ -1360,8 +1361,19 @@ function showAddPartSheet() {
             </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
+            <div class="recognize-result" id="recognize-result"></div>
         </div>
     `;
+    
+    // 隐藏相机输入与识别结果容器（随弹窗一起销毁）
+    const cameraInput = document.createElement('input');
+    cameraInput.type = 'file';
+    cameraInput.id = 'recognize-camera-input';
+    cameraInput.accept = 'image/*';
+    cameraInput.capture = 'environment';
+    cameraInput.style.display = 'none';
+    cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
+    document.body.appendChild(cameraInput);
     
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
@@ -1695,6 +1707,212 @@ function initAddPartSuggestions() {
             hidePartNameSuggestions();
         }
     });
+}
+
+// ==================== 拍照识别零件（Brickognize）====================
+let recognizeUploading = false;
+
+// 触发相机/相册选择
+function recognizePartFromPhoto() {
+    if (recognizeUploading) { alert('正在识别中，请稍候...'); return; }
+    const input = document.getElementById('recognize-camera-input');
+    if (!input) return;
+    input.value = ''; // 允许重复选择同一张图片
+    input.click();
+}
+
+// 处理识别文件上传
+async function processRecognitionFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+        setRecognizeStatus('请选择图片文件');
+        return;
+    }
+    if (recognizeUploading) return;
+    recognizeUploading = true;
+    setRecognizeStatus('正在上传识别中，请稍候...');
+
+    // 本地预览
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const box = document.getElementById('recognize-result');
+        if (box) box.innerHTML = `<img class="recognize-thumb" src="${e.target.result}" alt="预览图片" />`;
+    };
+    reader.readAsDataURL(file);
+
+    try {
+        const candidate = await uploadToBrickognize(file);
+        if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
+        await fillRecognizedPart(candidate.id, candidate.name);
+        const colors = await computeClosestRBColors(file);
+        renderRecognizeColors(colors);
+    } catch (err) {
+        console.error('Brickognize识别失败:', err);
+        setRecognizeStatus('识别失败：' + (err && err.message ? err.message : '网络错误，请检查网络'));
+    } finally {
+        recognizeUploading = false;
+    }
+}
+
+// 调用 Brickognize 识别零件型号
+async function uploadToBrickognize(file) {
+    const formData = new FormData();
+    formData.append('query_image', file);
+    const url = 'https://api.brickognize.com/predict/parts/?predict_color=false&top_k_items=3&min_similarity_items=0';
+    const resp = await fetch(url, { method: 'POST', body: formData });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const items = (data && data.items) || [];
+    if (!items.length) return null;
+    // 优先返回零件(part)候选，其次取得分最高的候选
+    const cand = items.find(i => i.type === 'part') || items[0];
+    return { id: String(cand.id), name: cand.name || '' };
+}
+
+// 将识别到的型号/名称填入表单
+async function fillRecognizedPart(partNum, fallbackName) {
+    const numInput = document.getElementById('new-part-num');
+    const nameInput = document.getElementById('new-part-name');
+    if (!numInput) return;
+    numInput.value = partNum;
+
+    // 名称优先取 RB 数据库，其次用识别结果返回的名称
+    let name = fallbackName || '';
+    try {
+        const p = await getPartByNum(partNum);
+        if (p && p.name) name = p.name;
+    } catch (e) { /* 忽略 */ }
+    if (nameInput) nameInput.value = name;
+
+    // 收拢联想下拉
+    const sug = document.getElementById('part-number-suggestions');
+    if (sug) sug.style.display = 'none';
+}
+
+// 设置识别结果区域的临时状态文本
+function setRecognizeStatus(msg) {
+    const box = document.getElementById('recognize-result');
+    if (!box) return;
+    const partNum = document.getElementById('new-part-num').value;
+    box.innerHTML = `<div class="recognize-status">${msg}${partNum ? '<br/>已识别型号：<b>' + partNum + '</b>' : ''}</div>`;
+}
+
+// 计算图片中零件最接近的三种颜色（色卡来源：RB 的 rb_colors 表）
+async function computeClosestRBColors(file) {
+    try {
+        const img = await fileToImage(file);
+        const dominant = getDominantColor(img);
+        if (!dominant) return [];
+        const rbColors = (await getAllColors()) || [];
+        const entries = rbColors.map(c => {
+            const rgb = parseHexColor(c.rgb);
+            return rgb ? { id: c.id, name: c.name || ('颜色' + c.id), rgb } : null;
+        }).filter(Boolean);
+        entries.sort((a, b) => colorDistance(dominant, a.rgb) - colorDistance(dominant, b.rgb));
+        return entries.slice(0, 3).map(c => ({ id: c.id, name: c.name, hex: rgbToHex(c.rgb) }));
+    } catch (e) {
+        console.error('计算最接近颜色失败:', e);
+        return [];
+    }
+}
+
+// 渲染三种最接近的颜色，点击即可填入颜色ID
+function renderRecognizeColors(colors) {
+    const box = document.getElementById('recognize-result');
+    if (!box) return;
+    const partNum = document.getElementById('new-part-num').value;
+    if (colors.length === 0) {
+        box.innerHTML = `<div class="recognize-status">已识别型号：<b>${partNum}</b>（未能计算推荐颜色）</div>`;
+        return;
+    }
+    box.innerHTML = `
+        <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
+        <div class="recognize-colors-row">
+            <span class="recognize-colors-label">最接近颜色：</span>
+            <div class="recognize-color-chips">
+                ${colors.map(c => `
+                    <button type="button" class="recognize-color-chip" data-id="${c.id}" data-name="${c.name}"
+                        style="background:${c.hex}" title="${c.name}">
+                        <span>${c.name}</span>
+                    </button>`).join('')}
+            </div>
+        </div>
+    `;
+    const chips = box.querySelectorAll('.recognize-color-chip');
+    chips.forEach((chip, idx) => {
+        chip.addEventListener('click', () => selectRecognizeColor(chip, idx));
+    });
+    // 默认选中第一个（最接近）并填入颜色ID
+    if (chips.length) selectRecognizeColor(chips[0], 0);
+}
+
+// 选择某个推荐颜色，填入颜色ID并刷新按钮色块
+function selectRecognizeColor(chip, idx) {
+    const box = document.getElementById('recognize-result');
+    const colorInput = document.getElementById('new-part-color');
+    if (!colorInput) return;
+    colorInput.value = chip.dataset.id;
+    updateColorButtonColor(chip.dataset.id);
+    if (box) box.querySelectorAll('.recognize-color-chip').forEach(c => c.classList.toggle('selected', c === chip));
+}
+
+// 文件转 Image 对象
+function fileToImage(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
+        img.src = url;
+    });
+}
+
+// 提取图片主色（缩小后按颜色分桶取最大桶的平均色）
+function getDominantColor(img) {
+    const w = 64, h = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    let data;
+    try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
+
+    const buckets = new Map();
+    for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5); // 每通道按 32 量化
+        let bk = buckets.get(key);
+        if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
+        bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+    }
+    let best = null;
+    buckets.forEach(bk => { if (!best || bk.cnt > best.cnt) best = bk; });
+    if (!best) return null;
+    return [Math.round(best.rs / best.cnt), Math.round(best.gs / best.cnt), Math.round(best.bs / best.cnt)];
+}
+
+// 解析 RB 颜色 rgb 字符串为 [r,g,b]，兼容带/不带 # 前缀
+function parseHexColor(rgb) {
+    if (!rgb) return null;
+    let s = String(rgb).replace('#', '').trim();
+    if (s.length === 3) s = s.split('').map(ch => ch + ch).join('');
+    if (s.length !== 6) return null;
+    const r = parseInt(s.substr(0, 2), 16), g = parseInt(s.substr(2, 2), 16), b = parseInt(s.substr(4, 2), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+    return [r, g, b];
+}
+
+// RGB 数组转 #rrggbb
+function rgbToHex(rgb) {
+    return '#' + rgb.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+}
+
+// RGB 欧氏距离
+function colorDistance(a, b) {
+    return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
 }
 
 function togglePartNewStatus(isNew) {
