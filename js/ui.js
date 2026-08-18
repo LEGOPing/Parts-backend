@@ -1370,7 +1370,6 @@ function showAddPartSheet() {
     cameraInput.type = 'file';
     cameraInput.id = 'recognize-camera-input';
     cameraInput.accept = 'image/*';
-    cameraInput.capture = 'environment';
     cameraInput.style.display = 'none';
     cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
     document.body.appendChild(cameraInput);
@@ -1731,21 +1730,24 @@ async function processRecognitionFile(input) {
     }
     if (recognizeUploading) return;
     recognizeUploading = true;
-    setRecognizeStatus('正在上传识别中，请稍候...');
-
-    // 本地预览
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const box = document.getElementById('recognize-result');
-        if (box) box.innerHTML = `<img class="recognize-thumb" src="${e.target.result}" alt="预览图片" />`;
-    };
-    reader.readAsDataURL(file);
+    setRecognizeStatus('正在处理图片...');
 
     try {
-        const candidate = await uploadToBrickognize(file);
+        // 压缩图片（缩小尺寸、转 JPEG），避免API因文件太大或格式不支持返回422
+        const compressed = await compressImage(file, 1024);
+        if (!compressed) { setRecognizeStatus('图片处理失败'); return; }
+
+        // 本地预览压缩后的图片
+        const previewUrl = URL.createObjectURL(compressed);
+        const box = document.getElementById('recognize-result');
+        if (box) box.innerHTML = `<img class="recognize-thumb" src="${previewUrl}" alt="预览图片" />`;
+
+        setRecognizeStatus('正在上传识别中，请稍候...');
+        const candidate = await uploadToBrickognize(compressed);
+        URL.revokeObjectURL(previewUrl);
         if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
         await fillRecognizedPart(candidate.id, candidate.name);
-        const colors = await computeClosestRBColors(file);
+        const colors = await computeClosestRBColors(compressed);
         renderRecognizeColors(colors);
     } catch (err) {
         console.error('Brickognize识别失败:', err);
@@ -1755,13 +1757,43 @@ async function processRecognitionFile(input) {
     }
 }
 
+// 压缩图片：缩放到最长边不超过 maxSize，输出 JPEG
+async function compressImage(file, maxSize) {
+    const img = await fileToImage(file);
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (w <= 0 || h <= 0) return null;
+    // 等比例缩放
+    if (w > maxSize || h > maxSize) {
+        const ratio = Math.min(maxSize / w, maxSize / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    return new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+            if (!blob) { resolve(null); return; }
+            resolve(new File([blob], 'recognize.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+    });
+}
+
 // 调用 Brickognize 识别零件型号
 async function uploadToBrickognize(file) {
     const formData = new FormData();
     formData.append('query_image', file);
     const url = 'https://api.brickognize.com/predict/parts/?predict_color=false&top_k_items=3&min_similarity_items=0';
     const resp = await fetch(url, { method: 'POST', body: formData });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    if (!resp.ok) {
+        // 尝试读取错误详情
+        let detail = 'HTTP ' + resp.status;
+        try { const errBody = await resp.json(); if (errBody.detail) detail += ' ' + JSON.stringify(errBody.detail); } catch (e) { /* 忽略 */ }
+        throw new Error(detail);
+    }
     const data = await resp.json();
     const items = (data && data.items) || [];
     if (!items.length) return null;
