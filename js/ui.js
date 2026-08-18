@@ -1747,7 +1747,7 @@ async function processRecognitionFile(input) {
         URL.revokeObjectURL(previewUrl);
         if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
         await fillRecognizedPart(candidate.id, candidate.name);
-        const colors = await computeClosestRBColors(compressed);
+        const colors = await computeClosestRBColors(compressed, candidate.id);
         renderRecognizeColors(colors);
     } catch (err) {
         console.error('Brickognize识别失败:', err);
@@ -1831,12 +1831,26 @@ function setRecognizeStatus(msg) {
 }
 
 // 计算图片中零件最接近的5种颜色，按亮度等级匹配（深/较深/正常/较浅/浅）
-async function computeClosestRBColors(file) {
+// 若已知零件型号，只匹配该零件可能有的颜色，大幅提升准确度
+async function computeClosestRBColors(file, partNum) {
     try {
         const img = await fileToImage(file);
         const dominant = getDominantColor(img);
         if (!dominant) return [];
-        const rbColors = (await getAllColors()) || [];
+
+        // 若已知零件型号，只取该零件可能有的颜色，否则取全部颜色
+        let rbColors = [];
+        if (partNum) {
+            const partElements = await getPartColors(partNum);
+            const colorIds = new Set(partElements.map(e => String(e.color_id)));
+            if (colorIds.size > 0) {
+                const allColors = await getAllColors();
+                rbColors = allColors.filter(c => colorIds.has(String(c.id)));
+            }
+        }
+        if (rbColors.length === 0) {
+            rbColors = await getAllColors();
+        }
         const entries = rbColors.map(c => {
             const rgb = parseHexColor(c.rgb);
             return rgb ? { id: c.id, name: c.name || ('颜色' + c.id), rgb, lab: rgbToLab(rgb) } : null;
