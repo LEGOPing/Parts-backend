@@ -1839,8 +1839,11 @@ async function computeClosestRBColors(file) {
         const rbColors = (await getAllColors()) || [];
         const entries = rbColors.map(c => {
             const rgb = parseHexColor(c.rgb);
-            return rgb ? { id: c.id, name: c.name || ('颜色' + c.id), rgb } : null;
+            return rgb ? { id: c.id, name: c.name || ('颜色' + c.id), rgb, lab: rgbToLab(rgb) } : null;
         }).filter(Boolean);
+
+        // 计算主色 Lab
+        const dominantLab = rgbToLab(dominant);
 
         // 5 个亮度等级，模拟不同曝光下主色偏移后的候选色
         const levels = [
@@ -1855,20 +1858,21 @@ async function computeClosestRBColors(file) {
         const results = [];
         for (const { label, fn } of levels) {
             const adjusted = fn(dominant);
+            const adjustedLab = rgbToLab(adjusted);
             // 找当前亮度下最接近且尚未推荐的 RB 颜色
             const sorted = entries
                 .filter(e => !usedIds.has(e.id))
-                .sort((a, b) => colorDistance(adjusted, a.rgb) - colorDistance(adjusted, b.rgb));
+                .sort((a, b) => deltaE76(adjustedLab, a.lab) - deltaE76(adjustedLab, b.lab));
             if (sorted.length) {
                 const match = sorted[0];
                 usedIds.add(match.id);
                 results.push({ id: match.id, name: match.name, hex: rgbToHex(match.rgb), label });
             }
         }
-        // 若不足 5 个（极少情况），补足剩余最接近的颜色
+        // 若不足 5 个，补足（用 dominantLab 匹配剩余）
         if (results.length < 5) {
             entries.filter(e => !usedIds.has(e.id))
-                .sort((a, b) => colorDistance(dominant, a.rgb) - colorDistance(dominant, b.rgb))
+                .sort((a, b) => deltaE76(dominantLab, a.lab) - deltaE76(dominantLab, b.lab))
                 .slice(0, 5 - results.length)
                 .forEach(r => { usedIds.add(r.id); results.push({ id: r.id, name: r.name, hex: rgbToHex(r.rgb), label: '' }); });
         }
@@ -1929,25 +1933,43 @@ function fileToImage(file) {
     });
 }
 
-// 提取图片主色（缩小后按颜色分桶取最大桶的平均色）
+// 提取图片主色：取中心区域60%，排除过亮/过暗的像素（背景/阴影），按颜色分桶取最大桶
 function getDominantColor(img) {
+    // 取中心 60% 区域，排除边缘背景干扰
+    const cw = Math.round(img.naturalWidth * 0.6);
+    const ch = Math.round(img.naturalHeight * 0.6);
+    const ox = Math.round((img.naturalWidth - cw) / 2);
+    const oy = Math.round((img.naturalHeight - ch) / 2);
+
     const w = 64, h = 64;
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, w, h);
+    ctx.drawImage(img, ox, oy, cw, ch, 0, 0, w, h);
     let data;
     try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
 
     const buckets = new Map();
     for (let i = 0; i < data.length; i += 4) {
         const r = data[i], g = data[i + 1], b = data[i + 2];
+        // 跳过过亮（背景/白平衡过曝）和过暗（阴影/黑背景）的像素
+        if (r + g + b > 720 || r + g + b < 50) continue;
         const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5); // 每通道按 32 量化
         let bk = buckets.get(key);
         if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
         bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+    }
+    // 如果所有像素都被过滤，回退到不过滤
+    if (buckets.size === 0) {
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+            let bk = buckets.get(key);
+            if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
+            bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+        }
     }
     let best = null;
     buckets.forEach(bk => { if (!best || bk.cnt > best.cnt) best = bk; });
@@ -1971,9 +1993,29 @@ function rgbToHex(rgb) {
     return '#' + rgb.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
 }
 
-// RGB 欧氏距离
-function colorDistance(a, b) {
-    return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+// sRGB → CIELAB（D65 标准照明体），用于人眼感知更均匀的色差计算
+function rgbToLab(rgb) {
+    let r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+    // sRGB gamma 解码
+    r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+    g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+    b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+    // Linear RGB → XYZ (D65)
+    const x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375;
+    const y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750;
+    const z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041;
+    // XYZ → Lab (D65)
+    const xn = 0.95047, yn = 1.0, zn = 1.08883;
+    const fx = x / xn > 0.008856 ? Math.pow(x / xn, 1/3) : 7.787 * (x / xn) + 16/116;
+    const fy = y / yn > 0.008856 ? Math.pow(y / yn, 1/3) : 7.787 * (y / yn) + 16/116;
+    const fz = z / zn > 0.008856 ? Math.pow(z / zn, 1/3) : 7.787 * (z / zn) + 16/116;
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+// CIE76 Delta E：Lab 空间欧氏距离，比 RGB 距离更接近人眼感知
+function deltaE76(a, b) {
+    const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+    return Math.sqrt(dl * dl + da * da + db * db);
 }
 
 // ==================== 搜索页拍照识别 ====================
