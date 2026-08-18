@@ -2002,11 +2002,12 @@ body {
     flex-shrink: 0;
 }
 
-/* 颜色卡片行：5个卡片等分，不超出页面 */
+/* 颜色卡片行：5个卡片等分，顶部对齐，不超出页面 */
 .recognize-colors-row {
     display: flex;
     gap: 6px;
     width: 100%;
+    align-items: flex-start;
 }
 
 .recognize-color-chip {
@@ -2018,6 +2019,9 @@ body {
     cursor: pointer;
     padding: 0;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .recognize-color-chip .chip-swatch {
