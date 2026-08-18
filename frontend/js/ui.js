@@ -1830,7 +1830,7 @@ function setRecognizeStatus(msg) {
     box.innerHTML = `<div class="recognize-status">${msg}${partNum ? '<br/>已识别型号：<b>' + partNum + '</b>' : ''}</div>`;
 }
 
-// 计算图片中零件最接近的三种颜色（色卡来源：RB 的 rb_colors 表）
+// 计算图片中零件最接近的5种颜色，按亮度等级匹配（深/较深/正常/较浅/浅）
 async function computeClosestRBColors(file) {
     try {
         const img = await fileToImage(file);
@@ -1841,15 +1841,45 @@ async function computeClosestRBColors(file) {
             const rgb = parseHexColor(c.rgb);
             return rgb ? { id: c.id, name: c.name || ('颜色' + c.id), rgb } : null;
         }).filter(Boolean);
-        entries.sort((a, b) => colorDistance(dominant, a.rgb) - colorDistance(dominant, b.rgb));
-        return entries.slice(0, 3).map(c => ({ id: c.id, name: c.name, hex: rgbToHex(c.rgb) }));
+
+        // 5 个亮度等级，模拟不同曝光下主色偏移后的候选色
+        const levels = [
+            { label: '深',   fn: c => c.map(v => Math.round(v * 0.50)) },
+            { label: '较深', fn: c => c.map(v => Math.round(v * 0.75)) },
+            { label: '正常', fn: c => [...c] },
+            { label: '较浅', fn: c => c.map(v => Math.round(v + (255 - v) * 0.25)) },
+            { label: '浅',   fn: c => c.map(v => Math.round(v + (255 - v) * 0.50)) },
+        ];
+
+        const usedIds = new Set();
+        const results = [];
+        for (const { label, fn } of levels) {
+            const adjusted = fn(dominant);
+            // 找当前亮度下最接近且尚未推荐的 RB 颜色
+            const sorted = entries
+                .filter(e => !usedIds.has(e.id))
+                .sort((a, b) => colorDistance(adjusted, a.rgb) - colorDistance(adjusted, b.rgb));
+            if (sorted.length) {
+                const match = sorted[0];
+                usedIds.add(match.id);
+                results.push({ id: match.id, name: match.name, hex: rgbToHex(match.rgb), label });
+            }
+        }
+        // 若不足 5 个（极少情况），补足剩余最接近的颜色
+        if (results.length < 5) {
+            entries.filter(e => !usedIds.has(e.id))
+                .sort((a, b) => colorDistance(dominant, a.rgb) - colorDistance(dominant, b.rgb))
+                .slice(0, 5 - results.length)
+                .forEach(r => { usedIds.add(r.id); results.push({ id: r.id, name: r.name, hex: rgbToHex(r.rgb), label: '' }); });
+        }
+        return results;
     } catch (e) {
         console.error('计算最接近颜色失败:', e);
         return [];
     }
 }
 
-// 渲染三种最接近的颜色，点击即可填入颜色ID
+// 渲染推荐颜色卡片，点击即可填入颜色ID
 function renderRecognizeColors(colors) {
     const box = document.getElementById('recognize-result');
     if (!box) return;
@@ -1860,15 +1890,14 @@ function renderRecognizeColors(colors) {
     }
     box.innerHTML = `
         <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
+        <div class="recognize-section-title">最接近颜色：</div>
         <div class="recognize-colors-row">
-            <span class="recognize-colors-label">最接近颜色：</span>
-            <div class="recognize-color-chips">
-                ${colors.map(c => `
-                    <button type="button" class="recognize-color-chip" data-id="${c.id}" data-name="${c.name}"
-                        style="background:${c.hex}" title="${c.name}">
-                        <span>${c.name}</span>
-                    </button>`).join('')}
-            </div>
+            ${colors.map(c => `
+                <button type="button" class="recognize-color-chip" data-id="${c.id}" data-name="${c.name}"
+                    style="background:${c.hex}" title="${c.name}">
+                    <span class="chip-label">${c.label}</span>
+                    <span class="chip-name">${c.name}</span>
+                </button>`).join('')}
         </div>
     `;
     const chips = box.querySelectorAll('.recognize-color-chip');
