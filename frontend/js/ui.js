@@ -1359,6 +1359,27 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
+            <div class="form-section gray-card-section" id="gray-card-section">
+                <div class="gray-card-header">
+                    <span class="gray-card-label">灰卡白平衡校准</span>
+                    <label class="gray-card-toggle">
+                        <input type="checkbox" id="gray-card-toggle" ${isGrayCardCalibrated() && isGrayCardCalibrationActive() ? 'checked' : ''} onchange="toggleGrayCardMode(this.checked)" ${isGrayCardCalibrated() ? '' : 'disabled'} />
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="gray-card-status" id="gray-card-status">
+                    ${isGrayCardCalibrated()
+                        ? `<span class="gray-card-status-text calibrated">✓ 已校准</span>`
+                        : `<span class="gray-card-status-text uncalibrated">未校准（需先拍灰卡）</span>`}
+                    <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">
+                        ${isGrayCardCalibrated() ? '重新校准' : '拍灰卡校准'}
+                    </button>
+                    ${isGrayCardCalibrated() ? `<button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()">清除</button>` : ''}
+                </div>
+                <div class="gray-card-instruction" id="gray-card-instruction" style="${isGrayCardCalibrated() ? 'display:none' : 'display:block'}">
+                    将 18% 灰卡放在零件拍摄位置，点击"拍灰卡校准"拍照
+                </div>
+            </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
             <div class="recognize-result" id="recognize-result"></div>
@@ -1373,6 +1394,16 @@ function showAddPartSheet() {
     cameraInput.style.display = 'none';
     cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
     document.body.appendChild(cameraInput);
+    
+    // 灰卡校准专用文件输入（隐藏）
+    const grayCardInput = document.createElement('input');
+    grayCardInput.type = 'file';
+    grayCardInput.id = 'gray-card-camera-input';
+    grayCardInput.accept = 'image/*';
+    grayCardInput.capture = 'environment'; // 提示使用后置摄像头
+    grayCardInput.style.display = 'none';
+    grayCardInput.addEventListener('change', () => processGrayCardFile(grayCardInput));
+    document.body.appendChild(grayCardInput);
     
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
@@ -1835,8 +1866,19 @@ function setRecognizeStatus(msg) {
 async function computeClosestRBColors(file, partNum) {
     try {
         const img = await fileToImage(file);
-        // 估计白平衡并校正
-        const wbInfo = estimateIlluminant(img);
+        // 白平衡校正：优先使用灰卡校准，其次自动估计背景白平衡
+        let wbInfo;
+        if (isGrayCardCalibrationActive() && isGrayCardCalibrated()) {
+            // 使用灰卡校准增益
+            const gains = getGrayCardGains();
+            if (gains) {
+                wbInfo = { factors: [gains.r, gains.g, gains.b], bgColor: null };
+            } else {
+                wbInfo = estimateIlluminant(img);
+            }
+        } else {
+            wbInfo = estimateIlluminant(img);
+        }
         const dominant = getDominantColor(img, wbInfo);
         if (!dominant) return { colors: [], dominantHex: '' };
         const dominantHex = rgbToHex(dominant);
@@ -2155,6 +2197,183 @@ function togglePartNewStatus(isNew) {
     window.newPartIsNew = isNew;
     document.getElementById('status-new').classList.toggle('active', isNew);
     document.getElementById('status-used').classList.toggle('active', !isNew);
+}
+
+// ==================== 灰卡白平衡校准 ====================
+
+// 打开相机拍照进行灰卡校准
+function calibrateGrayCard() {
+    const input = document.getElementById('gray-card-camera-input');
+    if (!input) return;
+    input.value = ''; // 允许重复选择
+    input.click();
+}
+
+// 处理灰卡校准照片
+async function processGrayCardFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+        alert('请选择图片文件');
+        return;
+    }
+
+    const statusEl = document.getElementById('gray-card-status');
+    const instructionEl = document.getElementById('gray-card-instruction');
+    if (statusEl) statusEl.innerHTML = '<span class="gray-card-status-text calibrating">正在分析灰卡...</span>';
+
+    try {
+        // 压缩图片
+        const compressed = await compressImage(file, 1024);
+        if (!compressed) { alert('图片处理失败'); return; }
+
+        // 加载图片到 Canvas 进行分析
+        const img = await fileToImage(compressed);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { alert('无法处理图片'); return; }
+        ctx.drawImage(img, 0, 0);
+
+        // 取画面中央 40% 区域作为灰卡分析区域（假设用户将灰卡放在画面中央）
+        const cropRatio = 0.40;
+        const cw = Math.round(img.naturalWidth * cropRatio);
+        const ch = Math.round(img.naturalHeight * cropRatio);
+        const ox = Math.round((img.naturalWidth - cw) / 2);
+        const oy = Math.round((img.naturalHeight - ch) / 2);
+        const pixels = ctx.getImageData(ox, oy, cw, ch);
+
+        // 计算灰卡区域的平均 R/G/B
+        // 排除过暗（<30）和过曝（>245）的像素，以及接近纯色的像素（饱和度太高）
+        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+        for (let i = 0; i < pixels.data.length; i += 4) {
+            const r = pixels.data[i];
+            const g = pixels.data[i + 1];
+            const b = pixels.data[i + 2];
+            const brightness = r + g + b;
+            // 排除过暗/过曝像素
+            if (brightness < 90 || brightness > 735) continue;
+            // 排除高饱和度像素（防止灰卡区域有反光点或杂物）
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            if (max - min > 40) continue;
+            rSum += r; gSum += g; bSum += b;
+            count++;
+        }
+
+        if (count < 100) {
+            if (statusEl) statusEl.innerHTML = '<span class="gray-card-status-text error">❌ 未检测到灰卡区域，请确保灰卡在画面中央</span>';
+            if (instructionEl) instructionEl.style.display = 'block';
+            return;
+        }
+
+        const avgR = rSum / count;
+        const avgG = gSum / count;
+        const avgB = bSum / count;
+
+        // 18% 灰卡在 sRGB 中的理论值 ≈ 128（中性灰）
+        // 以 G 通道为基准，使 G 增益 = 1.0，归一化 R 和 B
+        const target = 128;
+        const gainR = target / avgR;
+        const gainG = target / avgG;
+        const gainB = target / avgB;
+
+        // 归一化，保持整体亮度不变
+        const meanGain = (gainR + gainG + gainB) / 3;
+        const gains = {
+            r: gainR / meanGain,
+            g: gainG / meanGain,
+            b: gainB / meanGain
+        };
+
+        // 保存校准结果
+        setGrayCardGains(gains);
+        setGrayCardCalibrationActive(true);
+
+        // 更新 UI
+        if (statusEl) {
+            statusEl.innerHTML = `
+                <span class="gray-card-status-text calibrated">✓ 已校准（R:${gains.r.toFixed(3)}, G:${gains.g.toFixed(3)}, B:${gains.b.toFixed(3)}）</span>
+                <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">重新校准</button>
+                <button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()">清除</button>
+            `;
+        }
+        if (instructionEl) instructionEl.style.display = 'none';
+
+        // 启用开关
+        const toggle = document.getElementById('gray-card-toggle');
+        if (toggle) { toggle.disabled = false; toggle.checked = true; }
+
+        alert('灰卡白平衡校准完成！后续拍照将自动应用校正。');
+    } catch (err) {
+        console.error('灰卡校准失败:', err);
+        if (statusEl) statusEl.innerHTML = '<span class="gray-card-status-text error">❌ 校准失败：' + (err.message || '未知错误') + '</span>';
+    }
+}
+
+// 切换灰卡校准模式开关
+function toggleGrayCardMode(active) {
+    setGrayCardCalibrationActive(active);
+    const statusEl = document.getElementById('gray-card-status');
+    if (statusEl) {
+        const textEl = statusEl.querySelector('.gray-card-status-text');
+        if (textEl) {
+            textEl.textContent = active ? '✓ 已校准（已启用）' : '✓ 已校准（已禁用）';
+            textEl.className = 'gray-card-status-text ' + (active ? 'calibrated' : 'disabled');
+        }
+    }
+}
+
+// 清除灰卡校准（UI 操作）
+function resetGrayCardCalibrationUI() {
+    if (!confirm('确定清除灰卡白平衡校准数据？')) return;
+    resetGrayCardCalibration();
+    const statusEl = document.getElementById('gray-card-status');
+    const instructionEl = document.getElementById('gray-card-instruction');
+    if (statusEl) {
+        statusEl.innerHTML = `
+            <span class="gray-card-status-text uncalibrated">未校准（需先拍灰卡）</span>
+            <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">拍灰卡校准</button>
+        `;
+    }
+    if (instructionEl) instructionEl.style.display = 'block';
+    const toggle = document.getElementById('gray-card-toggle');
+    if (toggle) { toggle.checked = false; toggle.disabled = true; }
+}
+
+// 应用灰卡白平衡增益到像素数据
+function applyGrayCardWB(imageData, gains) {
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        data[i]     = Math.min(255, Math.max(0, Math.round(data[i] * gains.r)));
+        data[i + 1] = Math.min(255, Math.max(0, Math.round(data[i + 1] * gains.g)));
+        data[i + 2] = Math.min(255, Math.max(0, Math.round(data[i + 2] * gains.b)));
+    }
+    return imageData;
+}
+
+// 从图片文件应用灰卡白平衡校正（返回校正后的 JPEG Blob）
+async function applyGrayCardToImage(file) {
+    const img = await fileToImage(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const gains = getGrayCardGains();
+    if (gains) {
+        imageData = applyGrayCardWB(imageData, gains);
+        ctx.putImageData(imageData, 0, 0);
+    }
+    return new Promise(resolve => {
+        canvas.toBlob(blob => {
+            if (!blob) { resolve(null); return; }
+            resolve(new File([blob], 'graycard_corrected.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+    });
 }
 
 async function saveNewPart(button) {

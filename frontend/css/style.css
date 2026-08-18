@@ -2054,6 +2054,166 @@ body {
     box-shadow: 0 0 0 2px #3498db, 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
+/* ==================== 灰卡白平衡校准 ==================== */
+.gray-card-section {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.gray-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.gray-card-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #495057;
+}
+
+/* 开关（toggle） */
+.gray-card-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.gray-card-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 22px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.gray-card-toggle input:checked + .toggle-slider {
+    background-color: #4CAF50;
+}
+
+.gray-card-toggle input:checked + .toggle-slider:before {
+    transform: translateX(18px);
+}
+
+.gray-card-toggle input:disabled + .toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.gray-card-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gray-card-status-text {
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.gray-card-status-text.calibrated {
+    color: #155724;
+    background: #d4edda;
+}
+
+.gray-card-status-text.uncalibrated {
+    color: #856404;
+    background: #fff3cd;
+}
+
+.gray-card-status-text.disabled {
+    color: #6c757d;
+    background: #e2e3e5;
+}
+
+.gray-card-status-text.calibrating {
+    color: #004085;
+    background: #cce5ff;
+}
+
+.gray-card-status-text.error {
+    color: #721c24;
+    background: #f8d7da;
+}
+
+.btn-gray-card {
+    background: #6c5ce7;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 28px;
+    transition: background-color 0.3s;
+}
+
+.btn-gray-card:hover {
+    background: #5a4bd1;
+}
+
+.btn-gray-card-reset {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 28px;
+    transition: background-color 0.3s;
+}
+
+.btn-gray-card-reset:hover {
+    background: #c0392b;
+}
+
+.gray-card-instruction {
+    font-size: 11px;
+    color: #6c757d;
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: #fff;
+    border-radius: 4px;
+    border: 1px dashed #dee2e6;
+    line-height: 1.4;
+}
+
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
