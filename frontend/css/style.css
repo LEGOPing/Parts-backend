@@ -1987,6 +1987,19 @@ body {
     font-weight: 600;
     color: #2c3e50;
     margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* 图片提取主色的小色块 */
+.dominant-swatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid #bbb;
+    flex-shrink: 0;
 }
 
 /* 颜色卡片行：5个卡片等分，不超出页面 */

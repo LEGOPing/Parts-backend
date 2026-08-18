@@ -1747,8 +1747,8 @@ async function processRecognitionFile(input) {
         URL.revokeObjectURL(previewUrl);
         if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
         await fillRecognizedPart(candidate.id, candidate.name);
-        const colors = await computeClosestRBColors(compressed, candidate.id);
-        renderRecognizeColors(colors);
+        const result = await computeClosestRBColors(compressed, candidate.id);
+        renderRecognizeColors(result.colors, result.dominantHex);
     } catch (err) {
         console.error('Brickognize识别失败:', err);
         setRecognizeStatus('识别失败：' + (err && err.message ? err.message : '网络错误，请检查网络'));
@@ -1835,8 +1835,11 @@ function setRecognizeStatus(msg) {
 async function computeClosestRBColors(file, partNum) {
     try {
         const img = await fileToImage(file);
-        const dominant = getDominantColor(img);
-        if (!dominant) return [];
+        // 估计白平衡并校正
+        const wbFactors = estimateIlluminant(img);
+        const dominant = getDominantColor(img, wbFactors);
+        if (!dominant) return { colors: [], dominantHex: '' };
+        const dominantHex = rgbToHex(dominant);
 
         // 若已知零件型号，只取该零件可能有的颜色，否则取全部颜色
         let rbColors = [];
@@ -1861,16 +1864,16 @@ async function computeClosestRBColors(file, partNum) {
 
         // 5 个亮度等级，模拟不同曝光下主色偏移后的候选色
         const levels = [
-            { label: '深',   fn: c => c.map(v => Math.round(v * 0.50)) },
-            { label: '较深', fn: c => c.map(v => Math.round(v * 0.75)) },
-            { label: '正常', fn: c => [...c] },
-            { label: '较浅', fn: c => c.map(v => Math.round(v + (255 - v) * 0.25)) },
-            { label: '浅',   fn: c => c.map(v => Math.round(v + (255 - v) * 0.50)) },
+            { fn: c => c.map(v => Math.round(v * 0.50)) },
+            { fn: c => c.map(v => Math.round(v * 0.75)) },
+            { fn: c => [...c] },
+            { fn: c => c.map(v => Math.round(v + (255 - v) * 0.25)) },
+            { fn: c => c.map(v => Math.round(v + (255 - v) * 0.50)) },
         ];
 
         const usedIds = new Set();
         const results = [];
-        for (const { label, fn } of levels) {
+        for (const { fn } of levels) {
             const adjusted = fn(dominant);
             const adjustedLab = rgbToLab(adjusted);
             // 找当前亮度下最接近且尚未推荐的 RB 颜色
@@ -1880,7 +1883,7 @@ async function computeClosestRBColors(file, partNum) {
             if (sorted.length) {
                 const match = sorted[0];
                 usedIds.add(match.id);
-                results.push({ id: match.id, name: match.name, hex: rgbToHex(match.rgb), label });
+                results.push({ id: match.id, name: match.name, hex: rgbToHex(match.rgb) });
             }
         }
         // 若不足 5 个，补足（用 dominantLab 匹配剩余）
@@ -1888,17 +1891,17 @@ async function computeClosestRBColors(file, partNum) {
             entries.filter(e => !usedIds.has(e.id))
                 .sort((a, b) => deltaE76(dominantLab, a.lab) - deltaE76(dominantLab, b.lab))
                 .slice(0, 5 - results.length)
-                .forEach(r => { usedIds.add(r.id); results.push({ id: r.id, name: r.name, hex: rgbToHex(r.rgb), label: '' }); });
+                .forEach(r => { usedIds.add(r.id); results.push({ id: r.id, name: r.name, hex: rgbToHex(r.rgb) }); });
         }
-        return results;
+        return { colors: results, dominantHex };
     } catch (e) {
         console.error('计算最接近颜色失败:', e);
-        return [];
+        return { colors: [], dominantHex: '' };
     }
 }
 
 // 渲染推荐颜色卡片，点击即可填入颜色ID
-function renderRecognizeColors(colors) {
+function renderRecognizeColors(colors, dominantHex) {
     const box = document.getElementById('recognize-result');
     if (!box) return;
     const partNum = document.getElementById('new-part-num').value;
@@ -1908,7 +1911,10 @@ function renderRecognizeColors(colors) {
     }
     box.innerHTML = `
         <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
-        <div class="recognize-section-title">最接近颜色：</div>
+        <div class="recognize-section-title">
+            最接近颜色：
+            <span class="dominant-swatch" style="background:${dominantHex || '#ccc'}" title="图片提取色"></span>
+        </div>
         <div class="recognize-colors-row">
             ${colors.map(c => `
                 <button type="button" class="recognize-color-chip" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
@@ -1946,11 +1952,68 @@ function fileToImage(file) {
     });
 }
 
-// 提取图片主色：取中心区域60%，排除过亮/过暗的像素（背景/阴影），按颜色分桶取最大桶
-function getDominantColor(img) {
-    // 取中心 60% 区域，排除边缘背景干扰
-    const cw = Math.round(img.naturalWidth * 0.6);
-    const ch = Math.round(img.naturalHeight * 0.6);
+// 从图片边缘区域估计白平衡校正因子（消除白色底色偏色）
+function estimateIlluminant(img) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (w < 100 || h < 100) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    let data;
+    try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
+
+    // 采样外 15% 边框区域的像素（背景）
+    const border = 0.15;
+    const samples = [];
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const inBorder = x < w * border || x > w * (1 - border) ||
+                            y < h * border || y > h * (1 - border);
+            if (!inBorder) continue;
+            const i = (y * w + x) * 4;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            // 取接近白色但未过曝的像素（各通道 180~252）
+            if (r > 180 && g > 180 && b > 180 && r < 252 && g < 252 && b < 252) {
+                samples.push([r, g, b]);
+            }
+        }
+    }
+    if (samples.length < 50) return null;
+
+    let avgR = 0, avgG = 0, avgB = 0;
+    for (const p of samples) { avgR += p[0]; avgG += p[1]; avgB += p[2]; }
+    avgR /= samples.length; avgG /= samples.length; avgB /= samples.length;
+
+    // 若平均色已经很接近中性（通道间最大差值 < 15），不做校正
+    const maxDiff = Math.max(Math.abs(avgR - avgG), Math.abs(avgR - avgB), Math.abs(avgG - avgB));
+    if (maxDiff < 15) return null;
+
+    // 计算校正因子：使平均色变为中性灰，限制在 0.8~1.2 避免过度校正
+    const gray = (avgR + avgG + avgB) / 3;
+    return [
+        Math.max(0.8, Math.min(1.2, gray / avgR)),
+        Math.max(0.8, Math.min(1.2, gray / avgG)),
+        Math.max(0.8, Math.min(1.2, gray / avgB))
+    ];
+}
+
+function applyWB(pixel, factors) {
+    return [
+        Math.round(Math.max(0, Math.min(255, pixel[0] * factors[0]))),
+        Math.round(Math.max(0, Math.min(255, pixel[1] * factors[1]))),
+        Math.round(Math.max(0, Math.min(255, pixel[2] * factors[2])))
+    ];
+}
+
+// 提取图片主色：取中心35%区域，应用白平衡校正，排除过亮/过暗的像素，按颜色分桶取最大桶
+function getDominantColor(img, wbFactors) {
+    // 取中心 35% 区域，尽可能排除背景
+    const cropRatio = 0.35;
+    const cw = Math.round(img.naturalWidth * cropRatio);
+    const ch = Math.round(img.naturalHeight * cropRatio);
     const ox = Math.round((img.naturalWidth - cw) / 2);
     const oy = Math.round((img.naturalHeight - ch) / 2);
 
@@ -1966,10 +2029,15 @@ function getDominantColor(img) {
 
     const buckets = new Map();
     for (let i = 0; i < data.length; i += 4) {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
+        let r = data[i], g = data[i + 1], b = data[i + 2];
+        // 应用白平衡校正
+        if (wbFactors) {
+            const c = applyWB([r, g, b], wbFactors);
+            r = c[0]; g = c[1]; b = c[2];
+        }
         // 跳过过亮（背景/白平衡过曝）和过暗（阴影/黑背景）的像素
         if (r + g + b > 720 || r + g + b < 50) continue;
-        const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5); // 每通道按 32 量化
+        const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
         let bk = buckets.get(key);
         if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
         bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
@@ -1977,7 +2045,11 @@ function getDominantColor(img) {
     // 如果所有像素都被过滤，回退到不过滤
     if (buckets.size === 0) {
         for (let i = 0; i < data.length; i += 4) {
-            const r = data[i], g = data[i + 1], b = data[i + 2];
+            let r = data[i], g = data[i + 1], b = data[i + 2];
+            if (wbFactors) {
+                const c = applyWB([r, g, b], wbFactors);
+                r = c[0]; g = c[1]; b = c[2];
+            }
             const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
             let bk = buckets.get(key);
             if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
