@@ -1947,6 +1947,39 @@ function colorDistance(a, b) {
     return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
 }
 
+// ==================== 搜索页拍照识别 ====================
+let searchRecognizeInput = null;
+
+function recognizePartFromSearch() {
+    // 确保隐藏文件输入存在
+    if (!searchRecognizeInput) {
+        searchRecognizeInput = document.createElement('input');
+        searchRecognizeInput.type = 'file';
+        searchRecognizeInput.accept = 'image/*';
+        searchRecognizeInput.style.display = 'none';
+        searchRecognizeInput.addEventListener('change', async () => {
+            const file = searchRecognizeInput.files && searchRecognizeInput.files[0];
+            if (!file) return;
+            searchRecognizeInput.value = '';
+
+            // 复用"添加零件"的识别函数，但识别后填入搜索框并自动搜索
+            try {
+                const compressed = await compressImage(file, 1024);
+                if (!compressed) { alert('图片处理失败'); return; }
+                const candidate = await uploadToBrickognize(compressed);
+                if (!candidate) { alert('未识别到零件，请重试'); return; }
+                document.getElementById('search-part-num').value = candidate.id;
+                handleAdvancedSearch();
+            } catch (err) {
+                console.error('搜索识别失败:', err);
+                alert('识别失败：' + (err && err.message ? err.message : '网络错误'));
+            }
+        });
+        document.body.appendChild(searchRecognizeInput);
+    }
+    searchRecognizeInput.click();
+}
+
 function togglePartNewStatus(isNew) {
     window.newPartIsNew = isNew;
     document.getElementById('status-new').classList.toggle('active', isNew);

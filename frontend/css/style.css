@@ -1145,6 +1145,24 @@ body {
     color: #fff;
 }
 
+/* 搜索页识别按钮：与选色按钮风格一致，深绿色 */
+.btn-recognize-search {
+    height: 18px;
+    padding: 0 8px;
+    border: 1px solid #1b7a3d;
+    border-radius: 3px;
+    background: #fff;
+    color: #1b7a3d;
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.btn-recognize-search:active {
+    background: #1b7a3d;
+    color: #fff;
+}
+
 .filter-group input, .filter-group select {
     width: 100%;
     padding: 8px;
