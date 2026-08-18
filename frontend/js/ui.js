@@ -1912,9 +1912,7 @@ function renderRecognizeColors(colors) {
         <div class="recognize-colors-row">
             ${colors.map(c => `
                 <button type="button" class="recognize-color-chip" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
-                    <span class="chip-swatch" style="background:${c.hex}">
-                        <span class="chip-label">${c.label}</span>
-                    </span>
+                    <span class="chip-swatch" style="background:${c.hex}"></span>
                     <span class="chip-name">${c.name}</span>
                 </button>`).join('')}
         </div>
