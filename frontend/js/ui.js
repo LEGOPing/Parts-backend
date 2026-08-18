@@ -1836,8 +1836,8 @@ async function computeClosestRBColors(file, partNum) {
     try {
         const img = await fileToImage(file);
         // 估计白平衡并校正
-        const wbFactors = estimateIlluminant(img);
-        const dominant = getDominantColor(img, wbFactors);
+        const wbInfo = estimateIlluminant(img);
+        const dominant = getDominantColor(img, wbInfo);
         if (!dominant) return { colors: [], dominantHex: '' };
         const dominantHex = rgbToHex(dominant);
 
@@ -1952,7 +1952,7 @@ function fileToImage(file) {
     });
 }
 
-// 从图片边缘区域估计白平衡校正因子（消除白色底色偏色）
+// 从图片边缘区域估计白平衡校正因子和背景色
 function estimateIlluminant(img) {
     const w = img.naturalWidth, h = img.naturalHeight;
     if (w < 100 || h < 100) return null;
@@ -1987,17 +1987,20 @@ function estimateIlluminant(img) {
     for (const p of samples) { avgR += p[0]; avgG += p[1]; avgB += p[2]; }
     avgR /= samples.length; avgG /= samples.length; avgB /= samples.length;
 
-    // 若平均色已经很接近中性（通道间最大差值 < 15），不做校正
-    const maxDiff = Math.max(Math.abs(avgR - avgG), Math.abs(avgR - avgB), Math.abs(avgG - avgB));
-    if (maxDiff < 15) return null;
-
-    // 计算校正因子：使平均色变为中性灰，限制在 0.8~1.2 避免过度校正
+    // 计算校正因子：使平均色变为中性灰，限制在 0.8~1.2
     const gray = (avgR + avgG + avgB) / 3;
-    return [
+    const factors = [
         Math.max(0.8, Math.min(1.2, gray / avgR)),
         Math.max(0.8, Math.min(1.2, gray / avgG)),
         Math.max(0.8, Math.min(1.2, gray / avgB))
     ];
+    // 校正后的背景色（用于后续排除背景像素）
+    const bgCorrected = [
+        Math.round(Math.max(0, Math.min(255, avgR * factors[0]))),
+        Math.round(Math.max(0, Math.min(255, avgG * factors[1]))),
+        Math.round(Math.max(0, Math.min(255, avgB * factors[2])))
+    ];
+    return { factors, bgColor: bgCorrected };
 }
 
 function applyWB(pixel, factors) {
@@ -2008,8 +2011,11 @@ function applyWB(pixel, factors) {
     ];
 }
 
-// 提取图片主色：取中心35%区域，应用白平衡校正，排除过亮/过暗的像素，按颜色分桶取最大桶
-function getDominantColor(img, wbFactors) {
+// 提取图片主色：取中心35%区域，应用白平衡校正，排除背景像素，按颜色分桶取最大桶
+function getDominantColor(img, wbInfo) {
+    const wbFactors = wbInfo ? wbInfo.factors : null;
+    const bgColor = wbInfo ? wbInfo.bgColor : null;
+
     // 取中心 35% 区域，尽可能排除背景
     const cropRatio = 0.35;
     const cw = Math.round(img.naturalWidth * cropRatio);
@@ -2027,6 +2033,9 @@ function getDominantColor(img, wbFactors) {
     let data;
     try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
 
+    // 构建背景色排除阈值
+    const bgThreshold = 30;
+
     const buckets = new Map();
     for (let i = 0; i < data.length; i += 4) {
         let r = data[i], g = data[i + 1], b = data[i + 2];
@@ -2035,14 +2044,19 @@ function getDominantColor(img, wbFactors) {
             const c = applyWB([r, g, b], wbFactors);
             r = c[0]; g = c[1]; b = c[2];
         }
-        // 跳过过亮（背景/白平衡过曝）和过暗（阴影/黑背景）的像素
-        if (r + g + b > 720 || r + g + b < 50) continue;
+        // 跳过过暗的像素（阴影）
+        if (r + g + b < 50) continue;
+        // 跳过与背景色接近的像素（排除仍混入中心区域的背景）
+        if (bgColor) {
+            const dr = r - bgColor[0], dg = g - bgColor[1], db = b - bgColor[2];
+            if (dr * dr + dg * dg + db * db < bgThreshold * bgThreshold) continue;
+        }
         const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
         let bk = buckets.get(key);
         if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
         bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
     }
-    // 如果所有像素都被过滤，回退到不过滤
+    // 如果所有像素都被过滤，回退到仅排除过暗像素
     if (buckets.size === 0) {
         for (let i = 0; i < data.length; i += 4) {
             let r = data[i], g = data[i + 1], b = data[i + 2];
@@ -2050,6 +2064,7 @@ function getDominantColor(img, wbFactors) {
                 const c = applyWB([r, g, b], wbFactors);
                 r = c[0]; g = c[1]; b = c[2];
             }
+            if (r + g + b < 50) continue;
             const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
             let bk = buckets.get(key);
             if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
