@@ -1912,6 +1912,111 @@ body {
     flex-shrink: 0;
 }
 
+/* 拍照识别按钮 */
+.add-part-modal .btn-recognize {
+    background: #8e44ad;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 36px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    transition: background-color 0.3s;
+}
+
+.add-part-modal .btn-recognize:hover {
+    background: #732d91;
+}
+
+/* 识别结果区域 */
+.recognize-result {
+    margin-top: 12px;
+}
+
+.recognize-thumb {
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.recognize-status {
+    font-size: 13px;
+    color: #666;
+    padding: 10px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    border: 1px dashed #d0d0d0;
+    text-align: center;
+}
+
+.recognize-header {
+    font-size: 14px;
+    color: #34495e;
+    margin-bottom: 8px;
+}
+
+.recognize-colors-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recognize-colors-label {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+}
+
+.recognize-color-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.recognize-color-chip {
+    border: 2px solid #fff;
+    border-radius: 6px;
+    width: 56px;
+    height: 56px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    padding: 0;
+    position: relative;
+    transition: transform 0.15s, box-shadow 0.15s;
+    background-size: cover;
+}
+
+.recognize-color-chip:hover {
+    transform: scale(1.05);
+}
+
+.recognize-color-chip span {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    font-size: 9px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    text-align: center;
+    padding: 2px 0;
+    border-radius: 0 0 4px 4px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.recognize-color-chip.selected {
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px #3498db, 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
