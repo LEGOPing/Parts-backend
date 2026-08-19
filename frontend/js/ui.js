@@ -1904,14 +1904,12 @@ async function computeClosestRBColors(file, partNum) {
         // 计算主色 Lab
         const dominantLab = rgbToLab(dominant);
 
-        // 5 个亮度等级，模拟不同曝光下主色偏移后的候选色
-        const levels = [
-            { fn: c => c.map(v => Math.round(v * 0.50)) },
-            { fn: c => c.map(v => Math.round(v * 0.75)) },
-            { fn: c => [...c] },
-            { fn: c => c.map(v => Math.round(v + (255 - v) * 0.25)) },
-            { fn: c => c.map(v => Math.round(v + (255 - v) * 0.50)) },
-        ];
+        // 5 个曝光等级：-0.7EV, -0.3EV, 0EV, +0.3EV, +0.7EV
+        // EV → 亮度乘数：2^(EV)
+        const evLevels = [-0.7, -0.3, 0, 0.3, 0.7];
+        const levels = evLevels.map(ev => ({
+            fn: c => c.map(v => Math.round(Math.max(0, Math.min(255, v * Math.pow(2, ev)))))
+        }));
 
         const usedIds = new Set();
         const results = [];
