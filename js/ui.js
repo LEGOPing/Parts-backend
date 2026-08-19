@@ -2008,8 +2008,10 @@ function estimateIlluminant(img) {
     try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
 
     // 采样外 15% 边框区域的像素（背景）
+    // 放宽范围到 150~252，以适应非纯白背景
     const border = 0.15;
     const samples = [];
+    let fallbackSamples = [];
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const inBorder = x < w * border || x > w * (1 - border) ||
@@ -2017,24 +2019,31 @@ function estimateIlluminant(img) {
             if (!inBorder) continue;
             const i = (y * w + x) * 4;
             const r = data[i], g = data[i + 1], b = data[i + 2];
-            // 取接近白色但未过曝的像素（各通道 180~252）
-            if (r > 180 && g > 180 && b > 180 && r < 252 && g < 252 && b < 252) {
+            const bright = r + g + b;
+            // 取接近白色但未过曝的像素（各通道 150~252）
+            if (r > 150 && g > 150 && b > 150 && r < 252 && g < 252 && b < 252) {
                 samples.push([r, g, b]);
+            }
+            // 降级采样：所有较亮的边缘像素（用于深色背景场景）
+            if (bright > 400) {
+                fallbackSamples.push([r, g, b]);
             }
         }
     }
-    if (samples.length < 50) return null;
+    // 如果纯白像素不足，使用降级采样
+    const useSamples = samples.length >= 50 ? samples : (fallbackSamples.length >= 50 ? fallbackSamples : samples);
+    if (useSamples.length < 50) return null;
 
     let avgR = 0, avgG = 0, avgB = 0;
-    for (const p of samples) { avgR += p[0]; avgG += p[1]; avgB += p[2]; }
-    avgR /= samples.length; avgG /= samples.length; avgB /= samples.length;
+    for (const p of useSamples) { avgR += p[0]; avgG += p[1]; avgB += p[2]; }
+    avgR /= useSamples.length; avgG /= useSamples.length; avgB /= useSamples.length;
 
-    // 计算校正因子：使平均色变为中性灰，限制在 0.8~1.2
+    // 计算校正因子：使平均色变为中性灰，限制在 0.7~1.3
     const gray = (avgR + avgG + avgB) / 3;
     const factors = [
-        Math.max(0.8, Math.min(1.2, gray / avgR)),
-        Math.max(0.8, Math.min(1.2, gray / avgG)),
-        Math.max(0.8, Math.min(1.2, gray / avgB))
+        Math.max(0.7, Math.min(1.3, gray / avgR)),
+        Math.max(0.7, Math.min(1.3, gray / avgG)),
+        Math.max(0.7, Math.min(1.3, gray / avgB))
     ];
     // 校正后的背景色（用于后续排除背景像素）
     const bgCorrected = [
@@ -2053,66 +2062,147 @@ function applyWB(pixel, factors) {
     ];
 }
 
-// 提取图片主色：取中心35%区域，应用白平衡校正，排除背景像素，按颜色分桶取最大桶
+// 提取图片主色：先去除背景，再对零件区域做颜色分桶
+// 采用"抠图"思路：从边缘采样背景色 → 排除背景像素 → 只保留零件像素
 function getDominantColor(img, wbInfo) {
     const wbFactors = wbInfo ? wbInfo.factors : null;
     const bgColor = wbInfo ? wbInfo.bgColor : null;
 
-    // 取中心 35% 区域，尽可能排除背景
-    const cropRatio = 0.35;
-    const cw = Math.round(img.naturalWidth * cropRatio);
-    const ch = Math.round(img.naturalHeight * cropRatio);
-    const ox = Math.round((img.naturalWidth - cw) / 2);
-    const oy = Math.round((img.naturalHeight - ch) / 2);
-
-    const w = 64, h = 64;
+    // 缩小到 128x128 分析，兼顾性能与精度
+    const W = 128, H = 128;
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    ctx.drawImage(img, ox, oy, cw, ch, 0, 0, w, h);
+    ctx.drawImage(img, 0, 0, W, H);
     let data;
-    try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
+    try { data = ctx.getImageData(0, 0, W, H).data; } catch (e) { return null; }
 
-    // 构建背景色排除阈值
-    const bgThreshold = 30;
-
-    const buckets = new Map();
-    for (let i = 0; i < data.length; i += 4) {
-        let r = data[i], g = data[i + 1], b = data[i + 2];
-        // 应用白平衡校正
-        if (wbFactors) {
-            const c = applyWB([r, g, b], wbFactors);
-            r = c[0]; g = c[1]; b = c[2];
+    // 1. 确定背景色
+    // 优先使用 estimateIlluminant 提供的背景色，否则从边缘采样
+    let bgR, bgG, bgB;
+    if (bgColor) {
+        bgR = bgColor[0]; bgG = bgColor[1]; bgB = bgColor[2];
+    } else {
+        // 从边缘 15% 区域采样背景色
+        const border = 0.15;
+        let sumR = 0, sumG = 0, sumB = 0, cnt = 0;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const inBorder = x < W * border || x > W * (1 - border) ||
+                                y < H * border || y > H * (1 - border);
+                if (!inBorder) continue;
+                const i = (y * W + x) * 4;
+                sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2];
+                cnt++;
+            }
         }
-        // 跳过过暗的像素（阴影）
-        if (r + g + b < 50) continue;
-        // 跳过与背景色接近的像素（排除仍混入中心区域的背景）
-        if (bgColor) {
-            const dr = r - bgColor[0], dg = g - bgColor[1], db = b - bgColor[2];
-            if (dr * dr + dg * dg + db * db < bgThreshold * bgThreshold) continue;
-        }
-        const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
-        let bk = buckets.get(key);
-        if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
-        bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+        if (cnt === 0) return null;
+        bgR = sumR / cnt; bgG = sumG / cnt; bgB = sumB / cnt;
     }
-    // 如果所有像素都被过滤，回退到仅排除过暗像素
-    if (buckets.size === 0) {
-        for (let i = 0; i < data.length; i += 4) {
+
+    // 2. 提取前景像素（与背景色差异明显的像素）
+    // 动态阈值：根据背景色亮度调整，背景越亮阈值越高
+    const bgBrightness = (bgR + bgG + bgB) / 3;
+    const bgThreshold = Math.max(25, Math.min(50, Math.round(bgBrightness / 10)));
+    const bgThreshold2 = bgThreshold * bgThreshold;
+
+    const partPixels = [];
+    const border = 0.12; // 分析时去掉边缘 12%（避免边缘残留背景）
+
+    for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
+        for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
+            const i = (y * W + x) * 4;
             let r = data[i], g = data[i + 1], b = data[i + 2];
+            // 应用白平衡校正
             if (wbFactors) {
                 const c = applyWB([r, g, b], wbFactors);
                 r = c[0]; g = c[1]; b = c[2];
             }
-            if (r + g + b < 50) continue;
+            // 计算与背景色的色差平方
+            const dr = r - bgR, dg = g - bgG, db = b - bgB;
+            if (dr * dr + dg * dg + db * db > bgThreshold2) {
+                partPixels.push([r, g, b]);
+            }
+        }
+    }
+
+    // 如果前景像素太少，降低阈值重试
+    let useFallback = false;
+    if (partPixels.length < 80) {
+        const lowerThreshold = Math.max(18, Math.round(bgThreshold * 0.7));
+        const lowerThreshold2 = lowerThreshold * lowerThreshold;
+        for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
+            for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
+                const i = (y * W + x) * 4;
+                let r = data[i], g = data[i + 1], b = data[i + 2];
+                if (wbFactors) {
+                    const c = applyWB([r, g, b], wbFactors);
+                    r = c[0]; g = c[1]; b = c[2];
+                }
+                const dr = r - bgR, dg = g - bgG, db = b - bgB;
+                if (dr * dr + dg * dg + db * db > lowerThreshold2) {
+                    partPixels.push([r, g, b]);
+                }
+            }
+        }
+    }
+
+    // 如果还是太少，回退到中心区域法
+    if (partPixels.length < 50) {
+        useFallback = true;
+    }
+
+    // 3. 颜色分桶，找最大桶
+    const buckets = new Map();
+
+    if (!useFallback) {
+        for (const [r, g, b] of partPixels) {
+            // 只跳过极暗的孤立噪点（亮度 < 24，即 8+8+8）
+            if (r + g + b < 24) continue;
             const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
             let bk = buckets.get(key);
             if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
             bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
         }
     }
+
+    // 回退路径：中心 35% 区域（与旧版一致，但去掉亮度 < 50 的过滤）
+    if (useFallback || buckets.size === 0) {
+        const cropRatio = 0.35;
+        const cw = Math.round(img.naturalWidth * cropRatio);
+        const ch = Math.round(img.naturalHeight * cropRatio);
+        const ox = Math.round((img.naturalWidth - cw) / 2);
+        const oy = Math.round((img.naturalHeight - ch) / 2);
+        const canvas2 = document.createElement('canvas');
+        canvas2.width = 64;
+        canvas2.height = 64;
+        const ctx2 = canvas2.getContext('2d');
+        if (!ctx2) return null;
+        ctx2.drawImage(img, ox, oy, cw, ch, 0, 0, 64, 64);
+        let data2;
+        try { data2 = ctx2.getImageData(0, 0, 64, 64).data; } catch (e) { return null; }
+        for (let i = 0; i < data2.length; i += 4) {
+            let r = data2[i], g = data2[i + 1], b = data2[i + 2];
+            if (wbFactors) {
+                const c = applyWB([r, g, b], wbFactors);
+                r = c[0]; g = c[1]; b = c[2];
+            }
+            // 只跳过极暗的孤立噪点
+            if (r + g + b < 24) continue;
+            // 如果已知背景色，排除与背景接近的像素
+            if (bgColor) {
+                const dr = r - bgColor[0], dg = g - bgColor[1], db = b - bgColor[2];
+                if (dr * dr + dg * dg + db * db < bgThreshold2) continue;
+            }
+            const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+            let bk = buckets.get(key);
+            if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
+            bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+        }
+    }
+
     let best = null;
     buckets.forEach(bk => { if (!best || bk.cnt > best.cnt) best = bk; });
     if (!best) return null;
