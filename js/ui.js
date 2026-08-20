@@ -3518,46 +3518,86 @@ async function loadSearchColorGrid(partNum) {
 }
 
 async function handleAdvancedSearch() {
+    const partNumInput = document.getElementById('search-part-num');
+    const nameInput = document.getElementById('search-part-name');
     const params = {
-        part_num: document.getElementById('search-part-num').value,
-        name: document.getElementById('search-part-name').value,
+        part_num: partNumInput.value,
+        name: nameInput.value,
         color_id: document.getElementById('search-color-id').value,
         is_new: document.getElementById('search-status').value === '' ? undefined : 
                document.getElementById('search-status').value === 'true'
     };
     
     let parts = await advancedSearchParts(params);
+    let aliasUsed = false;
 
     // 如果按型号搜索没有结果，尝试通过别名解析查找
     if (params.part_num && parts.length === 0) {
         const resolvedNum = await resolvePartAlias(params.part_num);
         if (resolvedNum && resolvedNum !== params.part_num) {
             console.log(`搜索别名解析: ${params.part_num} → ${resolvedNum}`);
+            // 直接切换输入框为解析后的型号
+            partNumInput.value = resolvedNum;
+            
+            // 尝试获取RB零件信息并填入名称
+            try {
+                const rbPart = await getPartByNum(resolvedNum);
+                if (rbPart && rbPart.name) {
+                    nameInput.value = rbPart.name;
+                }
+            } catch(e) {}
+            
             const aliasParams = { ...params, part_num: resolvedNum };
             parts = await advancedSearchParts(aliasParams);
+            aliasUsed = true;
 
-            // 如果找到了别名零件，添加别名型号到搜索结果提示
-            if (parts.length > 0) {
-                const hint = document.createElement('div');
-                hint.className = 'alias-hint';
-                hint.style.marginBottom = '8px';
-                hint.innerHTML = `⚠️ 型号 <b>${params.part_num}</b> 在RB数据库中对应为 <b>${resolvedNum}</b>，已自动映射显示结果`;
-                const results = document.getElementById('search-results');
-                // 先清除旧提示
-                const oldHint = results ? results.querySelector('.alias-hint') : null;
-                if (oldHint) oldHint.remove();
-                // 在渲染结果前先清除再添加
-                setTimeout(() => {
-                    const resultsEl = document.getElementById('search-results');
-                    if (resultsEl && !resultsEl.querySelector('.alias-hint')) {
-                        resultsEl.prepend(hint);
-                    }
-                }, 50);
-            }
+            // 在搜索结果区域顶部显示提示
+            const hint = document.createElement('div');
+            hint.className = 'alias-hint';
+            hint.style.marginBottom = '8px';
+            hint.innerHTML = `⚠️ 型号 <b>${params.part_num}</b> 在RB数据库中对应为 <b>${resolvedNum}</b>，已自动切换`;
+            const results = document.getElementById('search-results');
+            const oldHint = results ? results.querySelector('.alias-hint') : null;
+            if (oldHint) oldHint.remove();
+            setTimeout(() => {
+                const resultsEl = document.getElementById('search-results');
+                if (resultsEl && !resultsEl.querySelector('.alias-hint')) {
+                    resultsEl.prepend(hint);
+                }
+            }, 50);
         }
     }
 
+    // 渲染搜索结果
     renderSearchResults(parts);
+
+    // 如果搜索无结果但使用了别名，显示RB零件信息卡片供参考
+    if (parts.length === 0 && aliasUsed) {
+        const resolvedNum = partNumInput.value;
+        const results = document.getElementById('search-results');
+        if (results && resolvedNum) {
+            try {
+                const rbPart = await getPartByNum(resolvedNum);
+                if (rbPart) {
+                    const imgUrl = await getPartImageUrl(rbPart.part_num, 0);
+                    const infoCard = document.createElement('div');
+                    infoCard.className = 'rb-part-info-card';
+                    infoCard.innerHTML = `
+                        <div class="rb-part-info-header">RB数据库零件信息</div>
+                        <div class="rb-part-info-body">
+                            ${imgUrl ? `<div class="rb-part-info-img"><img src="${imgUrl}" alt="${rbPart.part_num}" onerror="this.parentElement.style.display='none'"></div>` : ''}
+                            <div class="rb-part-info-details">
+                                <div class="rb-part-info-num">型号: <b>${rbPart.part_num}</b></div>
+                                <div class="rb-part-info-name">名称: ${rbPart.name || '-'}</div>
+                            </div>
+                        </div>
+                        <div class="rb-part-info-footer">提示: 该零件尚未添加到您的库存，搜索结果显示为空</div>
+                    `;
+                    results.appendChild(infoCard);
+                }
+            } catch(e) {}
+        }
+    }
 }
 
 // 更新选色按钮样式：根据颜色ID设置底色和文字颜色
