@@ -1968,8 +1968,12 @@ async function fillRecognizedPart(partNum, fallbackName) {
         }
     }
 
-    // 3. 填入型号（显示原始识别型号，但实际使用有效型号进行查询）
-    numInput.value = partNum;
+    // 3. 如果使用了别名，直接填入解析后的RB标准型号（因为别名在RB中不存在）
+    if (usedAlias) {
+        numInput.value = effectivePartNum;
+    } else {
+        numInput.value = partNum;
+    }
 
     // 4. 名称优先取 RB 数据库，其次用识别结果返回的名称
     let name = fallbackName || '';
@@ -1990,7 +1994,7 @@ async function fillRecognizedPart(partNum, fallbackName) {
         if (box) {
             const hint = document.createElement('div');
             hint.className = 'alias-hint';
-            hint.innerHTML = `⚠️ 该零件型号（${partNum}）在RB数据库中对应为 <b>${effectivePartNum}</b>，已自动映射`;
+            hint.innerHTML = `⚠️ BG识别型号（${partNum}）在RB数据库中对应为 <b>${effectivePartNum}</b>，已自动切换为该型号`;
             box.prepend(hint);
         }
     }
@@ -2595,9 +2599,27 @@ function recognizePartFromSearch() {
                 // 别名解析：如果型号在 RB 中找不到，尝试通过别名映射查找
                 const resolvedNum = await resolvePartAlias(candidate.id);
 
-                // 填入搜索框
-                document.getElementById('search-part-num').value = candidate.id;
-                document.getElementById('search-part-name').value = candidate.name || '';
+                // 如果有别名映射，直接填入解析后的RB标准型号
+                if (resolvedNum !== candidate.id) {
+                    // 先尝试查询解析后的型号是否存在
+                    let rbPart = null;
+                    try {
+                        rbPart = await getPartByNum(resolvedNum);
+                    } catch(e) {}
+                    if (rbPart) {
+                        // 解析后型号存在，直接填入
+                        document.getElementById('search-part-num').value = resolvedNum;
+                        document.getElementById('search-part-name').value = rbPart.name || candidate.name || '';
+                    } else {
+                        // 解析后型号也不存在，填入原始识别值
+                        document.getElementById('search-part-num').value = candidate.id;
+                        document.getElementById('search-part-name').value = candidate.name || '';
+                    }
+                } else {
+                    // 没有别名，直接填入
+                    document.getElementById('search-part-num').value = candidate.id;
+                    document.getElementById('search-part-name').value = candidate.name || '';
+                }
 
                 // 如果 BG 返回了颜色，自动填入颜色ID
                 if (candidate.colorId !== null && candidate.colorId !== undefined) {
@@ -2611,7 +2633,7 @@ function recognizePartFromSearch() {
                     hint.className = 'alias-hint';
                     hint.style.marginTop = '8px';
                     hint.style.marginBottom = '8px';
-                    hint.innerHTML = `⚠️ 该零件型号（${candidate.id}）在RB数据库中对应为 <b>${resolvedNum}</b>，已自动映射。<br>搜索时请使用 <b>${resolvedNum}</b> 或 <b>${candidate.id}</b>`;
+                    hint.innerHTML = `⚠️ BG识别型号（${candidate.id}）在RB数据库中对应为 <b>${resolvedNum}</b>，已自动切换为该型号`;
                     const resultsArea = document.getElementById('search-results');
                     // 显示提示（在搜索前先清除旧提示）
                     const oldHint = document.querySelector('.search-alias-hint');
