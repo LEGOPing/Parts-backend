@@ -1453,15 +1453,33 @@ function initAddPartSuggestions() {
         
         const suggestions = await searchPartsByNumber(query, 30);
         
+        // 如果直接搜索无结果，尝试通过别名查找
+        let aliasSuggestions = [];
         if (suggestions.length === 0) {
+            const resolvedNum = await resolvePartAlias(query.trim());
+            if (resolvedNum && resolvedNum !== query.trim()) {
+                aliasSuggestions = await searchPartsByNumber(resolvedNum, 5);
+                // 标记为别名推荐
+                aliasSuggestions = aliasSuggestions.map(s => ({
+                    ...s,
+                    part_num: s.part_num,
+                    name: s.name,
+                    aliasFrom: query.trim()
+                }));
+            }
+        }
+        
+        const allSuggestions = [...suggestions, ...aliasSuggestions];
+        
+        if (allSuggestions.length === 0) {
             hidePartNumSuggestions();
             return;
         }
         
-        partNumSuggestions.innerHTML = suggestions.map(s => `
-            <div class="part-number-suggestion-item" data-part-num="${s.part_num}" data-part-name="${s.name}">
+        partNumSuggestions.innerHTML = allSuggestions.map(s => `
+            <div class="part-number-suggestion-item ${s.aliasFrom ? 'alias-suggestion' : ''}" data-part-num="${s.part_num}" data-part-name="${s.name}" data-alias-from="${s.aliasFrom || ''}">
                 <span class="suggestion-num">${s.part_num}</span>
-                <span class="suggestion-name">${s.name}</span>
+                <span class="suggestion-name">${s.name}${s.aliasFrom ? ` (别名: ${s.aliasFrom})` : ''}</span>
             </div>
         `).join('');
         partNumSuggestions.style.display = 'block';
@@ -1471,13 +1489,23 @@ function initAddPartSuggestions() {
             item.addEventListener('click', () => {
                 const partNum = item.dataset.partNum;
                 const partName = item.dataset.partName;
+                const aliasFrom = item.dataset.aliasFrom;
                 
-                partNumInput.value = partNum;
+                // 如果是别名推荐，填写原始型号，但显示提示
+                if (aliasFrom) {
+                    partNumInput.value = aliasFrom;
+                    partNameHint.textContent = `已映射到 ${partNum}`;
+                    partNameHint.style.color = '#e67e22';
+                } else {
+                    partNumInput.value = partNum;
+                }
                 hidePartNumSuggestions();
                 
                 if (partName) {
                     partNameInput.value = partName;
-                    partNameHint.textContent = '';
+                    if (!aliasFrom) {
+                        partNameHint.textContent = '';
+                    }
                 }
                 
                 updatePartInfoPreview();
@@ -1635,22 +1663,35 @@ function initAddPartSuggestions() {
         }, 1000);
     }
     
-    // 根据型号更新零件信息预览
+    // 根据型号更新零件信息预览（支持别名解析）
     async function updatePartInfoPreview() {
         const partNum = partNumInput.value.trim();
         if (!partNum) {
             partInfoPreview.style.display = 'none';
             return;
         }
-        
-        const part = await getPartByNum(partNum);
+
+        let part = await getPartByNum(partNum);
+        let effectivePartNum = partNum;
+        let usedAlias = false;
+
+        // 如果在 RB 中找不到，尝试通过别名解析
+        if (!part) {
+            const resolvedNum = await resolvePartAlias(partNum);
+            if (resolvedNum && resolvedNum !== partNum) {
+                effectivePartNum = resolvedNum;
+                part = await getPartByNum(resolvedNum);
+                usedAlias = true;
+            }
+        }
+
         if (part) {
             if (!partNameInput.value) {
                 partNameInput.value = part.name || '';
             }
-            
-            const colorCount = await getPartColorCount(partNum);
-            partInfoPreview.innerHTML = `
+
+            const colorCount = await getPartColorCount(effectivePartNum);
+            let html = `
                 <div class="part-preview-item">
                     <span class="preview-label">型号</span>
                     <span class="preview-value">${part.part_num}</span>
@@ -1661,6 +1702,13 @@ function initAddPartSuggestions() {
                 </div>
                 ${colorCount > 0 ? `<div class="part-preview-item"><span class="preview-label">可用颜色</span><span class="preview-value">${colorCount} 种</span></div>` : ''}
             `;
+            if (usedAlias) {
+                html += `<div class="part-preview-item" style="color: #e67e22; font-size: 11px;">
+                    <span class="preview-label">别名映射</span>
+                    <span class="preview-value">${partNum} → ${effectivePartNum}</span>
+                </div>`;
+            }
+            partInfoPreview.innerHTML = html;
             partInfoPreview.style.display = 'block';
         } else {
             partInfoPreview.style.display = 'none';
@@ -1777,9 +1825,32 @@ async function processRecognitionFile(input) {
         const candidate = await uploadToBrickognize(compressed);
         URL.revokeObjectURL(previewUrl);
         if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
-        await fillRecognizedPart(candidate.id, candidate.name);
-        const result = await computeClosestRBColors(compressed, candidate.id);
-        renderRecognizeColors(result.colors, result.dominantHex);
+
+        // 填入零件信息（支持别名解析），获取有效的RB零件型号
+        const effectivePartNum = await fillRecognizedPart(candidate.id, candidate.name);
+
+        // 颜色处理：优先使用 BG 返回的颜色，其次通过图片分析计算
+        let bgColorId = candidate.colorId;
+        let bgColorName = candidate.colorName;
+
+        // 计算图片中最接近的 RB 颜色（同时作为备选）
+        const result = await computeClosestRBColors(compressed, effectivePartNum || candidate.id);
+        renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
+
+        // 如果 BG 返回了颜色，自动选中并填入
+        if (bgColorId !== null && bgColorId !== undefined) {
+            const colorInput = document.getElementById('new-part-color');
+            if (colorInput) {
+                colorInput.value = bgColorId;
+                updateColorButtonColor(bgColorId);
+            }
+        }
+
+        // 同名零件消歧：如果名称不为空，查询 RB 数据库中所有同名零件
+        const partName = document.getElementById('new-part-name').value;
+        if (partName && effectivePartNum) {
+            await showSameNamePartsPicker(partName, effectivePartNum);
+        }
     } catch (err) {
         console.error('Brickognize识别失败:', err);
         setRecognizeStatus('识别失败：' + (err && err.message ? err.message : '网络错误，请检查网络'));
@@ -1813,11 +1884,16 @@ async function compressImage(file, maxSize) {
     });
 }
 
-// 调用 Brickognize 识别零件型号
+// 调用 Brickognize 识别零件型号和颜色
+// 启用颜色预测（predict_color=true），返回结果包含：
+// - id: 零件型号
+// - name: 零件名称
+// - colorName: 识别到的颜色名称（如 "Red"）
+// - colorId: 匹配到的 RB 颜色 ID（通过颜色名称匹配）
 async function uploadToBrickognize(file) {
     const formData = new FormData();
     formData.append('query_image', file);
-    const url = 'https://api.brickognize.com/predict/parts/?predict_color=false&top_k_items=3&min_similarity_items=0';
+    const url = 'https://api.brickognize.com/predict/parts/?predict_color=true&top_k_items=3&min_similarity_items=0';
     const resp = await fetch(url, { method: 'POST', body: formData });
     if (!resp.ok) {
         // 尝试读取错误详情
@@ -1828,29 +1904,102 @@ async function uploadToBrickognize(file) {
     const data = await resp.json();
     const items = (data && data.items) || [];
     if (!items.length) return null;
+
     // 优先返回零件(part)候选，其次取得分最高的候选
     const cand = items.find(i => i.type === 'part') || items[0];
-    return { id: String(cand.id), name: cand.name || '' };
+
+    // 解析颜色信息：Brickognize 返回的颜色名称
+    let colorName = '';
+    let colorId = null;
+    if (data.predicted_color) {
+        colorName = String(data.predicted_color).trim();
+    } else if (cand.color) {
+        colorName = String(cand.color).trim();
+    }
+
+    // 尝试将颜色名称匹配到 RB 颜色 ID
+    if (colorName) {
+        try {
+            const matchedColor = await matchColorNameToId(colorName);
+            if (matchedColor) {
+                colorId = matchedColor.id;
+                colorName = matchedColor.name;
+            }
+        } catch (e) {
+            console.warn('颜色名称匹配失败:', e.message);
+        }
+    }
+
+    return {
+        id: String(cand.id),
+        name: cand.name || '',
+        colorName: colorName,
+        colorId: colorId
+    };
 }
 
-// 将识别到的型号/名称填入表单
+// 将识别到的型号/名称填入表单，支持别名解析
+// 如果 partNum 在 RB 数据库中找不到，尝试通过别名表查找对应的 RB 标准型号
+// 返回解析后的有效 RB 零件型号（可能和输入不同）
 async function fillRecognizedPart(partNum, fallbackName) {
     const numInput = document.getElementById('new-part-num');
     const nameInput = document.getElementById('new-part-name');
-    if (!numInput) return;
+    if (!numInput) return null;
+
+    // 1. 尝试直接查询 RB 数据库
+    let rbPart = null;
+    let effectivePartNum = partNum;
+    let usedAlias = false;
+
+    try {
+        rbPart = await getPartByNum(partNum);
+    } catch (e) { /* 忽略 */ }
+
+    // 2. 如果在 RB 中找不到，尝试通过别名表解析
+    if (!rbPart) {
+        const resolvedNum = await resolvePartAlias(partNum);
+        if (resolvedNum && resolvedNum !== partNum) {
+            effectivePartNum = resolvedNum;
+            usedAlias = true;
+            try {
+                rbPart = await getPartByNum(resolvedNum);
+            } catch (e) { /* 忽略 */ }
+            console.log(`零件别名解析: ${partNum} → ${resolvedNum}`);
+        }
+    }
+
+    // 3. 填入型号（显示原始识别型号，但实际使用有效型号进行查询）
     numInput.value = partNum;
 
-    // 名称优先取 RB 数据库，其次用识别结果返回的名称
+    // 4. 名称优先取 RB 数据库，其次用识别结果返回的名称
     let name = fallbackName || '';
-    try {
-        const p = await getPartByNum(partNum);
-        if (p && p.name) name = p.name;
-    } catch (e) { /* 忽略 */ }
+    if (rbPart && rbPart.name) {
+        name = rbPart.name;
+    } else {
+        // 如果通过别名解析到了 RB 零件，也尝试用别名型号的名称
+        try {
+            const p = await getPartByNum(partNum);
+            if (p && p.name) name = p.name;
+        } catch (e) { /* 忽略 */ }
+    }
     if (nameInput) nameInput.value = name;
+
+    // 5. 如果使用了别名，在识别结果区域显示提示
+    if (usedAlias) {
+        const box = document.getElementById('recognize-result');
+        if (box) {
+            const hint = document.createElement('div');
+            hint.className = 'alias-hint';
+            hint.innerHTML = `⚠️ 该零件型号（${partNum}）在RB数据库中对应为 <b>${effectivePartNum}</b>，已自动映射`;
+            box.prepend(hint);
+        }
+    }
 
     // 收拢联想下拉
     const sug = document.getElementById('part-number-suggestions');
     if (sug) sug.style.display = 'none';
+
+    return effectivePartNum;
 }
 
 // 设置识别结果区域的临时状态文本
@@ -1941,34 +2090,65 @@ async function computeClosestRBColors(file, partNum) {
 }
 
 // 渲染推荐颜色卡片，点击即可填入颜色ID
-function renderRecognizeColors(colors, dominantHex) {
+// 支持从 BG 传入颜色信息（bgColorId, bgColorName），标记为默认选中
+function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
     const box = document.getElementById('recognize-result');
     if (!box) return;
     const partNum = document.getElementById('new-part-num').value;
     if (colors.length === 0) {
-        box.innerHTML = `<div class="recognize-status">已识别型号：<b>${partNum}</b>（未能计算推荐颜色）</div>`;
+        let html = `<div class="recognize-status">已识别型号：<b>${partNum}</b>（未能计算推荐颜色）`;
+        if (bgColorName) {
+            html += `<br/>BG识别颜色：<b>${bgColorName}</b>`;
+        }
+        html += `</div>`;
+        box.innerHTML = html;
         return;
     }
+
+    // 如果 BG 有颜色，标记 BG 颜色，否则标记第一个计算颜色
+    let defaultSelectedIdx = -1;
+    if (bgColorId !== null && bgColorId !== undefined) {
+        defaultSelectedIdx = colors.findIndex(c => c.id === Number(bgColorId));
+    }
+    if (defaultSelectedIdx === -1) defaultSelectedIdx = 0;
+
+    let colorChipsHtml = colors.map((c, idx) => {
+        const isSelected = idx === defaultSelectedIdx;
+        const isBgColor = bgColorId !== null && bgColorId !== undefined && c.id === Number(bgColorId);
+        return `
+            <button type="button" class="recognize-color-chip ${isSelected ? 'selected' : ''}" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
+                <span class="chip-swatch" style="background:${c.hex}"></span>
+                <span class="chip-name">${c.name}${isBgColor ? ' ⬥' : ''}</span>
+            </button>`;
+    }).join('');
+
+    let bgColorHtml = '';
+    if (bgColorName && bgColorId === null) {
+        // BG 返回了颜色名称但未匹配到 ID，显示为提示
+        bgColorHtml = `<div class="recognize-color-note">BG识别颜色：${bgColorName}（未匹配到RB颜色ID）</div>`;
+    }
+
     box.innerHTML = `
         <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
         <div class="recognize-section-title">
             最接近颜色：
             <span class="dominant-swatch" style="background:${dominantHex || '#ccc'}" title="图片提取色"></span>
         </div>
+        ${bgColorHtml}
         <div class="recognize-colors-row">
-            ${colors.map(c => `
-                <button type="button" class="recognize-color-chip" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
-                    <span class="chip-swatch" style="background:${c.hex}"></span>
-                    <span class="chip-name">${c.name}</span>
-                </button>`).join('')}
+            ${colorChipsHtml}
         </div>
     `;
     const chips = box.querySelectorAll('.recognize-color-chip');
     chips.forEach((chip, idx) => {
         chip.addEventListener('click', () => selectRecognizeColor(chip, idx));
     });
-    // 默认选中第一个（最接近）并填入颜色ID
-    if (chips.length) selectRecognizeColor(chips[0], 0);
+    // 默认选中指定的颜色并填入颜色ID
+    if (chips.length > defaultSelectedIdx) {
+        selectRecognizeColor(chips[defaultSelectedIdx], defaultSelectedIdx);
+    } else if (chips.length) {
+        selectRecognizeColor(chips[0], 0);
+    }
 }
 
 // 选择某个推荐颜色，填入颜色ID并刷新按钮色块
@@ -1979,6 +2159,149 @@ function selectRecognizeColor(chip, idx) {
     colorInput.value = chip.dataset.id;
     updateColorButtonColor(chip.dataset.id);
     if (box) box.querySelectorAll('.recognize-color-chip').forEach(c => c.classList.toggle('selected', c === chip));
+}
+
+// ==================== 同名零件消歧 ====================
+// 某些零件虽然型号不同（如 3063b 和 85080），但外表相同或相似，名称也一样。
+// 拍照识别时，两个型号都有可能被识别到。此功能在 BG 识别后，
+// 按名称在 RB 数据库中匹配所有同名零件，展示零件卡片供用户选择确认。
+
+// 显示同名零件选择器
+async function showSameNamePartsPicker(partName, currentPartNum) {
+    if (!partName || !currentPartNum) return;
+
+    // 从 RB 数据库搜索同名零件
+    const sameNameParts = await searchPartsByNameInRB(partName);
+    if (!sameNameParts || sameNameParts.length <= 1) return; // 没有同名零件，无需选择
+
+    // 排除当前已选型号
+    const otherParts = sameNameParts.filter(p => p.part_num !== currentPartNum);
+    if (otherParts.length === 0) return;
+
+    // 检查是否已经显示过同名零件选择器（避免重复）
+    const existingPicker = document.getElementById('same-name-parts-picker');
+    if (existingPicker) return;
+
+    // 创建选择器UI
+    const box = document.getElementById('recognize-result');
+    if (!box) return;
+
+    const pickerDiv = document.createElement('div');
+    pickerDiv.id = 'same-name-parts-picker';
+    pickerDiv.className = 'same-name-parts-picker';
+
+    // 获取所有同名零件的图片
+    let cardsHtml = '';
+    for (const part of sameNameParts) {
+        const imgUrl = await getPartImageUrl(part.part_num, 0); // 用 color_id=0 获取通用图片
+        const isCurrent = part.part_num === currentPartNum;
+        cardsHtml += `
+            <div class="same-name-part-card ${isCurrent ? 'selected' : ''}" data-part-num="${part.part_num}" data-part-name="${part.name}">
+                <div class="snp-image">
+                    ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'snp-no-img\\'>无图</div>'">` : '<div class="snp-no-img">无图</div>'}
+                </div>
+                <div class="snp-info">
+                    <div class="snp-part-num">${part.part_num}</div>
+                    <div class="snp-part-name">${part.name}</div>
+                </div>
+                ${isCurrent ? '<div class="snp-badge">当前</div>' : ''}
+            </div>`;
+    }
+
+    // 如果所有卡片都一样（只有当前型号过滤了），就不显示选择器
+    if (otherParts.length === 0) {
+        pickerDiv.innerHTML = `
+            <div class="snp-header">
+                <span class="snp-title">📋 同名零件</span>
+                <span class="snp-hint">${sameNameParts.length} 个零件共享此名称</span>
+            </div>
+            <div class="snp-cards-row">
+                ${cardsHtml}
+            </div>
+            <div class="snp-footer">
+                <span class="snp-current-tip">已选择: <b>${currentPartNum}</b></span>
+            </div>
+        `;
+    } else {
+        pickerDiv.innerHTML = `
+            <div class="snp-header">
+                <span class="snp-title">📋 同名零件确认</span>
+                <span class="snp-hint">检测到 ${sameNameParts.length} 个零件共享此名称，请确认型号</span>
+            </div>
+            <div class="snp-cards-row">
+                ${cardsHtml}
+            </div>
+            <div class="snp-footer">
+                <span class="snp-current-tip">点击卡片切换型号</span>
+            </div>
+        `;
+    }
+
+    // 绑定点击事件
+    setTimeout(() => {
+        pickerDiv.querySelectorAll('.same-name-part-card').forEach(card => {
+            card.addEventListener('click', () => {
+                // 取消其他选中
+                pickerDiv.querySelectorAll('.same-name-part-card').forEach(c => {
+                    c.classList.remove('selected');
+                    const badge = c.querySelector('.snp-badge');
+                    if (badge) badge.remove();
+                });
+                card.classList.add('selected');
+
+                const partNum = card.dataset.partNum;
+                const partName = card.dataset.partName;
+
+                // 更新输入框
+                const numInput = document.getElementById('new-part-num');
+                const nameInput = document.getElementById('new-part-name');
+                if (numInput) numInput.value = partNum;
+                if (nameInput) nameInput.value = partName;
+
+                // 添加"当前"标记
+                const badge = document.createElement('div');
+                badge.className = 'snp-badge';
+                badge.textContent = '当前';
+                card.appendChild(badge);
+
+                console.log(`用户选择同名零件: ${partNum}`);
+            });
+        });
+    }, 0);
+
+    box.appendChild(pickerDiv);
+}
+
+// 在 RB 数据库中按名称搜索零件（精确匹配和模糊匹配）
+async function searchPartsByNameInRB(partName) {
+    if (!partName) return [];
+    try {
+        const db = await openRBDatabase();
+        const allParts = await getAll(RB_STORES.PARTS);
+        const cleanName = partName.trim().toLowerCase();
+
+        // 1. 精确匹配（名称完全相同，不区分大小写）
+        let results = allParts.filter(p =>
+            p.name && p.name.toLowerCase().trim() === cleanName
+        );
+
+        // 2. 如果精确匹配结果太少，尝试包含匹配（名称中包含关键词）
+        if (results.length <= 1) {
+            const broader = allParts.filter(p => {
+                if (!p.name) return false;
+                const pn = p.name.toLowerCase().trim();
+                return pn.includes(cleanName) || cleanName.includes(pn);
+            });
+            if (broader.length > results.length) {
+                results = broader;
+            }
+        }
+
+        return results;
+    } catch (error) {
+        console.error('搜索同名零件失败:', error);
+        return [];
+    }
 }
 
 // 文件转 Image 对象
@@ -2263,13 +2586,41 @@ function recognizePartFromSearch() {
             if (!file) return;
             searchRecognizeInput.value = '';
 
-            // 复用"添加零件"的识别函数，但识别后填入搜索框并自动搜索
             try {
                 const compressed = await compressImage(file, 1024);
                 if (!compressed) { alert('图片处理失败'); return; }
                 const candidate = await uploadToBrickognize(compressed);
                 if (!candidate) { alert('未识别到零件，请重试'); return; }
+
+                // 别名解析：如果型号在 RB 中找不到，尝试通过别名映射查找
+                const resolvedNum = await resolvePartAlias(candidate.id);
+
+                // 填入搜索框
                 document.getElementById('search-part-num').value = candidate.id;
+                document.getElementById('search-part-name').value = candidate.name || '';
+
+                // 如果 BG 返回了颜色，自动填入颜色ID
+                if (candidate.colorId !== null && candidate.colorId !== undefined) {
+                    document.getElementById('search-color-id').value = candidate.colorId;
+                    updateColorPickButton(candidate.colorId);
+                }
+
+                // 如果有别名映射，提示用户
+                if (resolvedNum !== candidate.id) {
+                    const hint = document.createElement('div');
+                    hint.className = 'alias-hint';
+                    hint.style.marginTop = '8px';
+                    hint.style.marginBottom = '8px';
+                    hint.innerHTML = `⚠️ 该零件型号（${candidate.id}）在RB数据库中对应为 <b>${resolvedNum}</b>，已自动映射。<br>搜索时请使用 <b>${resolvedNum}</b> 或 <b>${candidate.id}</b>`;
+                    const resultsArea = document.getElementById('search-results');
+                    // 显示提示（在搜索前先清除旧提示）
+                    const oldHint = document.querySelector('.search-alias-hint');
+                    if (oldHint) oldHint.remove();
+                    hint.className += ' search-alias-hint';
+                    if (resultsArea) resultsArea.prepend(hint);
+                }
+
+                // 执行搜索
                 handleAdvancedSearch();
             } catch (err) {
                 console.error('搜索识别失败:', err);
@@ -3153,7 +3504,37 @@ async function handleAdvancedSearch() {
                document.getElementById('search-status').value === 'true'
     };
     
-    const parts = await advancedSearchParts(params);
+    let parts = await advancedSearchParts(params);
+
+    // 如果按型号搜索没有结果，尝试通过别名解析查找
+    if (params.part_num && parts.length === 0) {
+        const resolvedNum = await resolvePartAlias(params.part_num);
+        if (resolvedNum && resolvedNum !== params.part_num) {
+            console.log(`搜索别名解析: ${params.part_num} → ${resolvedNum}`);
+            const aliasParams = { ...params, part_num: resolvedNum };
+            parts = await advancedSearchParts(aliasParams);
+
+            // 如果找到了别名零件，添加别名型号到搜索结果提示
+            if (parts.length > 0) {
+                const hint = document.createElement('div');
+                hint.className = 'alias-hint';
+                hint.style.marginBottom = '8px';
+                hint.innerHTML = `⚠️ 型号 <b>${params.part_num}</b> 在RB数据库中对应为 <b>${resolvedNum}</b>，已自动映射显示结果`;
+                const results = document.getElementById('search-results');
+                // 先清除旧提示
+                const oldHint = results ? results.querySelector('.alias-hint') : null;
+                if (oldHint) oldHint.remove();
+                // 在渲染结果前先清除再添加
+                setTimeout(() => {
+                    const resultsEl = document.getElementById('search-results');
+                    if (resultsEl && !resultsEl.querySelector('.alias-hint')) {
+                        resultsEl.prepend(hint);
+                    }
+                }, 50);
+            }
+        }
+    }
+
     renderSearchResults(parts);
 }
 
