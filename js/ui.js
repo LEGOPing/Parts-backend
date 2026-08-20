@@ -2047,7 +2047,14 @@ async function computeClosestRBColors(file, partNum) {
         // 若已知零件型号，只取该零件可能有的颜色，否则取全部颜色
         let rbColors = [];
         if (partNum) {
-            const partElements = await getPartColors(partNum);
+            let partElements = await getPartColors(partNum);
+            // 如果直接查询无结果，尝试通过别名解析
+            if (!partElements || partElements.length === 0) {
+                const resolvedNum = await resolvePartAlias(partNum);
+                if (resolvedNum && resolvedNum !== partNum) {
+                    partElements = await getPartColors(resolvedNum);
+                }
+            }
             const colorIds = new Set(partElements.map(e => String(e.color_id)));
             if (colorIds.size > 0) {
                 const allColors = await getAllColors();
@@ -3298,12 +3305,30 @@ function showColorPicker() {
 async function loadColorGrid(partNum) {
     const grid = document.getElementById('color-grid');
 
-    // 从RB数据库查询该零件的所有颜色
-    const partColors = await getPartColors(partNum);
+    // 尝试解析别名：如果 partNum 在 RB 中找不到颜色，尝试用别名查询
+    let effectivePartNum = partNum;
+    let partColors = await getPartColors(partNum);
+    if ((!partColors || partColors.length === 0) && partNum) {
+        const resolvedNum = await resolvePartAlias(partNum);
+        if (resolvedNum && resolvedNum !== partNum) {
+            partColors = await getPartColors(resolvedNum);
+            if (partColors && partColors.length > 0) {
+                effectivePartNum = resolvedNum;
+            }
+        }
+    }
 
     if (!partColors || partColors.length === 0) {
         grid.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">该零件在RB数据库中未找到颜色记录<br>请直接输入颜色ID</div>';
         return;
+    }
+
+    // 如果使用了别名，更新模态框标题显示
+    if (effectivePartNum !== partNum) {
+        const titleEl = document.querySelector('.modal-title');
+        if (titleEl) {
+            titleEl.innerHTML = `选择颜色 (${partNum}) <span style="font-size:11px;color:#e67e22;font-weight:normal;">← 颜色数据来自 ${effectivePartNum}</span>`;
+        }
     }
 
     // 获取每个颜色的详细信息（从colors表）
@@ -3466,7 +3491,14 @@ async function loadSearchColorGrid(partNum) {
 
     // 若有型号，先按零件可用颜色加载
     if (partNum) {
-        const partColors = await getPartColors(partNum);
+        let partColors = await getPartColors(partNum);
+        // 如果直接查询无结果，尝试通过别名解析
+        if (!partColors || partColors.length === 0) {
+            const resolvedNum = await resolvePartAlias(partNum);
+            if (resolvedNum && resolvedNum !== partNum) {
+                partColors = await getPartColors(resolvedNum);
+            }
+        }
         if (partColors && partColors.length > 0) {
             const colorIds = [...new Set(partColors.map(pc => pc.color_id))];
             for (const colorId of colorIds) {
