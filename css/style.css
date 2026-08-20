@@ -2200,6 +2200,14 @@ body {
     color: #7f8c8d;
 }
 
+/* ==================== 别名输入提示（添加零件页） ==================== */
+.alias-input-hint {
+    font-size: 11px;
+    color: #7f8c8d;
+    margin-top: 2px;
+    font-style: italic;
+}
+
 /* ==================== RB零件信息卡片（搜索别名参考） ==================== */
 .rb-part-info-card {
     margin-top: 12px;
