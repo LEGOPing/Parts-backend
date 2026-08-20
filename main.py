@@ -22,6 +22,7 @@ from app.models.repository import Repository
 from app.models.box import Box
 from app.models.part import Part
 from app.models.part_weight import PartWeight
+from app.models.part_alias import PartAlias
 
 logger.info("Creating database tables...")
 try:
@@ -48,7 +49,7 @@ app.add_middleware(
 )
 
 # 导入路由
-from app.routes import repositories, boxes, parts, search, settings
+from app.routes import repositories, boxes, parts, search, settings, part_aliases
 
 # 注册路由
 app.include_router(repositories.router, prefix="/api/repositories", tags=["仓库管理"])
@@ -56,6 +57,7 @@ app.include_router(boxes.router, prefix="/api/boxes", tags=["盒子管理"])
 app.include_router(parts.router, prefix="/api/parts", tags=["零件管理"])
 app.include_router(search.router, prefix="/api/search", tags=["零件搜索"])
 app.include_router(settings.router, prefix="/api/settings", tags=["系统设置"])
+app.include_router(part_aliases.router, prefix="/api/part-aliases", tags=["零件别名管理"])
 
 # 健康检查端点
 @app.get("/health")
