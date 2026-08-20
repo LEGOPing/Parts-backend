@@ -2200,6 +2200,73 @@ body {
     color: #7f8c8d;
 }
 
+/* ==================== RB零件信息卡片（搜索别名参考） ==================== */
+.rb-part-info-card {
+    margin-top: 12px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.rb-part-info-header {
+    background: #e9ecef;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.rb-part-info-body {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    align-items: flex-start;
+}
+
+.rb-part-info-img {
+    flex: 0 0 80px;
+    width: 80px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #eee;
+}
+
+.rb-part-info-img img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.rb-part-info-details {
+    flex: 1;
+}
+
+.rb-part-info-num {
+    font-size: 14px;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.rb-part-info-name {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.rb-part-info-footer {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #adb5bd;
+    background: #f1f3f5;
+    border-top: 1px solid #dee2e6;
+}
+
 /* ==================== 灰卡白平衡校准 ==================== */
 .gray-card-section {
     margin-top: 12px;
