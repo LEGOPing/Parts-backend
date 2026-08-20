@@ -1835,6 +1835,22 @@ async function processRecognitionFile(input) {
 
         // 计算图片中最接近的 RB 颜色（同时作为备选）
         const result = await computeClosestRBColors(compressed, effectivePartNum || candidate.id);
+
+        // 确保 BG 颜色始终在颜色列表中（不在最近5个中就将其加入）
+        if (bgColorId !== null && bgColorId !== undefined) {
+            const bgInColors = result.colors.findIndex(c => c.id === Number(bgColorId));
+            if (bgInColors === -1) {
+                const allColors = await getAllColors();
+                const bgColor = allColors.find(c => c.id === Number(bgColorId));
+                if (bgColor) {
+                    result.colors.unshift({
+                        id: bgColor.id,
+                        name: bgColor.name,
+                        hex: bgColor.rgb
+                    });
+                }
+            }
+        }
         renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
 
         // 如果 BG 返回了颜色，自动选中并填入
@@ -2114,6 +2130,52 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
     const box = document.getElementById('recognize-result');
     if (!box) return;
     const partNum = document.getElementById('new-part-num').value;
+
+    // 确定默认选中索引：优先 BG 颜色，其次第一个
+    let defaultSelectedIdx = 0;
+    if (bgColorId !== null && bgColorId !== undefined) {
+        const bgIdx = colors.findIndex(c => c.id === Number(bgColorId));
+        if (bgIdx >= 0) defaultSelectedIdx = bgIdx;
+    }
+
+    // 分离 BG 颜色卡片和普通推荐颜色卡片
+    let bgChipHtml = '';
+    let regularChipsHtml = '';
+
+    colors.forEach((c, idx) => {
+        const isSelected = idx === defaultSelectedIdx;
+        const isBgColor = bgColorId !== null && bgColorId !== undefined && c.id === Number(bgColorId);
+        const chip = `
+            <button type="button" class="recognize-color-chip ${isSelected ? 'selected' : ''}" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
+                <span class="chip-swatch" style="background:${c.hex}"></span>
+                <span class="chip-name">${c.name}${isBgColor ? ' ⬥' : ''}</span>
+            </button>`;
+        if (isBgColor) {
+            bgChipHtml = chip;
+        } else {
+            regularChipsHtml += chip;
+        }
+    });
+
+    // BG 颜色区域（独立展示）
+    let bgSectionHtml = '';
+    if (bgChipHtml) {
+        bgSectionHtml = `
+            <div class="recognize-section-title" style="margin-top:8px;color:#2980b9;">
+                ⬥ BG识别颜色（默认选中）：
+            </div>
+            <div class="recognize-colors-row">
+                ${bgChipHtml}
+            </div>`;
+    }
+
+    // BG 有名称但未匹配到 ID 时显示提示
+    let bgColorNoteHtml = '';
+    if (bgColorName && bgColorId === null) {
+        bgColorNoteHtml = `<div class="recognize-color-note">BG识别颜色：${bgColorName}（未匹配到RB颜色ID）</div>`;
+    }
+
+    // 无颜色数据时
     if (colors.length === 0) {
         let html = `<div class="recognize-status">已识别型号：<b>${partNum}</b>（未能计算推荐颜色）`;
         if (bgColorName) {
@@ -2124,45 +2186,24 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
         return;
     }
 
-    // 如果 BG 有颜色，标记 BG 颜色，否则标记第一个计算颜色
-    let defaultSelectedIdx = -1;
-    if (bgColorId !== null && bgColorId !== undefined) {
-        defaultSelectedIdx = colors.findIndex(c => c.id === Number(bgColorId));
-    }
-    if (defaultSelectedIdx === -1) defaultSelectedIdx = 0;
-
-    let colorChipsHtml = colors.map((c, idx) => {
-        const isSelected = idx === defaultSelectedIdx;
-        const isBgColor = bgColorId !== null && bgColorId !== undefined && c.id === Number(bgColorId);
-        return `
-            <button type="button" class="recognize-color-chip ${isSelected ? 'selected' : ''}" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
-                <span class="chip-swatch" style="background:${c.hex}"></span>
-                <span class="chip-name">${c.name}${isBgColor ? ' ⬥' : ''}</span>
-            </button>`;
-    }).join('');
-
-    let bgColorHtml = '';
-    if (bgColorName && bgColorId === null) {
-        // BG 返回了颜色名称但未匹配到 ID，显示为提示
-        bgColorHtml = `<div class="recognize-color-note">BG识别颜色：${bgColorName}（未匹配到RB颜色ID）</div>`;
-    }
-
     box.innerHTML = `
         <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
         <div class="recognize-section-title">
-            最接近颜色：
+            图片提取色：
             <span class="dominant-swatch" style="background:${dominantHex || '#ccc'}" title="图片提取色"></span>
         </div>
-        ${bgColorHtml}
+        ${bgColorNoteHtml}
+        ${bgSectionHtml}
+        ${regularChipsHtml ? `<div class="recognize-section-title" style="margin-top:8px;">其他推荐颜色：</div>
         <div class="recognize-colors-row">
-            ${colorChipsHtml}
-        </div>
+            ${regularChipsHtml}
+        </div>` : ''}
     `;
     const chips = box.querySelectorAll('.recognize-color-chip');
     chips.forEach((chip, idx) => {
         chip.addEventListener('click', () => selectRecognizeColor(chip, idx));
     });
-    // 默认选中指定的颜色并填入颜色ID
+    // 默认选中 BG 颜色或第一个颜色
     if (chips.length > defaultSelectedIdx) {
         selectRecognizeColor(chips[defaultSelectedIdx], defaultSelectedIdx);
     } else if (chips.length) {
