@@ -1851,18 +1851,18 @@ async function processRecognitionFile(input) {
                 }
             }
         }
+        renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
+
         // DEBUG: 在识别结果区显示颜色数据调试信息
         try {
             const box = document.getElementById('recognize-result');
             if (box) {
                 const debugDiv = document.createElement('div');
-                debugDiv.style.cssText = 'font-size:11px;color:#666;background:#f5f5f5;padding:4px 8px;border-radius:4px;margin-bottom:6px;border:1px dashed #ddd;';
+                debugDiv.style.cssText = 'font-size:11px;color:#666;background:#f5f5f5;padding:4px 8px;border-radius:4px;margin-top:6px;border:1px dashed #ddd;';
                 debugDiv.textContent = `[DEBUG] bgColorId=${bgColorId} bgColorName="${bgColorName}" colors.length=${result.colors.length}`;
                 box.appendChild(debugDiv);
             }
         } catch (e) {}
-
-        renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
 
         // 加载零件图片（使用别名解析后的有效型号）
         const partNumForImage = effectivePartNum || candidate.id;
