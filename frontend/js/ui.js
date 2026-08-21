@@ -1359,41 +1359,10 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
-            <div class="form-section gray-card-section" id="gray-card-section">
-                <div class="gray-card-header">
-                    <span class="gray-card-label">灰卡白平衡校准</span>
-                    <label class="gray-card-toggle">
-                        <input type="checkbox" id="gray-card-toggle" ${isGrayCardCalibrated() && isGrayCardCalibrationActive() ? 'checked' : ''} onchange="toggleGrayCardMode(this.checked)" ${isGrayCardCalibrated() ? '' : 'disabled'} />
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="gray-card-status" id="gray-card-status">
-                    ${isGrayCardCalibrated()
-                        ? `<span class="gray-card-status-text calibrated">✓ 已校准</span>`
-                        : `<span class="gray-card-status-text uncalibrated">未校准（需先拍灰卡）</span>`}
-                    <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">
-                        ${isGrayCardCalibrated() ? '重新校准' : '拍灰卡校准'}
-                    </button>
-                    ${isGrayCardCalibrated() ? `<button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()">清除</button>` : ''}
-                </div>
-                <div class="gray-card-instruction" id="gray-card-instruction" style="${isGrayCardCalibrated() ? 'display:none' : 'display:block'}">
-                    将 18% 灰卡放在零件拍摄位置，点击"拍灰卡校准"拍照
-                </div>
-            </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
-    
-    // 灰卡校准专用文件输入（隐藏）
-    const grayCardInput = document.createElement('input');
-    grayCardInput.type = 'file';
-    grayCardInput.id = 'gray-card-camera-input';
-    grayCardInput.accept = 'image/*';
-    grayCardInput.capture = 'environment'; // 提示使用后置摄像头
-    grayCardInput.style.display = 'none';
-    grayCardInput.addEventListener('change', () => processGrayCardFile(grayCardInput));
-    document.body.appendChild(grayCardInput);
     
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
@@ -1429,6 +1398,27 @@ function showRecognizeModal() {
                 <button type="button" class="btn-recognize" onclick="recognizePartFromPhoto()" style="font-size:16px;padding:14px 32px;">📷 拍照识别</button>
                 <div style="font-size:12px;color:#999;margin-top:8px;">拍照后自动识别零件型号、名称和颜色</div>
             </div>
+            <div class="form-section gray-card-section" id="recognize-gray-card-section">
+                <div class="gray-card-header">
+                    <span class="gray-card-label">灰卡白平衡校准</span>
+                    <label class="gray-card-toggle">
+                        <input type="checkbox" id="gray-card-toggle" ${isGrayCardCalibrated() && isGrayCardCalibrationActive() ? 'checked' : ''} onchange="toggleGrayCardMode(this.checked)" ${isGrayCardCalibrated() ? '' : 'disabled'} />
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="gray-card-status" id="gray-card-status">
+                    ${isGrayCardCalibrated()
+                        ? `<span class="gray-card-status-text calibrated">✓ 已校准</span>`
+                        : `<span class="gray-card-status-text uncalibrated">未校准（需先拍灰卡）</span>`}
+                    <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">
+                        ${isGrayCardCalibrated() ? '重新校准' : '拍灰卡校准'}
+                    </button>
+                    ${isGrayCardCalibrated() ? `<button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()">清除</button>` : ''}
+                </div>
+                <div class="gray-card-instruction" id="gray-card-instruction" style="${isGrayCardCalibrated() ? 'display:none' : 'display:block'}">
+                    将 18% 灰卡放在零件拍摄位置，点击"拍灰卡校准"拍照
+                </div>
+            </div>
             <div class="recognize-result" id="recognize-result"></div>
             <div class="recognize-preview-section" id="recognize-preview-section" style="display:none;margin-top:8px;padding:12px;background:#f8f9fa;border-radius:8px;">
                 <div style="font-size:14px;font-weight:600;color:#2c3e50;margin-bottom:8px;">识别结果预览</div>
@@ -1462,6 +1452,16 @@ function showRecognizeModal() {
     cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
     document.body.appendChild(cameraInput);
     
+    // 灰卡校准专用文件输入（隐藏）
+    const grayCardInput = document.createElement('input');
+    grayCardInput.type = 'file';
+    grayCardInput.id = 'gray-card-camera-input';
+    grayCardInput.accept = 'image/*';
+    grayCardInput.capture = 'environment';
+    grayCardInput.style.display = 'none';
+    grayCardInput.addEventListener('change', () => processGrayCardFile(grayCardInput));
+    document.body.appendChild(grayCardInput);
+    
     // 重置识别结果
     recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
 }
@@ -1471,6 +1471,8 @@ function closeRecognizeModal(cancel) {
     // 清理相机输入
     const input = document.getElementById('recognize-camera-input');
     if (input) input.remove();
+    const grayInput = document.getElementById('gray-card-camera-input');
+    if (grayInput) grayInput.remove();
     
     const overlay = document.getElementById('recognize-modal-overlay');
     if (overlay) overlay.remove();
