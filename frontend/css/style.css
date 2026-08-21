@@ -1956,6 +1956,22 @@ body {
     margin-top: 12px;
 }
 
+/* 识别结果中的零件图片 */
+.recognize-part-image {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.recognize-part-image img {
+    max-width: 120px;
+    max-height: 120px;
+    object-fit: contain;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fafafa;
+    padding: 4px;
+}
+
 .recognize-thumb {
     width: 100%;
     max-height: 160px;

@@ -1853,6 +1853,20 @@ async function processRecognitionFile(input) {
         }
         renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
 
+        // 加载零件图片（使用别名解析后的有效型号）
+        const partNumForImage = effectivePartNum || candidate.id;
+        const partImageUrl = await getPartImageUrl(partNumForImage, 0);
+        if (partImageUrl) {
+            const box = document.getElementById('recognize-result');
+            if (box) {
+                // 在识别结果顶部插入图片
+                const imgDiv = document.createElement('div');
+                imgDiv.className = 'recognize-part-image';
+                imgDiv.innerHTML = `<img src="${partImageUrl}" alt="${partNumForImage}" onerror="this.parentElement.style.display='none'">`;
+                box.insertBefore(imgDiv, box.firstChild);
+            }
+        }
+
         // 如果 BG 返回了颜色，自动选中并填入
         if (bgColorId !== null && bgColorId !== undefined) {
             const colorInput = document.getElementById('new-part-color');
