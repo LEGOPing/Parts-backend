@@ -1981,6 +1981,40 @@ body {
     margin-bottom: 8px;
 }
 
+/* 识别颜色行（已识别型号下方） */
+.recognize-color-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 6px 10px;
+    background: #f0f7ff;
+    border-radius: 6px;
+    border: 1px solid #d6e8f7;
+}
+
+.recognize-color-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2c3e50;
+    white-space: nowrap;
+}
+
+.recognize-color-swatch {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.15);
+    flex-shrink: 0;
+}
+
+.recognize-color-text {
+    font-size: 13px;
+    color: #34495e;
+    font-weight: 500;
+}
+
 /* 最接近颜色标题 */
 .recognize-section-title {
     font-size: 13px;

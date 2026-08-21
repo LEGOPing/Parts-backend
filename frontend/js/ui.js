@@ -2138,6 +2138,24 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
         if (bgIdx >= 0) defaultSelectedIdx = bgIdx;
     }
 
+    // 查找 BG 颜色的 hex 值
+    let bgColorHex = '';
+    if (bgColorId !== null && bgColorId !== undefined) {
+        const bgColor = colors.find(c => c.id === Number(bgColorId));
+        if (bgColor) {
+            bgColorHex = bgColor.hex;
+        }
+    }
+
+    // 构建"识别颜色"行（在已识别型号下方显示）
+    const recognizeColorLine = (bgColorId !== null && bgColorId !== undefined && bgColorHex)
+        ? `<div class="recognize-color-line">
+            <span class="recognize-color-label">识别颜色：</span>
+            <span class="recognize-color-swatch" style="background:${bgColorHex}"></span>
+            <span class="recognize-color-text">${bgColorId} ${bgColorName}</span>
+           </div>`
+        : '';
+
     // 分离 BG 颜色卡片和普通推荐颜色卡片
     let bgChipHtml = '';
     let regularChipsHtml = '';
@@ -2188,6 +2206,7 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
 
     box.innerHTML = `
         <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
+        ${recognizeColorLine}
         <div class="recognize-section-title">
             图片提取色：
             <span class="dominant-swatch" style="background:${dominantHex || '#ccc'}" title="图片提取色"></span>
