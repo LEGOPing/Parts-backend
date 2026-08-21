@@ -2143,7 +2143,13 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
     if (bgColorId !== null && bgColorId !== undefined) {
         const bgColor = colors.find(c => c.id === Number(bgColorId));
         if (bgColor) {
-            bgColorHex = bgColor.hex;
+            // colors 数组中的颜色已经有 hex 属性（来自 computeClosestRBColors 处理）
+            // 或者，如果存储的是 rgb（hex 字符串），直接使用
+            bgColorHex = bgColor.hex || bgColor.rgb;
+            // 如果不包含 #，添加前缀
+            if (bgColorHex && !bgColorHex.startsWith('#')) {
+                bgColorHex = '#' + bgColorHex;
+            }
         }
     }
 
