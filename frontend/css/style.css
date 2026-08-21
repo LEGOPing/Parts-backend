@@ -2015,6 +2015,12 @@ body {
     font-weight: 500;
 }
 
+.recognize-color-unmatched {
+    color: #e74c3c;
+    font-size: 12px;
+    font-weight: 400;
+}
+
 /* 最接近颜色标题 */
 .recognize-section-title {
     font-size: 13px;

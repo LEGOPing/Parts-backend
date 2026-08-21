@@ -2140,25 +2140,35 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
 
     // 查找 BG 颜色的 hex 值
     let bgColorHex = '';
-    if (bgColorId !== null && bgColorId !== undefined) {
-        const bgColor = colors.find(c => c.id === Number(bgColorId));
-        if (bgColor) {
-            // colors 数组中的颜色已经有 hex 属性（来自 computeClosestRBColors 处理）
-            // 或者，如果存储的是 rgb（hex 字符串），直接使用
-            bgColorHex = bgColor.hex || bgColor.rgb;
-            // 如果不包含 #，添加前缀
-            if (bgColorHex && !bgColorHex.startsWith('#')) {
-                bgColorHex = '#' + bgColorHex;
+    let displayText = '';
+    if (bgColorName) {
+        // BG 返回了颜色名称，始终显示识别颜色行
+        if (bgColorId !== null && bgColorId !== undefined) {
+            // 匹配到颜色 ID，显示色块 + ID + 名称
+            const bgColor = colors.find(c => c.id === Number(bgColorId));
+            if (bgColor) {
+                // colors 数组中的颜色已经有 hex 属性（来自 computeClosestRBColors 处理）
+                // 或者，如果存储的是 rgb（hex 字符串），直接使用
+                bgColorHex = bgColor.hex || bgColor.rgb;
+                // 如果不包含 #，添加前缀
+                if (bgColorHex && !bgColorHex.startsWith('#')) {
+                    bgColorHex = '#' + bgColorHex;
+                }
             }
+            displayText = `${bgColorId} ${bgColorName}`;
+        } else {
+            // 未能匹配到颜色 ID，显示名称 + 未匹配提示
+            displayText = `${bgColorName} <span class="recognize-color-unmatched">(未匹配)</span>`;
+            bgColorHex = '#cccccc'; // 默认灰色色块
         }
     }
 
     // 构建"识别颜色"行（在已识别型号下方显示）
-    const recognizeColorLine = (bgColorId !== null && bgColorId !== undefined && bgColorHex)
+    const recognizeColorLine = bgColorName
         ? `<div class="recognize-color-line">
             <span class="recognize-color-label">识别颜色：</span>
             <span class="recognize-color-swatch" style="background:${bgColorHex}"></span>
-            <span class="recognize-color-text">${bgColorId} ${bgColorName}</span>
+            <span class="recognize-color-text">${displayText}</span>
            </div>`
         : '';
 
@@ -2193,11 +2203,8 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
             </div>`;
     }
 
-    // BG 有名称但未匹配到 ID 时显示提示
+    // BG 有名称但未匹配到 ID 时提示已在识别颜色行显示，此处不再重复
     let bgColorNoteHtml = '';
-    if (bgColorName && bgColorId === null) {
-        bgColorNoteHtml = `<div class="recognize-color-note">BG识别颜色：${bgColorName}（未匹配到RB颜色ID）</div>`;
-    }
 
     // 无颜色数据时
     if (colors.length === 0) {
