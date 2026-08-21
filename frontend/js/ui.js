@@ -1326,7 +1326,7 @@ function showAddPartSheet() {
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
-                    <button type="button" class="btn-recognize" onclick="recognizePartFromPhoto()">识别</button>
+                    <button type="button" class="btn-recognize" onclick="showRecognizeModal()">识别</button>
                 </div>
             </div>
             <div class="form-section">
@@ -1382,18 +1382,8 @@ function showAddPartSheet() {
             </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
-            <div class="recognize-result" id="recognize-result"></div>
         </div>
     `;
-    
-    // 隐藏相机输入与识别结果容器（随弹窗一起销毁）
-    const cameraInput = document.createElement('input');
-    cameraInput.type = 'file';
-    cameraInput.id = 'recognize-camera-input';
-    cameraInput.accept = 'image/*';
-    cameraInput.style.display = 'none';
-    cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
-    document.body.appendChild(cameraInput);
     
     // 灰卡校准专用文件输入（隐藏）
     const grayCardInput = document.createElement('input');
@@ -1412,6 +1402,127 @@ function showAddPartSheet() {
     
     // 初始化联想功能
     initAddPartSuggestions();
+}
+
+// ==================== 拍照识别弹窗（独立于添加零件表单）====================
+
+// 拍照识别结果暂存
+let recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+
+// 打开拍照识别弹窗
+function showRecognizeModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'recognize-modal-overlay';
+    
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content add-part-modal';
+    
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <button class="btn-cancel" onclick="closeRecognizeModal(true)">取消</button>
+            <span class="modal-title">拍照识别零件</span>
+            <button class="btn-save" id="recognize-confirm-btn" style="opacity:0.4;pointer-events:none;" onclick="confirmRecognizeResult()">确认</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-section" style="text-align:center;padding:16px 0;">
+                <button type="button" class="btn-recognize" onclick="recognizePartFromPhoto()" style="font-size:16px;padding:14px 32px;">📷 拍照识别</button>
+                <div style="font-size:12px;color:#999;margin-top:8px;">拍照后自动识别零件型号、名称和颜色</div>
+            </div>
+            <div class="recognize-result" id="recognize-result"></div>
+            <div class="recognize-preview-section" id="recognize-preview-section" style="display:none;margin-top:8px;padding:12px;background:#f8f9fa;border-radius:8px;">
+                <div style="font-size:14px;font-weight:600;color:#2c3e50;margin-bottom:8px;">识别结果预览</div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:13px;color:#666;min-width:70px;">零件型号：</span>
+                        <span id="recognize-part-num-display" style="font-weight:bold;font-size:15px;color:#2c3e50;"></span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:13px;color:#666;min-width:70px;">零件名称：</span>
+                        <span id="recognize-part-name-display" style="color:#555;"></span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:13px;color:#666;min-width:70px;">零件颜色：</span>
+                        <span id="recognize-color-display" style="color:#555;"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+    
+    // 隐藏相机输入
+    const cameraInput = document.createElement('input');
+    cameraInput.type = 'file';
+    cameraInput.id = 'recognize-camera-input';
+    cameraInput.accept = 'image/*';
+    cameraInput.style.display = 'none';
+    cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
+    document.body.appendChild(cameraInput);
+    
+    // 重置识别结果
+    recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+}
+
+// 关闭识别弹窗
+function closeRecognizeModal(cancel) {
+    // 清理相机输入
+    const input = document.getElementById('recognize-camera-input');
+    if (input) input.remove();
+    
+    const overlay = document.getElementById('recognize-modal-overlay');
+    if (overlay) overlay.remove();
+    
+    if (cancel) {
+        // 取消则不保留任何结果
+        recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    }
+}
+
+// 确认识别结果，填入添加零件表单
+function confirmRecognizeResult() {
+    const data = recognizeResultData;
+    if (!data.partNum) return;
+    
+    const numInput = document.getElementById('new-part-num');
+    const nameInput = document.getElementById('new-part-name');
+    const colorInput = document.getElementById('new-part-color');
+    
+    if (numInput) numInput.value = data.partNum;
+    if (nameInput) nameInput.value = data.partName;
+    if (colorInput) {
+        colorInput.value = data.colorId;
+        updateColorButtonColor(data.colorId);
+    }
+    
+    closeRecognizeModal(false);
+}
+
+// 更新识别弹窗预览区域，启用/禁用确认按钮
+function updateRecognizePreview() {
+    const data = recognizeResultData;
+    const numDisplay = document.getElementById('recognize-part-num-display');
+    const nameDisplay = document.getElementById('recognize-part-name-display');
+    const colorDisplay = document.getElementById('recognize-color-display');
+    const previewSection = document.getElementById('recognize-preview-section');
+    const confirmBtn = document.getElementById('recognize-confirm-btn');
+    
+    if (numDisplay) numDisplay.textContent = data.partNum || '-';
+    if (nameDisplay) nameDisplay.textContent = data.partName || '-';
+    if (colorDisplay) {
+        colorDisplay.textContent = data.colorName ? `${data.colorName} (ID: ${data.colorId})` : (data.colorId ? `ID: ${data.colorId}` : '-');
+    }
+    
+    // 有识别结果时显示预览区域并启用确认按钮
+    if (data.partNum) {
+        if (previewSection) previewSection.style.display = 'block';
+        if (confirmBtn) {
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.pointerEvents = 'auto';
+        }
+    }
 }
 
 // 初始化添加零件的联想功能
@@ -1853,17 +1964,15 @@ async function processRecognitionFile(input) {
         }
         renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
 
-        // 如果 BG 返回了颜色，自动选中并填入
+        // 如果 BG 返回了颜色，自动选中（存入暂存数据）
         if (bgColorId !== null && bgColorId !== undefined) {
-            const colorInput = document.getElementById('new-part-color');
-            if (colorInput) {
-                colorInput.value = bgColorId;
-                updateColorButtonColor(bgColorId);
-            }
+            recognizeResultData.colorId = String(bgColorId);
+            recognizeResultData.colorName = bgColorName || '';
+            updateRecognizePreview();
         }
 
         // 同名零件消歧：如果名称不为空，查询 RB 数据库中所有同名零件
-        const partName = document.getElementById('new-part-name').value;
+        const partName = recognizeResultData.partName;
         if (partName && effectivePartNum) {
             await showSameNamePartsPicker(partName, effectivePartNum);
         }
@@ -1959,12 +2068,8 @@ async function uploadToBrickognize(file) {
 // 输入框始终显示原始 BG 识别型号（如 4073），别名仅用于内部查询 RB 数据
 // 返回解析后的有效 RB 零件型号（可能和输入不同）
 async function fillRecognizedPart(partNum, fallbackName) {
-    const numInput = document.getElementById('new-part-num');
-    const nameInput = document.getElementById('new-part-name');
-    if (!numInput) return null;
-
-    // 1. 始终显示原始 BG 识别型号（如 4073）
-    numInput.value = partNum;
+    // 1. 存储识别型号到暂存数据
+    recognizeResultData.partNum = partNum;
 
     // 2. 尝试直接查询 RB 数据库
     let rbPart = null;
@@ -1993,13 +2098,12 @@ async function fillRecognizedPart(partNum, fallbackName) {
     if (rbPart && rbPart.name) {
         name = rbPart.name;
     } else {
-        // 如果通过别名解析到了 RB 零件，也尝试用别名型号的名称
         try {
             const p = await getPartByNum(partNum);
             if (p && p.name) name = p.name;
         } catch (e) { /* 忽略 */ }
     }
-    if (nameInput) nameInput.value = name;
+    recognizeResultData.partName = name;
 
     // 5. 如果使用了别名，在识别结果区域显示提示
     if (usedAlias) {
@@ -2012,20 +2116,8 @@ async function fillRecognizedPart(partNum, fallbackName) {
         }
     }
 
-    // 6. 如果使用了别名，在型号输入框旁边/下方显示别名提示
-    if (usedAlias) {
-        // 移除旧提示
-        const oldHint = document.querySelector('.alias-input-hint');
-        if (oldHint) oldHint.remove();
-        const hint = document.createElement('div');
-        hint.className = 'alias-input-hint';
-        hint.innerHTML = `RB数据来源: <b>${effectivePartNum}</b>`;
-        numInput.parentNode.appendChild(hint);
-    }
-
-    // 收拢联想下拉
-    const sug = document.getElementById('part-number-suggestions');
-    if (sug) sug.style.display = 'none';
+    // 6. 更新识别弹窗预览区域
+    updateRecognizePreview();
 
     return effectivePartNum;
 }
@@ -2034,7 +2126,7 @@ async function fillRecognizedPart(partNum, fallbackName) {
 function setRecognizeStatus(msg) {
     const box = document.getElementById('recognize-result');
     if (!box) return;
-    const partNum = document.getElementById('new-part-num').value;
+    const partNum = recognizeResultData.partNum;
     box.innerHTML = `<div class="recognize-status">${msg}${partNum ? '<br/>已识别型号：<b>' + partNum + '</b>' : ''}</div>`;
 }
 
@@ -2129,7 +2221,7 @@ async function computeClosestRBColors(file, partNum) {
 function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
     const box = document.getElementById('recognize-result');
     if (!box) return;
-    const partNum = document.getElementById('new-part-num').value;
+    const partNum = recognizeResultData.partNum;
 
     // 确定默认选中索引：优先 BG 颜色，其次第一个
     let defaultSelectedIdx = 0;
@@ -2211,13 +2303,12 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
     }
 }
 
-// 选择某个推荐颜色，填入颜色ID并刷新按钮色块
+// 选择某个推荐颜色，更新暂存数据并刷新预览
 function selectRecognizeColor(chip, idx) {
     const box = document.getElementById('recognize-result');
-    const colorInput = document.getElementById('new-part-color');
-    if (!colorInput) return;
-    colorInput.value = chip.dataset.id;
-    updateColorButtonColor(chip.dataset.id);
+    recognizeResultData.colorId = chip.dataset.id;
+    recognizeResultData.colorName = chip.dataset.name;
+    updateRecognizePreview();
     if (box) box.querySelectorAll('.recognize-color-chip').forEach(c => c.classList.toggle('selected', c === chip));
 }
 
@@ -2312,11 +2403,10 @@ async function showSameNamePartsPicker(partName, currentPartNum) {
                 const partNum = card.dataset.partNum;
                 const partName = card.dataset.partName;
 
-                // 更新输入框
-                const numInput = document.getElementById('new-part-num');
-                const nameInput = document.getElementById('new-part-name');
-                if (numInput) numInput.value = partNum;
-                if (nameInput) nameInput.value = partName;
+                // 更新暂存数据
+                recognizeResultData.partNum = partNum;
+                recognizeResultData.partName = partName;
+                updateRecognizePreview();
 
                 // 添加"当前"标记
                 const badge = document.createElement('div');
