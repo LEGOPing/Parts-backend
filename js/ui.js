@@ -3037,8 +3037,14 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
         const cached = await getPartImageFromOfflineCache(partNum, colorId);
         if (cached) return;
         if (!imgElement || !imgElement.src) return;
-        // 从实际加载的图片URL获取数据（onload 触发说明图片加载成功，URL有效）
-        const response = await fetch(imgElement.src, { mode: 'no-cors' });
+        // 优先尝试 CORS 模式获取完整响应
+        // 若服务器不支持 CORS，再回退到 no-cors 模式获取不透明响应
+        let response;
+        try {
+            response = await fetch(imgElement.src);
+        } catch (_) {
+            response = await fetch(imgElement.src, { mode: 'no-cors' });
+        }
         if (response) {
             await savePartImageToOfflineCache(partNum, colorId, response);
         }
