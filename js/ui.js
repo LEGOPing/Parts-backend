@@ -2788,6 +2788,7 @@ function clearSearchResults() {
 }
 
 async function showPartDetail(part) {
+    showToast('📦 显示零件详情: ' + part.part_num);  // 确认 toast 可见
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
 
@@ -3060,6 +3061,7 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
 
 // 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
 async function tryCachePartImage(partNum, colorId, url) {
+    showToast('🔄 缓存中: ' + partNum + '_' + colorId);  // 确认函数被调用
     try {
         const cached = await getPartImageFromOfflineCache(partNum, colorId);
         if (cached) return;
