@@ -751,19 +751,15 @@ function confirmChooseRBImageUrl(partNum, colorId, urls) {
     });
 }
 
-// 根据 part_num 和 color_id 查询图片URL（三级读取：① 浏览器离线缓存 → ② Gitee Parts-img → ③ RB数据库）
+// 根据 part_num 和 color_id 查询图片URL（二级读取：① Gitee Parts-img → ② RB数据库）
 // confirmOnMultiple=true 时，RB数据库匹配到多个不同URL会弹窗让用户确认
+// 离线缓存仅用于离线存储，不参与 URL 解析，避免自动缓存的 RB 图片误返回 Gitee URL
 async function getPartImageUrl(partNum, colorId, confirmOnMultiple) {
-    // ① 浏览器离线缓存（人工添加的图片优先）
-    const cached = await getPartImageFromOfflineCache(partNum, colorId);
-    if (cached) {
-        return buildPartsImgUrl(partNum, colorId);
-    }
-    // ② Gitee Parts-img 仓库
+    // ① Gitee Parts-img 仓库（人工添加的图片优先）
     if (await checkPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ③ RB数据库（inventory_parts 表按型号+颜色匹配）
+    // ② RB数据库（inventory_parts 表按型号+颜色匹配）
     return await getRBPartImageUrl(partNum, colorId, confirmOnMultiple);
 }
 
