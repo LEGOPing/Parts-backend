@@ -3063,12 +3063,26 @@ async function tryCachePartImage(partNum, colorId, url) {
     try {
         const cached = await getPartImageFromOfflineCache(partNum, colorId);
         if (cached) return;
-        const response = await fetch(url, { mode: 'no-cors' });
+        // 优先 CORS，失败回退 no-cors
+        let response;
+        try {
+            response = await fetch(url);
+        } catch (_) {
+            response = await fetch(url, { mode: 'no-cors' });
+        }
         if (response) {
-            await savePartImageToOfflineCache(partNum, colorId, response);
+            console.log('缓存图片响应:', partNum, colorId, 'type=', response.type, 'status=', response.status, 'url=', url);
+            const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+            if (ok) {
+                showToast('✅ 图片已离线缓存');
+            } else {
+                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
+                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
+            }
         }
     } catch (e) {
-        // 静默失败，onload 还会再尝试一次
+        console.error('立即缓存失败:', partNum, colorId, url, e);
+        showToast('⚠️ 缓存失败: ' + e.message);
     }
 }
 
