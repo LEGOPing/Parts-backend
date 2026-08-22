@@ -1827,7 +1827,7 @@ function initAddPartSuggestions() {
                     <span class="preview-label">名称</span>
                     <span class="preview-value">${part.name || '-'}</span>
                 </div>
-                ${colorCount > 0 ? `<div class="part-preview-item"><span class="preview-label">可用颜色</span><span class="preview-value">${colorCount} 种</span></div>` : ''}
+                ${colorCount > 0 ? `<div class="part-preview-item"><span class="preview-label">颜色</span><span class="preview-value">${colorCount} 种</span></div>` : ''}
             `;
             if (usedAlias) {
                 html += `<div class="part-preview-item" style="color: #e67e22; font-size: 11px;">

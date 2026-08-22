@@ -1936,7 +1936,7 @@ body {
 .preview-right {
     flex: 1;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
 }
 
 .preview-text-content {
@@ -1946,8 +1946,8 @@ body {
 .part-preview-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 0;
+    gap: 6px;
+    padding: 2px 0;
 }
 
 .preview-label {
