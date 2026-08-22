@@ -44,12 +44,29 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
     
-    // POST/PATCH/DELETE requests or API calls: always go to network
+    // POST/PATCH/DELETE requests: always go to network
     if (request.method === 'POST' || 
         request.method === 'PATCH' || 
-        request.method === 'DELETE' ||
-        url.hostname.includes('supabase.co') ||
-        url.hostname.includes('gitee.com')) {
+        request.method === 'DELETE') {
+        event.respondWith(fetch(request).catch(() => {
+            return caches.match(request);
+        }));
+        return;
+    }
+    
+    // Gitee Parts-img 图片：缓存优先（用户手动上传的图片 + 自动缓存的图片）
+    if (url.hostname.includes('gitee.com') && url.pathname.includes('Parts-img')) {
+        event.respondWith(
+            caches.match(request).then(cached => {
+                if (cached) return cached;
+                return fetch(request).catch(() => caches.match(request));
+            })
+        );
+        return;
+    }
+    
+    // API 请求：网络优先
+    if (url.hostname.includes('supabase.co') || url.hostname.includes('gitee.com')) {
         event.respondWith(fetch(request).catch(() => {
             return caches.match(request);
         }));

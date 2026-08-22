@@ -2846,8 +2846,7 @@ async function showPartDetail(part) {
     // 构建图片区域
     let imageHtml;
     if (imgUrl) {
-        const isGiteeImg = imgUrl && imgUrl.includes('Parts-img');
-        const onloadAttr = isGiteeImg ? `onload="autoCachePartImage('${part.part_num}', ${part.color_id})"` : '';
+        const onloadAttr = `onload="autoCachePartImage('${part.part_num}', ${part.color_id}, this)"`;
         imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" ${onloadAttr} onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
     } else {
         imageHtml = `<div class="pd-no-image">暂无图片</div>`;
@@ -3032,12 +3031,14 @@ async function changePartImage(partNum, colorId) {
 }
 
 // 自动缓存零件图片到离线缓存（首次加载时触发）
-async function autoCachePartImage(partNum, colorId) {
+// imgElement - 图片加载成功后的 <img> 元素，从 this.src 获取实际加载的图片URL
+async function autoCachePartImage(partNum, colorId, imgElement) {
     try {
         const cached = await getPartImageFromOfflineCache(partNum, colorId);
         if (cached) return;
-        const url = buildPartsImgUrl(partNum, colorId);
-        const response = await fetch(url, { mode: 'no-cors' });
+        if (!imgElement || !imgElement.src) return;
+        // 从实际加载的图片URL获取数据（onload 触发说明图片加载成功，URL有效）
+        const response = await fetch(imgElement.src, { mode: 'no-cors' });
         if (response) {
             await savePartImageToOfflineCache(partNum, colorId, response);
         }
