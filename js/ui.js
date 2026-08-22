@@ -2827,6 +2827,10 @@ async function showPartDetail(part) {
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id, true);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
+        // 立即尝试缓存图片（不等待 onload），双重保障
+        if (imgUrl && !hasCustomImage) {
+            tryCachePartImage(part.part_num, part.color_id, imgUrl);
+        }
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -3047,9 +3051,24 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
         }
         if (response) {
             await savePartImageToOfflineCache(partNum, colorId, response);
+            showToast('✅ 图片已缓存到本地');
         }
     } catch (e) {
         // 静默失败，不影响用户使用
+    }
+}
+
+// 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
+async function tryCachePartImage(partNum, colorId, url) {
+    try {
+        const cached = await getPartImageFromOfflineCache(partNum, colorId);
+        if (cached) return;
+        const response = await fetch(url, { mode: 'no-cors' });
+        if (response) {
+            await savePartImageToOfflineCache(partNum, colorId, response);
+        }
+    } catch (e) {
+        // 静默失败，onload 还会再尝试一次
     }
 }
 
