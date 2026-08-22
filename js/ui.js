@@ -3936,6 +3936,10 @@ async function showPartDetail(part) {
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
+        // 立即尝试缓存图片（不等待 onload）
+        if (imgUrl && !hasCustomImage) {
+            tryCachePartImage(part.part_num, part.color_id, imgUrl);
+        }
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -3955,7 +3959,8 @@ async function showPartDetail(part) {
     // 构建图片区域
     let imageHtml;
     if (imgUrl) {
-        imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
+        const onloadAttr = `onload="autoCachePartImage('${part.part_num}', ${part.color_id}, this)"`;
+        imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" ${onloadAttr} onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
     } else {
         imageHtml = `<div class="pd-no-image">暂无图片</div>`;
     }
@@ -4140,14 +4145,52 @@ async function changePartImage(partNum, colorId) {
 
 // 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 详情显示暂无图片）
 async function deletePartDetailImage(partNum, colorId) {
-    if (!confirm('确定要删除该图片吗？')) return;
+    // 弹出选择框：仅删除本地缓存 / 删除Gitee图片
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'max-width:320px;padding:20px;text-align:center;';
+    box.innerHTML = `
+        <div style="margin-bottom:16px;font-size:16px;font-weight:bold;">选择删除方式</div>
+        <div style="margin-bottom:20px;font-size:14px;color:#888;">${partNum}_${colorId}.jpg</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <button id="del-cache-only" style="padding:12px;border:none;border-radius:8px;background:#ff9800;color:#fff;font-size:14px;cursor:pointer;">仅删除本地缓存</button>
+            <button id="del-gitee-img" style="padding:12px;border:none;border-radius:8px;background:#f44336;color:#fff;font-size:14px;cursor:pointer;">删除 Gitee 图片</button>
+            <button id="del-cancel" style="padding:10px;border:none;border-radius:8px;background:#666;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+        </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    box.querySelector('#del-cache-only').onclick = () => {
+        overlay.remove();
+        deleteCacheOnly(partNum, colorId);
+    };
+    box.querySelector('#del-gitee-img').onclick = () => {
+        overlay.remove();
+        deleteGiteeImage(partNum, colorId);
+    };
+    box.querySelector('#del-cancel').onclick = () => overlay.remove();
+}
+
+// 仅删除本地离线缓存（保留Gitee云端图片）
+async function deleteCacheOnly(partNum, colorId) {
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    showToast('已删除本地缓存，下次联网可重新加载');
+}
+
+// 删除Gitee云端图片 + 本地缓存 + RB数据库记录
+async function deleteGiteeImage(partNum, colorId) {
     // 删除浏览器离线缓存
     await deletePartImageFromOfflineCache(partNum, colorId);
     // 删除 Gitee Parts-img 仓库图片
     const giteeResult = await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
+    // 清除 RB 数据库中的 img_url
     await clearPartImageUrlInRB(partNum, colorId);
-    // 关闭左滑并更新当前详情：图片区显示"暂无图片"，按钮恢复为"添加图片"
+    // 关闭左滑并更新当前详情
     const sheet = document.querySelector('.part-detail-modal');
     if (sheet) {
         const imageContent = sheet.querySelector('.pd-image-content');
@@ -6017,3 +6060,62 @@ function hidePasswordWheel() {
 // 将密码轮相关函数暴露到全局
 window.showPasswordWheel = showPasswordWheel;
 window.cancelPwWheel = cancelPwWheel;
+
+// ========== 离线缓存零件图片 ==========
+
+// 自动缓存零件图片到离线缓存（首次加载时触发）
+// imgElement - 图片加载成功后的 <img> 元素，从 this.src 获取实际加载的图片URL
+async function autoCachePartImage(partNum, colorId, imgElement) {
+    try {
+        const cached = await getPartImageFromOfflineCache(partNum, colorId);
+        if (cached) return;
+        if (!imgElement || !imgElement.src) return;
+        // 优先尝试 CORS 模式获取完整响应
+        // 若服务器不支持 CORS，再回退到 no-cors 模式获取不透明响应
+        let response;
+        try {
+            response = await fetch(imgElement.src);
+        } catch (_) {
+            response = await fetch(imgElement.src, { mode: 'no-cors' });
+        }
+        if (response) {
+            await savePartImageToOfflineCache(partNum, colorId, response);
+            showToast('✅ 图片已缓存到本地');
+        }
+    } catch (e) {
+        // 静默失败，不影响用户使用
+    }
+}
+
+// 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
+async function tryCachePartImage(partNum, colorId, url) {
+    showToast('🔄 缓存中: ' + partNum + '_' + colorId);  // 确认函数被调用
+    try {
+        const cached = await getPartImageFromOfflineCache(partNum, colorId);
+        if (cached) return;
+        // 优先 CORS，失败回退 no-cors
+        let response;
+        try {
+            response = await fetch(url);
+        } catch (_) {
+            response = await fetch(url, { mode: 'no-cors' });
+        }
+        if (response) {
+            console.log('缓存图片响应:', partNum, colorId, 'type=', response.type, 'status=', response.status, 'url=', url);
+            const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+            if (ok) {
+                showToast('✅ 图片已离线缓存');
+            } else {
+                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
+                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
+            }
+        }
+    } catch (e) {
+        console.error('立即缓存失败:', partNum, colorId, url, e);
+        showToast('⚠️ 缓存失败: ' + e.message);
+    }
+}
+
+// 全局暴露，供 onload 属性调用
+window.autoCachePartImage = autoCachePartImage;
+window.tryCachePartImage = tryCachePartImage;

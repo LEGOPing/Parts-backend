@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v75';
+const CACHE_NAME = 'lego-parts-v76';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -44,12 +44,29 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
     
-    // POST/PATCH/DELETE requests or API calls: always go to network
+    // POST/PATCH/DELETE: network-first
     if (request.method === 'POST' || 
         request.method === 'PATCH' || 
-        request.method === 'DELETE' ||
-        url.hostname.includes('supabase.co') ||
-        url.hostname.includes('gitee.com')) {
+        request.method === 'DELETE') {
+        event.respondWith(fetch(request).catch(() => {
+            return caches.match(request);
+        }));
+        return;
+    }
+    
+    // Gitee Parts-img 零件图片：缓存优先（手动上传 + 自动缓存）
+    if (url.hostname.includes('gitee.com') && url.pathname.includes('Parts-img')) {
+        event.respondWith(
+            caches.match(request).then(cached => {
+                if (cached) return cached;
+                return fetch(request).catch(() => caches.match(request));
+            })
+        );
+        return;
+    }
+    
+    // API (supabase, gitee 非图片): network-first
+    if (url.hostname.includes('supabase.co') || url.hostname.includes('gitee.com')) {
         event.respondWith(fetch(request).catch(() => {
             return caches.match(request);
         }));
