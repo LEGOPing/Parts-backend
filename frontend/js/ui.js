@@ -829,7 +829,7 @@ async function loadParts(boxId) {
     
     document.getElementById('part-count').textContent = parts.length;
     
-    parts.forEach(async (part) => {
+    for (const part of parts) {
         const card = document.createElement('div');
         card.className = 'part-card';
         card.dataset.id = part.id;
@@ -864,7 +864,7 @@ async function loadParts(boxId) {
         });
         
         list.appendChild(card);
-    });
+    }
 }
 
 // ===== 零件转盒 =====
