@@ -1889,13 +1889,58 @@ body {
     align-items: center;
 }
 
-/* 零件信息预览 */
+/* 零件信息预览 - 左右分栏 */
 .part-info-preview {
+    display: flex;
+    gap: 12px;
     background: #f8f9fa;
     border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 12px;
     margin-top: 10px;
+    min-height: 100px;
+}
+
+.preview-left {
+    flex: 0 0 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-image-container {
+    width: 100%;
+    height: 120px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e8e8e8;
+}
+
+.preview-image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.preview-image-container .no-image {
+    font-size: 12px;
+    color: #bbb;
+    text-align: center;
+    padding: 8px;
+}
+
+.preview-right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.preview-text-content {
+    width: 100%;
 }
 
 .part-preview-item {
@@ -1909,6 +1954,7 @@ body {
     font-size: 12px;
     color: #666;
     min-width: 60px;
+    flex-shrink: 0;
 }
 
 .preview-value {
