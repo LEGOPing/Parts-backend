@@ -2846,7 +2846,9 @@ async function showPartDetail(part) {
     // 构建图片区域
     let imageHtml;
     if (imgUrl) {
-        imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
+        const isGiteeImg = imgUrl && imgUrl.includes('Parts-img');
+        const onloadAttr = isGiteeImg ? `onload="autoCachePartImage('${part.part_num}', ${part.color_id})"` : '';
+        imageHtml = `<img src="${imgUrl}" alt="${rbName}" class="pd-image" ${onloadAttr} onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=pd-no-image>加载失败</div>'">`;
     } else {
         imageHtml = `<div class="pd-no-image">暂无图片</div>`;
     }
@@ -3029,21 +3031,71 @@ async function changePartImage(partNum, colorId) {
     }
 }
 
-// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 清除RB img_url）
+// 自动缓存零件图片到离线缓存（首次加载时触发）
+async function autoCachePartImage(partNum, colorId) {
+    try {
+        const cached = await getPartImageFromOfflineCache(partNum, colorId);
+        if (cached) return;
+        const url = buildPartsImgUrl(partNum, colorId);
+        const response = await fetch(url, { mode: 'no-cors' });
+        if (response) {
+            await savePartImageToOfflineCache(partNum, colorId, response);
+        }
+    } catch (e) {
+        // 静默失败，不影响用户使用
+    }
+}
+
+// 删除零件详情图片（弹窗选择：仅删缓存 / 删Gitee）
 async function deletePartDetailImage(partNum, colorId) {
-    if (!confirm('确定要删除该图片吗？')) return;
-    // 删除浏览器离线缓存
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content';
+    sheet.style.maxWidth = '320px';
+    sheet.innerHTML = `
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span class="modal-title" style="font-size:16px;font-weight:600;">删除图片</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">取消</button>
+        </div>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#666;margin-bottom:12px;">型号：${partNum}　颜色ID：${colorId}</div>
+            <button onclick="deleteCacheOnly('${partNum}', ${colorId})" style="width:100%;padding:10px;background:#FF9800;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;margin-bottom:8px;">仅删除本地缓存</button>
+            <div style="font-size:12px;color:#999;margin-bottom:12px;padding-left:4px;">只清除手机上的缓存图片，Gitee 云端图片保留</div>
+            <button onclick="deleteGiteeImage('${partNum}', ${colorId})" style="width:100%;padding:10px;background:#f44336;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;margin-bottom:8px;">删除 Gitee 图片</button>
+            <div style="font-size:12px;color:#999;padding-left:4px;">删除 Gitee 云端图片，同时也会清除本地缓存</div>
+        </div>
+    `;
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+}
+
+// 仅删除本地缓存
+async function deleteCacheOnly(partNum, colorId) {
+    if (!confirm('确定要删除本地缓存的图片吗？')) return;
     await deletePartImageFromOfflineCache(partNum, colorId);
-    // 删除 Gitee Parts-img 仓库图片
+    showToast('本地缓存图片已删除');
+    // 关闭所有弹窗并刷新详情页
+    document.querySelectorAll('.modal-overlay.active').forEach(o => o.remove());
+    await refreshPartDetailWithCustomImage(partNum, colorId);
+}
+
+// 删除 Gitee 图片（同时清除本地缓存和RB数据库记录）
+async function deleteGiteeImage(partNum, colorId) {
+    if (!confirm('确定要删除 Gitee 云端的图片吗？\n（本地缓存也会同时清除）')) return;
+    // 删除本地缓存
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    // 删除 Gitee
     const giteeResult = await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url（所有匹配记录），避免 getPartImageUrl 回退到旧图
+    // 清除 RB 数据库中的 img_url
     await clearPartImageUrlInRB(partNum, colorId);
-    // 刷新详情页
+    // 关闭所有弹窗并刷新详情页
+    document.querySelectorAll('.modal-overlay.active').forEach(o => o.remove());
     await refreshPartDetailWithCustomImage(partNum, colorId);
     if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
         showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
     } else {
-        showToast('图片已删除');
+        showToast('Gitee 图片已删除');
     }
 }
 
@@ -3323,22 +3375,13 @@ function changeCustomImage(partNum, colorId) {
     addCustomImage(partNum, colorId);
 }
 
-// 删除自定义图片（离线缓存 + Gitee Parts-img）
+// 删除自定义图片（关闭管理弹窗后弹出选择：仅删缓存 / 删Gitee）
 async function removeCustomImage(partNum, colorId) {
-    if (!confirm('确定要删除自定义图片吗？')) return;
-    
-    // 删除浏览器离线缓存
-    await deletePartImageFromOfflineCache(partNum, colorId);
-    // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
-    await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
-    await clearPartImageUrlInRB(partNum, colorId);
-    
+    // 关闭管理弹窗
     const overlay = document.querySelector('.modal-overlay.active');
     if (overlay) overlay.remove();
-    
-    // 刷新详情
-    refreshPartDetailWithCustomImage(partNum, colorId);
+    // 弹出删除选择
+    deletePartDetailImage(partNum, colorId);
 }
 
 // 刷新零件详情（带自定义图片更新）
