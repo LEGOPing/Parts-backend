@@ -1359,7 +1359,16 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
-            <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
+            <div class="part-info-preview" id="part-info-preview" style="display: none;">
+                <div class="preview-left">
+                    <div class="preview-image-container" id="preview-image-container">
+                        <div class="no-image">暂无图片</div>
+                    </div>
+                </div>
+                <div class="preview-right">
+                    <div class="preview-text-content" id="preview-text-content"></div>
+                </div>
+            </div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
@@ -1804,6 +1813,11 @@ function initAddPartSuggestions() {
             }
 
             const colorCount = await getPartColorCount(effectivePartNum);
+            const colorId = document.getElementById('new-part-color')?.value.trim() || '0';
+            const textContent = document.getElementById('preview-text-content');
+            const imageContainer = document.getElementById('preview-image-container');
+
+            // 右侧：文字信息
             let html = `
                 <div class="part-preview-item">
                     <span class="preview-label">型号</span>
@@ -1821,8 +1835,17 @@ function initAddPartSuggestions() {
                     <span class="preview-value">${partNum} → ${effectivePartNum}</span>
                 </div>`;
             }
-            partInfoPreview.innerHTML = html;
-            partInfoPreview.style.display = 'block';
+            textContent.innerHTML = html;
+
+            // 左侧：零件图片
+            const imgUrl = await getPartImageUrl(effectivePartNum, colorId);
+            if (imgUrl) {
+                imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name || part.part_num}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+            } else {
+                imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
+            }
+
+            partInfoPreview.style.display = 'flex';
         } else {
             partInfoPreview.style.display = 'none';
         }
@@ -1888,6 +1911,12 @@ function initAddPartSuggestions() {
         if (partNameInput.value && partNameInput.value.trim()) {
             triggerPartNameSuggestions();
         }
+    });
+    
+    // 颜色输入变化时更新预览（切换颜色图片）
+    const colorInput = document.getElementById('new-part-color');
+    colorInput.addEventListener('input', () => {
+        updatePartInfoPreview();
     });
     
     // 点击外部关闭联想
