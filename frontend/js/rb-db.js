@@ -742,16 +742,16 @@ async function getRBPartImageUrl(partNum, colorId) {
 
 // 根据 part_num 和 color_id 查询图片URL（二级读取：① Gitee Parts-img → ② RB数据库）
 // 离线缓存仅用于离线存储，不参与 URL 解析，避免自动缓存的 RB 图片误返回 Gitee URL
-// 注：查询前会解析零件别名（如 4073 → 6141），确保使用 RB 标准型号查询图片
+// 注：Gitee 用原始型号查询（缓存图片以原始型号命名，如 4073_colorId.jpg）；
+//     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
 async function getPartImageUrl(partNum, colorId) {
-    // 解析别名：如果 partNum 是别名，用 RB 标准型号查询
+    // ① 先用原始型号检查 Gitee Parts-img（可能已有离线缓存图片）
+    if (await checkPartsImgOnGitee(partNum, colorId)) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ② 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
     const resolvedNum = typeof resolvePartAlias === 'function'
         ? await resolvePartAlias(partNum) : partNum;
-    // ① Gitee Parts-img 仓库（人工添加的图片优先）
-    if (await checkPartsImgOnGitee(resolvedNum, colorId)) {
-        return buildPartsImgUrl(resolvedNum, colorId);
-    }
-    // ② RB数据库（inventory_parts 表按型号+颜色匹配）
     return await getRBPartImageUrl(resolvedNum, colorId);
 }
 
