@@ -2170,28 +2170,42 @@ async function cropToPart(file) {
         }
     }
 
-    // 如果前景太少或几乎充满画面（可能背景不均），不裁剪
+    // 如果前景太少，不裁剪（可能图片中没有零件）
     const totalPixels = (aw / 2) * (ah / 2);
-    if (fgCount < totalPixels * 0.01 || fgCount > totalPixels * 0.95) return file;
+    if (fgCount < totalPixels * 0.01) return file;
 
-    // 映射回原图坐标，加 15% 内边距
-    const pad = 0.15;
-    let cropX = Math.round(minX / scale), cropY = Math.round(minY / scale);
-    let cropW = Math.round((maxX - minX) / scale), cropH = Math.round((maxY - minY) / scale);
-    const padX = Math.round(cropW * pad), padY = Math.round(cropH * pad);
-    cropX = Math.max(0, cropX - padX);
-    cropY = Math.max(0, cropY - padY);
-    cropW = Math.min(nw - cropX, cropW + padX * 2);
-    cropH = Math.min(nh - cropY, cropH + padY * 2);
-    if (cropW < 30 || cropH < 30) return file;
+    // 裁剪为正方形：以零件中心为中心，边长取较长边（仅留少量边距）
+    const pad = 0.06;
+    // 在原图坐标系中计算零件包围框
+    let partCX = (minX + maxX) / 2 / scale;
+    let partCY = (minY + maxY) / 2 / scale;
+    let partW = (maxX - minX) / scale;
+    let partH = (maxY - minY) / scale;
+    // 正方形边长 = 较长边 + 两侧边距
+    let side = Math.max(partW, partH) * (1 + pad * 2);
+    // 居中裁剪
+    let cropX = Math.round(partCX - side / 2);
+    let cropY = Math.round(partCY - side / 2);
+    let cropSize = Math.round(side);
+    // 超出边界保护：正方形不能超过图片范围
+    if (cropSize > nw || cropSize > nh) {
+        // 裁剪尺寸超过图片——缩小到图片较短边
+        cropSize = Math.min(nw, nh);
+        cropX = Math.round(partCX - cropSize / 2);
+        cropY = Math.round(partCY - cropSize / 2);
+    }
+    // 平移保证在图片内
+    cropX = Math.max(0, Math.min(cropX, nw - cropSize));
+    cropY = Math.max(0, Math.min(cropY, nh - cropSize));
+    if (cropSize < 30) return file;
 
-    // 执行裁剪
+    // 执行正方形裁剪
     const cropCanvas = document.createElement('canvas');
-    cropCanvas.width = cropW;
-    cropCanvas.height = cropH;
+    cropCanvas.width = cropSize;
+    cropCanvas.height = cropSize;
     const cropCtx = cropCanvas.getContext('2d');
     if (!cropCtx) return file;
-    cropCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    cropCtx.drawImage(img, cropX, cropY, cropSize, cropSize, 0, 0, cropSize, cropSize);
     return new Promise((resolve) => {
         cropCanvas.toBlob((blob) => {
             if (!blob) { resolve(file); return; }
