@@ -2400,11 +2400,11 @@ async function computeClosestRBColors(file, partNum) {
                 results.push({ id: match.id, name: match.name, hex: rgbToHex(match.rgb) });
             }
         }
-        // 若不足 5 个，补足（用 dominantLab 匹配剩余）
-        if (results.length < 5) {
+        // 若不足 6 个，补足（用 dominantLab 匹配剩余，确保有足够推荐颜色）
+        if (results.length < 6) {
             entries.filter(e => !usedIds.has(e.id))
                 .sort((a, b) => deltaE76(dominantLab, a.lab) - deltaE76(dominantLab, b.lab))
-                .slice(0, 5 - results.length)
+                .slice(0, 6 - results.length)
                 .forEach(r => { usedIds.add(r.id); results.push({ id: r.id, name: r.name, hex: rgbToHex(r.rgb) }); });
         }
         return { colors: results, dominantHex };
@@ -2415,9 +2415,10 @@ async function computeClosestRBColors(file, partNum) {
 }
 
 // 渲染颜色预选区（7行格式）
-// 第1行：BG 返回的颜色（色块 + 颜色ID + BG颜色名称）
-// 第2-6行：5个计算的推荐颜色（色块 + 颜色ID + 颜色名称）
-// 默认选中第1行（BG颜色）
+// 第1行：标题"颜色预选"
+// 第2行：BG 返回的颜色（色块 + 颜色ID + BG颜色名称），默认选中
+// 第3-7行：5个计算的推荐颜色（色块 + 颜色ID + 颜色名称）
+// 第2-7行共6行是待选颜色，默认第2行
 function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
     const listEl = document.getElementById('color-preselect-list');
     const preselectSection = document.getElementById('color-preselection');
