@@ -1436,8 +1436,8 @@ function showRecognizeModal() {
                 </div>
             </div>
             
-            <!-- 区域三：识别结果预览区 -->
-            <div class="recognize-preview-section" id="recognize-preview-section" style="display:none;">
+            <!-- 区域三：识别结果预览区（始终显示，识别后填充内容） -->
+            <div class="recognize-preview-section" id="recognize-preview-section">
                 <div class="preview-section-title">BG识别结果预览</div>
                 <div class="preview-part-card" id="preview-part-card">
                     <div class="preview-part-image" id="preview-part-image">
@@ -1460,10 +1460,12 @@ function showRecognizeModal() {
                 </div>
             </div>
             
-            <!-- 区域四：颜色预选区 -->
-            <div class="color-preselection" id="color-preselection" style="display:none;">
+            <!-- 区域四：颜色预选区（始终显示，识别后填充内容） -->
+            <div class="color-preselection" id="color-preselection">
                 <div class="preview-section-title">颜色预选</div>
-                <div class="color-preselect-list" id="color-preselect-list"></div>
+                <div class="color-preselect-list" id="color-preselect-list">
+                    <div style="padding:12px;text-align:center;color:#999;font-size:13px;">拍照识别后将显示推荐颜色</div>
+                </div>
             </div>
             
             <!-- 隐藏的识别结果区域（用于动态渲染） -->
@@ -1963,19 +1965,25 @@ function recognizePartFromPhoto() {
     input.click();
 }
 
-// 重置识别 UI（第二次拍摄时清除之前的结果）
+// 重置识别 UI（第二次拍摄时清除之前的结果，但保持区域可见）
 function resetRecognizeUI() {
     recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
     
-    // 隐藏预览区（区域三）
-    const previewSection = document.getElementById('recognize-preview-section');
-    if (previewSection) previewSection.style.display = 'none';
+    // 保持区域三（预览区）可见，清除内容
+    const previewImg = document.getElementById('preview-part-image');
+    if (previewImg) previewImg.innerHTML = '<div class="no-image">暂无图片</div>';
     
-    // 隐藏颜色预选区（区域四）
-    const colorSection = document.getElementById('color-preselection');
-    if (colorSection) colorSection.style.display = 'none';
+    // 清除预览文字
+    const numDisplay = document.getElementById('recognize-part-num-display');
+    const nameDisplay = document.getElementById('recognize-part-name-display');
+    const colorDisplay = document.getElementById('recognize-color-display');
+    if (numDisplay) numDisplay.textContent = '';
+    if (nameDisplay) nameDisplay.textContent = '';
+    if (colorDisplay) colorDisplay.textContent = '';
+    
+    // 保持区域四（颜色预选）可见，显示占位文字
     const colorList = document.getElementById('color-preselect-list');
-    if (colorList) colorList.innerHTML = '';
+    if (colorList) colorList.innerHTML = '<div style="padding:12px;text-align:center;color:#999;font-size:13px;">拍照识别后将显示推荐颜色</div>';
     
     // 禁用确认按钮
     const confirmBtn = document.getElementById('recognize-confirm-btn');
@@ -1983,10 +1991,6 @@ function resetRecognizeUI() {
         confirmBtn.style.opacity = '0.4';
         confirmBtn.style.pointerEvents = 'none';
     }
-    
-    // 清除预览图片
-    const previewImg = document.getElementById('preview-part-image');
-    if (previewImg) previewImg.innerHTML = '<div class="no-image">暂无图片</div>';
     
     // 清除别名提示和同名零件选择器
     const aliasHint = document.querySelector('.alias-hint');
@@ -2149,33 +2153,54 @@ async function cropToPart(file) {
     for (const p of bgSamples) { sumR += p[0]; sumG += p[1]; sumB += p[2]; }
     const bgR = sumR / bgSamples.length, bgG = sumG / bgSamples.length, bgB = sumB / bgSamples.length;
     const bgBright = (bgR + bgG + bgB) / 3;
-    const threshold = Math.max(28, Math.min(60, Math.round(bgBright / 8)));
-    const threshold2 = threshold * threshold;
+    // 降低阈值，更敏感地检测前景（零件）像素，尤其对小零件和颜色接近背景的零件
+    let threshold = Math.max(12, Math.min(30, Math.round(bgBright / 15)));
+    let threshold2 = threshold * threshold;
 
-    // 扫描前景像素，找最小包围框
+    // 扫描前景像素，找最小包围框（最多尝试两次，第二次降低阈值）
     let minX = aw, minY = ah, maxX = 0, maxY = 0;
     let fgCount = 0;
-    // 步长 2（隔行扫描加速）
-    for (let y = 0; y < ah; y += 2) {
-        for (let x = 0; x < aw; x += 2) {
-            const i = (y * aw + x) * 4;
-            const dr = data[i] - bgR, dg = data[i + 1] - bgG, db = data[i + 2] - bgB;
-            if (dr * dr + dg * dg + db * db > threshold2) {
-                fgCount++;
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
+    let retried = false;
+    for (let pass = 0; pass < 2; pass++) {
+        minX = aw; minY = ah; maxX = 0; maxY = 0; fgCount = 0;
+        // 步长 2（隔行扫描加速）
+        for (let y = 0; y < ah; y += 2) {
+            for (let x = 0; x < aw; x += 2) {
+                const i = (y * aw + x) * 4;
+                const dr = data[i] - bgR, dg = data[i + 1] - bgG, db = data[i + 2] - bgB;
+                if (dr * dr + dg * dg + db * db > threshold2) {
+                    fgCount++;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
             }
+        }
+        const totalPixels = (aw / 2) * (ah / 2);
+        // 前景足够多，直接跳出（降低要求，0.5% 即可）
+        if (fgCount >= totalPixels * 0.005) break;
+        // 第一次前景太少，降低阈值重试
+        if (pass === 0) {
+            retried = true;
+            threshold = Math.max(8, Math.round(threshold * 0.6));
+            threshold2 = threshold * threshold;
         }
     }
 
-    // 如果前景太少，不裁剪（可能图片中没有零件）
+    // 如果两次扫描后仍无前景，用中心裁剪法（假设零件在画面中央）
     const totalPixels = (aw / 2) * (ah / 2);
-    if (fgCount < totalPixels * 0.01) return file;
+    if (fgCount < totalPixels * 0.005) {
+        // 中心裁剪：取画面较短边的 80% 作为正方形（尽可能多包含零件）
+        const centerSize = Math.min(aw, ah) * 0.8;
+        minX = Math.round((aw - centerSize) / 2);
+        minY = Math.round((ah - centerSize) / 2);
+        maxX = Math.round(minX + centerSize);
+        maxY = Math.round(minY + centerSize);
+    }
 
     // 裁剪为正方形：以零件中心为中心，边长取较长边（仅留少量边距）
-    const pad = 0.06;
+    const pad = 0.04; // 减小边距，让零件占容器约 92% 尺寸
     // 在原图坐标系中计算零件包围框
     let partCX = (minX + maxX) / 2 / scale;
     let partCY = (minY + maxY) / 2 / scale;
@@ -2491,14 +2516,13 @@ function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
             </div>`;
     });
 
-    // 如果没有任何颜色数据，隐藏颜色预选区
+    // 如果没有任何颜色数据，保持占位文字
     if (!rowsHtml) {
-        preselectSection.style.display = 'none';
+        listEl.innerHTML = '<div style="padding:12px;text-align:center;color:#999;font-size:13px;">拍照识别后将显示推荐颜色</div>';
         return;
     }
 
-    // 显示颜色预选区，写入行
-    preselectSection.style.display = 'block';
+    // 写入颜色行
     listEl.innerHTML = bgColorNoteHtml + rowsHtml;
 
     // 绑定点击事件
@@ -2854,9 +2878,9 @@ function getDominantColor(img, wbInfo) {
         }
     }
 
-    // 回退路径：中心 35% 区域（与旧版一致，但去掉亮度 < 50 的过滤）
+    // 回退路径：中心区域（扩大至 50%）+ 自动排除边缘残留背景
     if (useFallback || buckets.size === 0) {
-        const cropRatio = 0.35;
+        const cropRatio = 0.50; // 从 35% 扩大到 50%，保证包含更多零件像素
         const cw = Math.round(img.naturalWidth * cropRatio);
         const ch = Math.round(img.naturalHeight * cropRatio);
         const ox = Math.round((img.naturalWidth - cw) / 2);
@@ -2869,6 +2893,27 @@ function getDominantColor(img, wbInfo) {
         ctx2.drawImage(img, ox, oy, cw, ch, 0, 0, 64, 64);
         let data2;
         try { data2 = ctx2.getImageData(0, 0, 64, 64).data; } catch (e) { return null; }
+
+        // 如果无背景色信息（如裁剪后的图片），从中心区域边缘采样残留背景色
+        let edgeBgR = null, edgeBgG = null, edgeBgB = null;
+        if (!bgColor) {
+            let eSumR = 0, eSumG = 0, eSumB = 0, eCnt = 0;
+            const edge = 8; // 边缘 8px（64px 的 12.5%）
+            for (let y = 0; y < 64; y++) {
+                for (let x = 0; x < 64; x++) {
+                    if (x >= edge && x < 64 - edge && y >= edge && y < 64 - edge) continue;
+                    const i = (y * 64 + x) * 4;
+                    eSumR += data2[i]; eSumG += data2[i+1]; eSumB += data2[i+2];
+                    eCnt++;
+                }
+            }
+            if (eCnt > 0) {
+                edgeBgR = eSumR / eCnt;
+                edgeBgG = eSumG / eCnt;
+                edgeBgB = eSumB / eCnt;
+            }
+        }
+
         for (let i = 0; i < data2.length; i += 4) {
             let r = data2[i], g = data2[i + 1], b = data2[i + 2];
             if (wbFactors) {
@@ -2881,6 +2926,11 @@ function getDominantColor(img, wbInfo) {
             if (bgColor) {
                 const dr = r - bgColor[0], dg = g - bgColor[1], db = b - bgColor[2];
                 if (dr * dr + dg * dg + db * db < bgThreshold2) continue;
+            }
+            // 如果从边缘采样了残留背景色，排除接近的像素（针对裁剪后仍残留背景的情况）
+            if (edgeBgR !== null) {
+                const dr = r - edgeBgR, dg = g - edgeBgG, db = b - edgeBgB;
+                if (dr * dr + dg * dg + db * db < 400) continue; // 阈值 20^2
             }
             const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
             let bk = buckets.get(key);
