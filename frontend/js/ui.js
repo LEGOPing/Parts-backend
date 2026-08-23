@@ -2174,14 +2174,14 @@ async function cropToPart(file) {
     const totalPixels = (aw / 2) * (ah / 2);
     if (fgCount < totalPixels * 0.01) return file;
 
-    // 裁剪为正方形：以零件中心为中心，取较长边+内边距作为边长
-    const pad = 0.18;
+    // 裁剪为正方形：以零件中心为中心，边长取较长边（仅留少量边距）
+    const pad = 0.06;
     // 在原图坐标系中计算零件包围框
     let partCX = (minX + maxX) / 2 / scale;
     let partCY = (minY + maxY) / 2 / scale;
     let partW = (maxX - minX) / scale;
     let partH = (maxY - minY) / scale;
-    // 正方形边长 = 较长边 + 两侧内边距
+    // 正方形边长 = 较长边 + 两侧边距
     let side = Math.max(partW, partH) * (1 + pad * 2);
     // 居中裁剪
     let cropX = Math.round(partCX - side / 2);
