@@ -1396,56 +1396,78 @@ function showRecognizeModal() {
     const sheet = document.createElement('div');
     sheet.className = 'modal-content add-part-modal';
     
+    const isCalibrated = isGrayCardCalibrated();
+    
     sheet.innerHTML = `
         <div class="modal-header">
             <button class="btn-cancel" onclick="closeRecognizeModal(true)">取消</button>
-            <span class="modal-title">拍照识别零件</span>
+            <span class="modal-title">拍照识别</span>
             <button class="btn-save" id="recognize-confirm-btn" style="opacity:0.4;pointer-events:none;" onclick="confirmRecognizeResult()">确认</button>
         </div>
         <div class="modal-body">
-            <div class="form-section" style="text-align:center;padding:16px 0;">
-                <button type="button" class="btn-recognize" onclick="recognizePartFromPhoto()" style="font-size:16px;padding:14px 32px;">📷 拍照识别</button>
-                <div style="font-size:12px;color:#999;margin-top:8px;">拍照后自动识别零件型号、名称和颜色</div>
-            </div>
-            <div class="form-section gray-card-section" id="recognize-gray-card-section">
-                <div class="gray-card-header">
-                    <span class="gray-card-label">灰卡白平衡校准</span>
-                    <label class="gray-card-toggle">
-                        <input type="checkbox" id="gray-card-toggle" ${isGrayCardCalibrated() && isGrayCardCalibrationActive() ? 'checked' : ''} onchange="toggleGrayCardMode(this.checked)" ${isGrayCardCalibrated() ? '' : 'disabled'} />
-                        <span class="toggle-slider"></span>
-                    </label>
+            <!-- 区域二：拍照识别按钮 + 灰卡白平衡校准 -->
+            <div class="recognize-area2">
+                <div class="area2-left">
+                    <div class="area2-header">
+                        <span class="area2-label">灰板白平衡校准</span>
+                        <span class="gray-card-status-text ${isCalibrated ? 'calibrated' : 'uncalibrated'}" id="gray-card-status-text">
+                            ${isCalibrated ? '✓ 已校准' : '未校准'}
+                        </span>
+                    </div>
+                    <div class="area2-scroll-wrap" id="gray-card-instruction">
+                        <div class="area2-scroll-text">
+                            ${isCalibrated
+                                ? '灰卡白平衡已校准，点击"校准"可重新校准'
+                                : '将 18% 灰卡放在零件拍摄位置，点击"校准"拍照'}
+                        </div>
+                    </div>
+                    <div class="area2-actions">
+                        <button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()" ${isCalibrated ? '' : 'style="display:none"'} id="gray-card-clear-btn">清除</button>
+                        <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">校准</button>
+                    </div>
                 </div>
-                <div class="gray-card-status" id="gray-card-status">
-                    ${isGrayCardCalibrated()
-                        ? `<span class="gray-card-status-text calibrated">✓ 已校准</span>`
-                        : `<span class="gray-card-status-text uncalibrated">未校准（需先拍灰卡）</span>`}
-                    <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">
-                        ${isGrayCardCalibrated() ? '重新校准' : '拍灰卡校准'}
+                <div class="area2-right">
+                    <button type="button" class="recognize-circle-btn" onclick="recognizePartFromPhoto()" title="拍照识别零件">
+                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                            <circle cx="12" cy="13" r="4"/>
+                        </svg>
                     </button>
-                    ${isGrayCardCalibrated() ? `<button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()">清除</button>` : ''}
-                </div>
-                <div class="gray-card-instruction" id="gray-card-instruction" style="${isGrayCardCalibrated() ? 'display:none' : 'display:block'}">
-                    将 18% 灰卡放在零件拍摄位置，点击"拍灰卡校准"拍照
                 </div>
             </div>
-            <div class="recognize-result" id="recognize-result"></div>
-            <div class="recognize-preview-section" id="recognize-preview-section" style="display:none;margin-top:8px;padding:12px;background:#f8f9fa;border-radius:8px;">
-                <div style="font-size:14px;font-weight:600;color:#2c3e50;margin-bottom:8px;">识别结果预览</div>
-                <div style="display:flex;flex-direction:column;gap:6px;">
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <span style="font-size:13px;color:#666;min-width:70px;">零件型号：</span>
-                        <span id="recognize-part-num-display" style="font-weight:bold;font-size:15px;color:#2c3e50;"></span>
+            
+            <!-- 区域三：识别结果预览区 -->
+            <div class="recognize-preview-section" id="recognize-preview-section" style="display:none;">
+                <div class="preview-section-title">BG识别结果预览</div>
+                <div class="preview-part-card" id="preview-part-card">
+                    <div class="preview-part-image" id="preview-part-image">
+                        <div class="no-image">暂无图片</div>
                     </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <span style="font-size:13px;color:#666;min-width:70px;">零件名称：</span>
-                        <span id="recognize-part-name-display" style="color:#555;"></span>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <span style="font-size:13px;color:#666;min-width:70px;">零件颜色：</span>
-                        <span id="recognize-color-display" style="color:#555;"></span>
+                    <div class="preview-part-details">
+                        <div class="preview-detail-row">
+                            <span class="preview-detail-label">型号：</span>
+                            <span class="preview-detail-value" id="recognize-part-num-display"></span>
+                        </div>
+                        <div class="preview-detail-row">
+                            <span class="preview-detail-label">名称：</span>
+                            <span class="preview-detail-value" id="recognize-part-name-display"></span>
+                        </div>
+                        <div class="preview-detail-row">
+                            <span class="preview-detail-label">颜色：</span>
+                            <span class="preview-detail-value" id="recognize-color-display"></span>
+                        </div>
                     </div>
                 </div>
             </div>
+            
+            <!-- 区域四：颜色预选区 -->
+            <div class="color-preselection" id="color-preselection" style="display:none;">
+                <div class="preview-section-title">颜色预选</div>
+                <div class="color-preselect-list" id="color-preselect-list"></div>
+            </div>
+            
+            <!-- 隐藏的识别结果区域（用于动态渲染） -->
+            <div class="recognize-result" id="recognize-result" style="display:none;"></div>
         </div>
     `;
     
@@ -1958,10 +1980,12 @@ async function processRecognitionFile(input) {
         const compressed = await compressImage(file, 1024);
         if (!compressed) { setRecognizeStatus('图片处理失败'); return; }
 
-        // 本地预览压缩后的图片
+        // 本地预览压缩后的图片（放入 Area 3 预览卡片）
         const previewUrl = URL.createObjectURL(compressed);
-        const box = document.getElementById('recognize-result');
-        if (box) box.innerHTML = `<img class="recognize-thumb" src="${previewUrl}" alt="预览图片" />`;
+        const previewImgContainer = document.getElementById('preview-part-image');
+        if (previewImgContainer) {
+            previewImgContainer.innerHTML = `<img class="recognize-thumb" src="${previewUrl}" alt="预览图片" />`;
+        }
 
         setRecognizeStatus('正在上传识别中，请稍候...');
         const candidate = await uploadToBrickognize(compressed);
@@ -1994,6 +2018,10 @@ async function processRecognitionFile(input) {
             }
         }
         renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
+
+        // 识别完成后隐藏状态区域，显示预览和颜色预选
+        const statusBox = document.getElementById('recognize-result');
+        if (statusBox) statusBox.style.display = 'none';
 
         // 如果 BG 返回了颜色，自动选中（存入暂存数据）
         if (bgColorId !== null && bgColorId !== undefined) {
@@ -2138,12 +2166,12 @@ async function fillRecognizedPart(partNum, fallbackName) {
 
     // 5. 如果使用了别名，在识别结果区域显示提示
     if (usedAlias) {
-        const box = document.getElementById('recognize-result');
+        const box = document.getElementById('recognize-preview-section');
         if (box) {
             const hint = document.createElement('div');
             hint.className = 'alias-hint';
             hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）的RB数据（图片/名称/颜色）来源于 <b>${effectivePartNum}</b>，保存时型号保持为 ${partNum}`;
-            box.prepend(hint);
+            box.insertBefore(hint, box.firstChild);
         }
     }
 
@@ -2159,6 +2187,8 @@ function setRecognizeStatus(msg) {
     if (!box) return;
     const partNum = recognizeResultData.partNum;
     box.innerHTML = `<div class="recognize-status">${msg}${partNum ? '<br/>已识别型号：<b>' + partNum + '</b>' : ''}</div>`;
+    // 显示状态区域（加载中状态可见，完成时会被预览区替代）
+    box.style.display = 'block';
 }
 
 // 计算图片中零件最接近的5种颜色，按亮度等级匹配（深/较深/正常/较浅/浅）
@@ -2247,100 +2277,98 @@ async function computeClosestRBColors(file, partNum) {
     }
 }
 
-// 渲染推荐颜色卡片，点击即可填入颜色ID
-// 支持从 BG 传入颜色信息（bgColorId, bgColorName），标记为默认选中
+// 渲染颜色预选区（7行格式）
+// 第1行：BG 返回的颜色（色块 + 颜色ID + BG颜色名称）
+// 第2-6行：5个计算的推荐颜色（色块 + 颜色ID + 颜色名称）
+// 默认选中第1行（BG颜色）
 function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
-    const box = document.getElementById('recognize-result');
-    if (!box) return;
-    const partNum = recognizeResultData.partNum;
+    const listEl = document.getElementById('color-preselect-list');
+    const preselectSection = document.getElementById('color-preselection');
+    if (!listEl || !preselectSection) return;
 
-    // 确定默认选中索引：优先 BG 颜色，其次第一个
+    // 确定默认选中索引：优先 BG 颜色（第1行，index=0），其次第一个
     let defaultSelectedIdx = 0;
+    let bgColorIndex = -1;
     if (bgColorId !== null && bgColorId !== undefined) {
-        const bgIdx = colors.findIndex(c => c.id === Number(bgColorId));
-        if (bgIdx >= 0) defaultSelectedIdx = bgIdx;
+        bgColorIndex = colors.findIndex(c => c.id === Number(bgColorId));
+        if (bgColorIndex >= 0) defaultSelectedIdx = 0;
     }
 
-    // 分离 BG 颜色卡片和普通推荐颜色卡片
-    let bgChipHtml = '';
-    let regularChipsHtml = '';
-
+    // 分离 BG 颜色（第1行）和推荐颜色（第2-6行）
+    let bgColor = null;
+    const recommended = [];
     colors.forEach((c, idx) => {
-        const isSelected = idx === defaultSelectedIdx;
-        const isBgColor = bgColorId !== null && bgColorId !== undefined && c.id === Number(bgColorId);
-        const chip = `
-            <button type="button" class="recognize-color-chip ${isSelected ? 'selected' : ''}" data-id="${c.id}" data-name="${c.name}" title="${c.name}">
-                <span class="chip-swatch" style="background:${c.hex}"></span>
-                <span class="chip-name">${c.name}${isBgColor ? ' ⬥' : ''}</span>
-            </button>`;
-        if (isBgColor) {
-            bgChipHtml = chip;
+        const isBg = bgColorId !== null && bgColorId !== undefined && c.id === Number(bgColorId);
+        if (isBg) {
+            bgColor = c;
         } else {
-            regularChipsHtml += chip;
+            recommended.push(c);
         }
     });
 
-    // BG 颜色区域（独立展示）
-    let bgSectionHtml = '';
-    if (bgChipHtml) {
-        bgSectionHtml = `
-            <div class="recognize-section-title" style="margin-top:8px;color:#2980b9;">
-                ⬥ BG识别颜色（默认选中）：
-            </div>
-            <div class="recognize-colors-row">
-                ${bgChipHtml}
-            </div>`;
-    }
-
-    // BG 有名称但未匹配到 ID 时显示提示
+    // 如果 BG 颜色不在 colors 中但 bgColorName 存在，用 note 提示
     let bgColorNoteHtml = '';
     if (bgColorName && bgColorId === null) {
         bgColorNoteHtml = `<div class="recognize-color-note">BG识别颜色：${bgColorName}（未匹配到RB颜色ID）</div>`;
     }
+    // 如果 BG 颜色不在列表中但有 bgColorId，尝试显示
+    if (!bgColor && bgColorId !== null && bgColorId !== undefined && bgColorName) {
+        bgColor = { id: Number(bgColorId), name: bgColorName, hex: dominantHex || '#ccc' };
+    }
 
-    // 无颜色数据时
-    if (colors.length === 0) {
-        let html = `<div class="recognize-status">已识别型号：<b>${partNum}</b>（未能计算推荐颜色）`;
-        if (bgColorName) {
-            html += `<br/>BG识别颜色：<b>${bgColorName}</b>`;
-        }
-        html += `</div>`;
-        box.innerHTML = html;
+    // 构建行列表
+    let rowsHtml = '';
+
+    // 第1行：BG 颜色
+    if (bgColor) {
+        rowsHtml += `
+            <div class="color-row selected" data-color-id="${bgColor.id}" data-color-name="${bgColor.name}">
+                <span class="color-row-swatch" style="background:${bgColor.hex}"></span>
+                <span class="color-row-id">ID: ${bgColor.id}</span>
+                <span class="color-row-name">${bgColor.name}</span>
+            </div>`;
+    }
+
+    // 第2-6行：推荐颜色（最多5个）
+    recommended.slice(0, 5).forEach((c) => {
+        rowsHtml += `
+            <div class="color-row" data-color-id="${c.id}" data-color-name="${c.name}">
+                <span class="color-row-swatch" style="background:${c.hex}"></span>
+                <span class="color-row-id">ID: ${c.id}</span>
+                <span class="color-row-name">${c.name}</span>
+            </div>`;
+    });
+
+    // 如果没有任何颜色数据，隐藏颜色预选区
+    if (!rowsHtml) {
+        preselectSection.style.display = 'none';
         return;
     }
 
-    box.innerHTML = `
-        <div class="recognize-header">已识别型号：<b>${partNum}</b></div>
-        <div class="recognize-section-title">
-            图片提取色：
-            <span class="dominant-swatch" style="background:${dominantHex || '#ccc'}" title="图片提取色"></span>
-        </div>
-        ${bgColorNoteHtml}
-        ${bgSectionHtml}
-        ${regularChipsHtml ? `<div class="recognize-section-title" style="margin-top:8px;">其他推荐颜色：</div>
-        <div class="recognize-colors-row">
-            ${regularChipsHtml}
-        </div>` : ''}
-    `;
-    const chips = box.querySelectorAll('.recognize-color-chip');
-    chips.forEach((chip, idx) => {
-        chip.addEventListener('click', () => selectRecognizeColor(chip, idx));
-    });
-    // 默认选中 BG 颜色或第一个颜色
-    if (chips.length > defaultSelectedIdx) {
-        selectRecognizeColor(chips[defaultSelectedIdx], defaultSelectedIdx);
-    } else if (chips.length) {
-        selectRecognizeColor(chips[0], 0);
-    }
-}
+    // 显示颜色预选区，写入行
+    preselectSection.style.display = 'block';
+    listEl.innerHTML = bgColorNoteHtml + rowsHtml;
 
-// 选择某个推荐颜色，更新暂存数据并刷新预览
-function selectRecognizeColor(chip, idx) {
-    const box = document.getElementById('recognize-result');
-    recognizeResultData.colorId = chip.dataset.id;
-    recognizeResultData.colorName = chip.dataset.name;
-    updateRecognizePreview();
-    if (box) box.querySelectorAll('.recognize-color-chip').forEach(c => c.classList.toggle('selected', c === chip));
+    // 绑定点击事件
+    const rows = listEl.querySelectorAll('.color-row');
+    rows.forEach((row) => {
+        row.addEventListener('click', () => {
+            recognizeResultData.colorId = row.dataset.colorId;
+            recognizeResultData.colorName = row.dataset.colorName;
+            updateRecognizePreview();
+            rows.forEach(r => r.classList.remove('selected'));
+            row.classList.add('selected');
+        });
+    });
+
+    // 默认选中 BG 颜色行（第1行）
+    const firstRow = listEl.querySelector('.color-row');
+    if (firstRow) {
+        firstRow.classList.add('selected');
+        recognizeResultData.colorId = firstRow.dataset.colorId;
+        recognizeResultData.colorName = firstRow.dataset.colorName;
+        updateRecognizePreview();
+    }
 }
 
 // ==================== 同名零件消歧 ====================
@@ -2365,7 +2393,7 @@ async function showSameNamePartsPicker(partName, currentPartNum) {
     if (existingPicker) return;
 
     // 创建选择器UI
-    const box = document.getElementById('recognize-result');
+    const box = document.getElementById('recognize-preview-section');
     if (!box) return;
 
     const pickerDiv = document.createElement('div');
@@ -2849,9 +2877,12 @@ async function processGrayCardFile(input) {
         return;
     }
 
-    const statusEl = document.getElementById('gray-card-status');
+    const statusTextEl = document.getElementById('gray-card-status-text');
     const instructionEl = document.getElementById('gray-card-instruction');
-    if (statusEl) statusEl.innerHTML = '<span class="gray-card-status-text calibrating">正在分析灰卡...</span>';
+    if (statusTextEl) {
+        statusTextEl.textContent = '正在分析灰卡...';
+        statusTextEl.className = 'gray-card-status-text calibrating';
+    }
 
     try {
         // 压缩图片
@@ -2894,7 +2925,10 @@ async function processGrayCardFile(input) {
         }
 
         if (count < 100) {
-            if (statusEl) statusEl.innerHTML = '<span class="gray-card-status-text error">❌ 未检测到灰卡区域，请确保灰卡在画面中央</span>';
+            if (statusTextEl) {
+                statusTextEl.textContent = '❌ 未检测到灰卡区域，请确保灰卡在画面中央';
+                statusTextEl.className = 'gray-card-status-text error';
+            }
             if (instructionEl) instructionEl.style.display = 'block';
             return;
         }
@@ -2923,36 +2957,35 @@ async function processGrayCardFile(input) {
         setGrayCardCalibrationActive(true);
 
         // 更新 UI
-        if (statusEl) {
-            statusEl.innerHTML = `
-                <span class="gray-card-status-text calibrated">✓ 已校准（R:${gains.r.toFixed(3)}, G:${gains.g.toFixed(3)}, B:${gains.b.toFixed(3)}）</span>
-                <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">重新校准</button>
-                <button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()">清除</button>
-            `;
+        if (statusTextEl) {
+            statusTextEl.textContent = `✓ 已校准`;
+            statusTextEl.className = 'gray-card-status-text calibrated';
         }
-        if (instructionEl) instructionEl.style.display = 'none';
-
-        // 启用开关
-        const toggle = document.getElementById('gray-card-toggle');
-        if (toggle) { toggle.disabled = false; toggle.checked = true; }
+        if (instructionEl) {
+            instructionEl.style.display = 'block';
+            const scrollText = instructionEl.querySelector('.area2-scroll-text');
+            if (scrollText) scrollText.textContent = '灰卡白平衡已校准，点击"校准"可重新校准';
+        }
+        const clearBtn = document.getElementById('gray-card-clear-btn');
+        if (clearBtn) clearBtn.style.display = 'inline-block';
 
         alert('灰卡白平衡校准完成！后续拍照将自动应用校正。');
     } catch (err) {
         console.error('灰卡校准失败:', err);
-        if (statusEl) statusEl.innerHTML = '<span class="gray-card-status-text error">❌ 校准失败：' + (err.message || '未知错误') + '</span>';
+        if (statusTextEl) {
+            statusTextEl.textContent = '❌ 校准失败：' + (err.message || '未知错误');
+            statusTextEl.className = 'gray-card-status-text error';
+        }
     }
 }
 
 // 切换灰卡校准模式开关
 function toggleGrayCardMode(active) {
     setGrayCardCalibrationActive(active);
-    const statusEl = document.getElementById('gray-card-status');
-    if (statusEl) {
-        const textEl = statusEl.querySelector('.gray-card-status-text');
-        if (textEl) {
-            textEl.textContent = active ? '✓ 已校准（已启用）' : '✓ 已校准（已禁用）';
-            textEl.className = 'gray-card-status-text ' + (active ? 'calibrated' : 'disabled');
-        }
+    const statusTextEl = document.getElementById('gray-card-status-text');
+    if (statusTextEl) {
+        statusTextEl.textContent = active ? '✓ 已校准（已启用）' : '✓ 已校准（已禁用）';
+        statusTextEl.className = 'gray-card-status-text ' + (active ? 'calibrated' : 'disabled');
     }
 }
 
@@ -2960,17 +2993,19 @@ function toggleGrayCardMode(active) {
 function resetGrayCardCalibrationUI() {
     if (!confirm('确定清除灰卡白平衡校准数据？')) return;
     resetGrayCardCalibration();
-    const statusEl = document.getElementById('gray-card-status');
+    const statusTextEl = document.getElementById('gray-card-status-text');
     const instructionEl = document.getElementById('gray-card-instruction');
-    if (statusEl) {
-        statusEl.innerHTML = `
-            <span class="gray-card-status-text uncalibrated">未校准（需先拍灰卡）</span>
-            <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">拍灰卡校准</button>
-        `;
+    if (statusTextEl) {
+        statusTextEl.textContent = '未校准';
+        statusTextEl.className = 'gray-card-status-text uncalibrated';
     }
-    if (instructionEl) instructionEl.style.display = 'block';
-    const toggle = document.getElementById('gray-card-toggle');
-    if (toggle) { toggle.checked = false; toggle.disabled = true; }
+    if (instructionEl) {
+        instructionEl.style.display = 'block';
+        const scrollText = instructionEl.querySelector('.area2-scroll-text');
+        if (scrollText) scrollText.textContent = '将 18% 灰卡放在零件拍摄位置，点击"校准"拍照';
+    }
+    const clearBtn = document.getElementById('gray-card-clear-btn');
+    if (clearBtn) clearBtn.style.display = 'none';
 }
 
 // 应用灰卡白平衡增益到像素数据
