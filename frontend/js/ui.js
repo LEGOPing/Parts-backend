@@ -3812,6 +3812,8 @@ async function loadColorGrid(partNum) {
             if (colorInput) {
                 colorInput.value = color.id;
                 updateColorButtonColor(color.id);
+                // 手动触发 input 事件，让预览相关监听器得以执行
+                colorInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
             e.target.closest('.modal-overlay').remove();
         });
