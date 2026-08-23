@@ -1359,6 +1359,14 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
+            <div class="form-section">
+                <div class="form-row">
+                    <label class="form-label">零件图片：</label>
+                    <div class="part-image-preview" id="add-part-image-preview">
+                        <div class="no-image">暂无图片</div>
+                    </div>
+                </div>
+            </div>
             <div class="part-info-preview" id="part-info-preview" style="display: none;">
                 <div class="preview-left">
                     <div class="preview-image-container" id="preview-image-container">
@@ -1533,6 +1541,12 @@ function confirmRecognizeResult() {
     }
     
     closeRecognizeModal(false);
+    
+    // 触发颜色输入事件以更新零件图片预览
+    const colorInput = document.getElementById('new-part-color');
+    if (colorInput) {
+        colorInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
 }
 
 // 更新识别弹窗预览区域，启用/禁用确认按钮
@@ -1873,6 +1887,24 @@ function initAddPartSuggestions() {
         } else {
             partInfoPreview.style.display = 'none';
         }
+        updateAddPartImage();
+    }
+    
+    // 更新添加零件页的图片预览行
+    async function updateAddPartImage() {
+        const partNum = partNumInput.value.trim();
+        const colorId = document.getElementById('new-part-color')?.value.trim() || '';
+        const imagePreview = document.getElementById('add-part-image-preview');
+        if (!imagePreview) return;
+        
+        if (partNum && colorId) {
+            const imgUrl = await getPartImageUrl(partNum, colorId);
+            if (imgUrl) {
+                imagePreview.innerHTML = `<img src="${imgUrl}" alt="${partNum}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+                return;
+            }
+        }
+        imagePreview.innerHTML = '<div class="no-image">暂无图片</div>';
     }
     
     // 零件型号输入事件
@@ -1887,6 +1919,7 @@ function initAddPartSuggestions() {
             hidePartNumSuggestions();
             partNameHint.textContent = '';
             partInfoPreview.style.display = 'none';
+            updateAddPartImage();
             return;
         }
         
@@ -1898,6 +1931,7 @@ function initAddPartSuggestions() {
         // 延迟触发联想查询（不自动选择）
         partNumTimer = setTimeout(async () => {
             await showPartNumSuggestions(value);
+            await updateAddPartImage();
         }, 800);
     });
     
@@ -1941,6 +1975,7 @@ function initAddPartSuggestions() {
     const colorInput = document.getElementById('new-part-color');
     colorInput.addEventListener('input', () => {
         updatePartInfoPreview();
+        updateAddPartImage();
     });
     
     // 点击外部关闭联想
