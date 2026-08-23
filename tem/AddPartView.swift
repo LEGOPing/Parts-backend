@@ -218,6 +218,30 @@ struct AddPartView: View {
                     }
                 }
             }
+            
+            // 零件图片行（当零件型号和零件颜色都有数据时显示）
+            if !addPartState.partNumber.isEmpty && !addPartState.colorInput.isEmpty {
+                if let colorId = Int32(addPartState.colorInput) {
+                    HStack(alignment: .center, spacing: 10) {
+                        Text("零件图片：")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(red: 0x34/255, green: 0x49/255, blue: 0x5e/255))
+                            .fixedSize(horizontal: true, vertical: true)
+                        
+                        PartImageLoader(
+                            partNum: addPartState.partNumber,
+                            colorId: colorId,
+                            onImgUrlUpdated: { url in
+                                addPartState.partImageUrl = url
+                            }
+                        )
+                        .frame(width: 100, height: 100)
+                        .cornerRadius(4)
+                        
+                        Spacer()
+                    }
+                }
+            }
         }
         .padding(.horizontal, 15)
         .frame(maxWidth: .infinity, alignment: .leading)
