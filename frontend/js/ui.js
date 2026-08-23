@@ -2170,9 +2170,9 @@ async function cropToPart(file) {
         }
     }
 
-    // 如果前景太少或几乎充满画面（可能背景不均），不裁剪
+    // 如果前景太少，不裁剪（可能图片中没有零件）
     const totalPixels = (aw / 2) * (ah / 2);
-    if (fgCount < totalPixels * 0.01 || fgCount > totalPixels * 0.95) return file;
+    if (fgCount < totalPixels * 0.01) return file;
 
     // 裁剪为正方形：以零件中心为中心，取较长边+内边距作为边长
     const pad = 0.18;
@@ -2187,17 +2187,16 @@ async function cropToPart(file) {
     let cropX = Math.round(partCX - side / 2);
     let cropY = Math.round(partCY - side / 2);
     let cropSize = Math.round(side);
-    // 超出边界时平移
-    if (cropX < 0) { cropX = 0; }
-    if (cropY < 0) { cropY = 0; }
-    if (cropX + cropSize > nw) { cropX = nw - cropSize; }
-    if (cropY + cropSize > nh) { cropY = nh - cropSize; }
-    // 边界保护：如果仍超出，缩小 cropSize
+    // 超出边界保护：正方形不能超过图片范围
     if (cropSize > nw || cropSize > nh) {
+        // 裁剪尺寸超过图片——缩小到图片较短边
         cropSize = Math.min(nw, nh);
-        cropX = Math.round((nw - cropSize) / 2);
-        cropY = Math.round((nh - cropSize) / 2);
+        cropX = Math.round(partCX - cropSize / 2);
+        cropY = Math.round(partCY - cropSize / 2);
     }
+    // 平移保证在图片内
+    cropX = Math.max(0, Math.min(cropX, nw - cropSize));
+    cropY = Math.max(0, Math.min(cropY, nh - cropSize));
     if (cropSize < 30) return file;
 
     // 执行正方形裁剪
