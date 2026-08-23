@@ -3836,7 +3836,7 @@ async function updateColorButtonColor(colorId) {
     if (!btn) return;
     
     // 转为字符串处理
-    const idStr = String(colorId || '').trim();
+    const idStr = String(colorId ?? '').trim();
     
     // 如果没有颜色ID或颜色ID为空，恢复默认浅灰色
     if (!idStr) {
@@ -4066,7 +4066,7 @@ async function updateColorPickButton(colorId) {
     const btn = document.querySelector('.btn-color-pick');
     if (!btn) return;
 
-    if (!colorId) {
+    if (colorId === null || colorId === undefined || colorId === '') {
         // 恢复默认样式
         btn.style.backgroundColor = '';
         btn.style.color = '';
@@ -5428,7 +5428,7 @@ async function initializeApp() {
         if (colorIdInput) {
             colorIdInput.addEventListener('input', (e) => {
                 const val = e.target.value.trim();
-                if (val) {
+                if (val !== '') {
                     updateColorPickButton(val);
                 } else {
                     updateColorPickButton('');
