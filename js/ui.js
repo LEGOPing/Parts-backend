@@ -4068,6 +4068,13 @@ async function initializeApp() {
                 }
             });
         }
+        
+        // 监听弹窗（modal-overlay）的添加/移除，自动锁定/解锁 body 滚动
+        const bodyObserver = new MutationObserver(() => {
+            const hasActiveOverlay = document.querySelector('.modal-overlay.active');
+            document.body.style.overflow = hasActiveOverlay ? 'hidden' : '';
+        });
+        bodyObserver.observe(document.body, { childList: true, subtree: true });
     } catch (error) {
         console.error('应用初始化失败:', error);
         const list = document.getElementById('repositories-list');

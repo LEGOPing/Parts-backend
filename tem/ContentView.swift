@@ -652,37 +652,41 @@ struct ViewTwo: View {
             // 当状态是.partDetail时，保持显示上一个页面
             if case .partDetail = currentState {
                 // 当显示零件详情时，显示上一个状态对应的页面
-                if let prevState = previousState {
-                    switch prevState {
-                    case .main:
-                        MainPage()
-                    case .repositoryManagement:
-                        RepositoryManagementView(currentState: $currentState, selectedRepository: $selectedRepository, lastRepositoryId: $lastRepositoryId)
-                    case .boxManagement(_):
-                        // 重定向到仓库管理页面，不再使用单独的盒子管理页面
-                        RepositoryManagementView(currentState: $currentState, selectedRepository: $selectedRepository, lastRepositoryId: $lastRepositoryId)
-                    case .partManagement(let box):
-                        PartManagementView(currentState: $currentState, box: box, selectedPart: $selectedPart)
-                    case .addPart(let box):
-                        AddPartView(currentState: $currentState, box: box)
-                    case .search:
-                            // 直接使用搜索视图实例
-                            SearchViewWrapper(currentState: $currentState, viewContext: viewContext)
-                    case .searchWithPartNumber:
-                            // 直接使用搜索视图实例
-                            SearchViewWrapper(currentState: $currentState, viewContext: viewContext)
-                    case .settings:
-                        SettingsView()
-                    case .colorManagement:
-                        ColorManagementView(currentState: $currentState)
-                    case .partDetail:
-                        // 避免递归，显示主页面
+                // 使用 Group+allowsHitTesting(false) 阻止底层页面接收滚动/触摸事件
+                Group {
+                    if let prevState = previousState {
+                        switch prevState {
+                        case .main:
+                            MainPage()
+                        case .repositoryManagement:
+                            RepositoryManagementView(currentState: $currentState, selectedRepository: $selectedRepository, lastRepositoryId: $lastRepositoryId)
+                        case .boxManagement(_):
+                            // 重定向到仓库管理页面，不再使用单独的盒子管理页面
+                            RepositoryManagementView(currentState: $currentState, selectedRepository: $selectedRepository, lastRepositoryId: $lastRepositoryId)
+                        case .partManagement(let box):
+                            PartManagementView(currentState: $currentState, box: box, selectedPart: $selectedPart)
+                        case .addPart(let box):
+                            AddPartView(currentState: $currentState, box: box)
+                        case .search:
+                                // 直接使用搜索视图实例
+                                SearchViewWrapper(currentState: $currentState, viewContext: viewContext)
+                        case .searchWithPartNumber:
+                                // 直接使用搜索视图实例
+                                SearchViewWrapper(currentState: $currentState, viewContext: viewContext)
+                        case .settings:
+                            SettingsView()
+                        case .colorManagement:
+                            ColorManagementView(currentState: $currentState)
+                        case .partDetail:
+                            // 避免递归，显示主页面
+                            MainPage()
+                        }
+                    } else {
+                        // 默认显示主页面
                         MainPage()
                     }
-                } else {
-                    // 默认显示主页面
-                    MainPage()
                 }
+                .allowsHitTesting(false)
             } else {
                 // 其他状态正常显示
                 switch currentState {
