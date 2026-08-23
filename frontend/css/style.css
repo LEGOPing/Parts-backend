@@ -1933,6 +1933,32 @@ body {
     padding: 8px;
 }
 
+/* 添加零件页 - 零件图片预览行 */
+.part-image-preview {
+    width: 100px;
+    height: 100px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e8e8e8;
+}
+
+.part-image-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.part-image-preview .no-image {
+    font-size: 12px;
+    color: #bbb;
+    text-align: center;
+    padding: 8px;
+}
+
 .preview-right {
     flex: 1;
     display: flex;
