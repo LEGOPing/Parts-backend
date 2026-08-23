@@ -2659,6 +2659,15 @@ body {
     white-space: nowrap;
 }
 
+/* 名称显示 2 行，超长可垂直滚动 */
+#recognize-part-name-display {
+    white-space: normal;
+    overflow-y: auto;
+    max-height: 2.8em;
+    line-height: 1.4;
+    text-overflow: unset;
+}
+
 /* ==================== 拍照识别-区域四：颜色预选 ==================== */
 .color-preselection {
     margin-top: 8px;
