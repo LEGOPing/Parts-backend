@@ -1394,7 +1394,7 @@ function showRecognizeModal() {
     overlay.id = 'recognize-modal-overlay';
     
     const sheet = document.createElement('div');
-    sheet.className = 'modal-content add-part-modal recognize-modal-fullscreen';
+    sheet.className = 'modal-content add-part-modal';
     
     const isCalibrated = isGrayCardCalibrated();
     
