@@ -2445,6 +2445,9 @@ body {
     cursor: pointer;
     white-space: nowrap;
     height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: background-color 0.3s;
 }
 
@@ -2463,6 +2466,9 @@ body {
     cursor: pointer;
     white-space: nowrap;
     height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: background-color 0.3s;
 }
 
@@ -2538,8 +2544,8 @@ body {
 
 .area2-actions {
     display: flex;
-    justify-content: flex-end;
-    gap: 6px;
+    justify-content: center;
+    gap: 92px;
     align-items: center;
 }
 
