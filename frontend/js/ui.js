@@ -1342,6 +1342,7 @@ function showAddPartSheet() {
                     <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value)" />
                     <button id="color-pick-btn" class="btn-color-pick" onclick="showColorPicker()">选择颜色</button>
                 </div>
+                <div class="color-count-hint" id="color-count-hint"></div>
             </div>
             <div class="form-section">
                 <div class="quantity-weight-row">
@@ -1365,16 +1366,6 @@ function showAddPartSheet() {
                     <div class="part-image-preview" id="add-part-image-preview">
                         <div class="no-image">暂无图片</div>
                     </div>
-                </div>
-            </div>
-            <div class="part-info-preview" id="part-info-preview" style="display: none;">
-                <div class="preview-left">
-                    <div class="preview-image-container" id="preview-image-container">
-                        <div class="no-image">暂无图片</div>
-                    </div>
-                </div>
-                <div class="preview-right">
-                    <div class="preview-text-content" id="preview-text-content"></div>
                 </div>
             </div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
@@ -1580,7 +1571,6 @@ function initAddPartSuggestions() {
     const partNumSuggestions = document.getElementById('part-number-suggestions');
     const partNameSuggestions = document.getElementById('part-name-suggestions');
     const partNameHint = document.getElementById('part-name-hint');
-    const partInfoPreview = document.getElementById('part-info-preview');
     
     let partNumTimer = null;
     let partNameTimer = null;
@@ -1822,25 +1812,27 @@ function initAddPartSuggestions() {
         }, 1000);
     }
     
-    // 根据型号更新零件信息预览（支持别名解析）
+    // 根据型号更新颜色数量提示
     async function updatePartInfoPreview() {
         const partNum = partNumInput.value.trim();
+        const hintEl = document.getElementById('color-count-hint');
+        if (!hintEl) return;
+
         if (!partNum) {
-            partInfoPreview.style.display = 'none';
+            hintEl.textContent = '';
+            updateAddPartImage();
             return;
         }
 
-        let part = await getPartByNum(partNum);
         let effectivePartNum = partNum;
-        let usedAlias = false;
 
         // 如果在 RB 中找不到，尝试通过别名解析
+        let part = await getPartByNum(partNum);
         if (!part) {
             const resolvedNum = await resolvePartAlias(partNum);
             if (resolvedNum && resolvedNum !== partNum) {
                 effectivePartNum = resolvedNum;
                 part = await getPartByNum(resolvedNum);
-                usedAlias = true;
             }
         }
 
@@ -1850,41 +1842,9 @@ function initAddPartSuggestions() {
             }
 
             const colorCount = await getPartColorCount(effectivePartNum);
-            const colorId = document.getElementById('new-part-color')?.value.trim() || '0';
-            const textContent = document.getElementById('preview-text-content');
-            const imageContainer = document.getElementById('preview-image-container');
-
-            // 右侧：文字信息
-            let html = `
-                <div class="part-preview-item">
-                    <span class="preview-label">型号</span>
-                    <span class="preview-value">${part.part_num}</span>
-                </div>
-                <div class="part-preview-item">
-                    <span class="preview-label">名称</span>
-                    <span class="preview-value">${part.name || '-'}</span>
-                </div>
-                ${colorCount > 0 ? `<div class="part-preview-item"><span class="preview-label">颜色</span><span class="preview-value">${colorCount} 种</span></div>` : ''}
-            `;
-            if (usedAlias) {
-                html += `<div class="part-preview-item" style="color: #e67e22; font-size: 11px;">
-                    <span class="preview-label">别名映射</span>
-                    <span class="preview-value">${partNum} → ${effectivePartNum}</span>
-                </div>`;
-            }
-            textContent.innerHTML = html;
-
-            // 左侧：零件图片
-            const imgUrl = await getPartImageUrl(effectivePartNum, colorId);
-            if (imgUrl) {
-                imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name || part.part_num}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
-            } else {
-                imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
-            }
-
-            partInfoPreview.style.display = 'flex';
+            hintEl.textContent = colorCount > 0 ? `可能有${colorCount}种颜色` : '';
         } else {
-            partInfoPreview.style.display = 'none';
+            hintEl.textContent = '';
         }
         updateAddPartImage();
     }
@@ -1917,7 +1877,7 @@ function initAddPartSuggestions() {
         if (!value) {
             hidePartNumSuggestions();
             partNameHint.textContent = '';
-            partInfoPreview.style.display = 'none';
+            document.getElementById('color-count-hint') && (document.getElementById('color-count-hint').textContent = '');
             updateAddPartImage();
             return;
         }
@@ -3812,6 +3772,8 @@ async function loadColorGrid(partNum) {
             if (colorInput) {
                 colorInput.value = color.id;
                 updateColorButtonColor(color.id);
+                // 手动触发 input 事件，让预览相关监听器得以执行
+                colorInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
             e.target.closest('.modal-overlay').remove();
         });
@@ -3836,7 +3798,7 @@ async function updateColorButtonColor(colorId) {
     if (!btn) return;
     
     // 转为字符串处理
-    const idStr = String(colorId || '').trim();
+    const idStr = String(colorId ?? '').trim();
     
     // 如果没有颜色ID或颜色ID为空，恢复默认浅灰色
     if (!idStr) {
@@ -4066,7 +4028,7 @@ async function updateColorPickButton(colorId) {
     const btn = document.querySelector('.btn-color-pick');
     if (!btn) return;
 
-    if (!colorId) {
+    if (colorId === null || colorId === undefined || colorId === '') {
         // 恢复默认样式
         btn.style.backgroundColor = '';
         btn.style.color = '';
@@ -5428,7 +5390,7 @@ async function initializeApp() {
         if (colorIdInput) {
             colorIdInput.addEventListener('input', (e) => {
                 const val = e.target.value.trim();
-                if (val) {
+                if (val !== '') {
                     updateColorPickButton(val);
                 } else {
                     updateColorPickButton('');

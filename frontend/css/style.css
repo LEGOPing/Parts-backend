@@ -1582,6 +1582,15 @@ body {
     color: #000 !important;
 }
 
+/* 颜色数量提示：可能有N种颜色 */
+.color-count-hint {
+    font-size: 10px;
+    color: #999;
+    margin-top: 2px;
+    padding-left: 90px;
+    min-height: 16px;
+}
+
 .form-section {
     margin-bottom: 16px;
     box-sizing: border-box;
@@ -1889,50 +1898,6 @@ body {
     align-items: center;
 }
 
-/* 零件信息预览 - 左右分栏 */
-.part-info-preview {
-    display: flex;
-    gap: 12px;
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 12px;
-    margin-top: 10px;
-    min-height: 100px;
-}
-
-.preview-left {
-    flex: 0 0 120px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.preview-image-container {
-    width: 100%;
-    height: 120px;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid #e8e8e8;
-}
-
-.preview-image-container img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-}
-
-.preview-image-container .no-image {
-    font-size: 12px;
-    color: #bbb;
-    text-align: center;
-    padding: 8px;
-}
-
 /* 添加零件页 - 零件图片预览行 */
 .part-image-preview {
     width: 100px;
@@ -1957,36 +1922,6 @@ body {
     color: #bbb;
     text-align: center;
     padding: 8px;
-}
-
-.preview-right {
-    flex: 1;
-    display: flex;
-    align-items: flex-start;
-}
-
-.preview-text-content {
-    width: 100%;
-}
-
-.part-preview-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 0;
-}
-
-.preview-label {
-    font-size: 12px;
-    color: #666;
-    min-width: 60px;
-    flex-shrink: 0;
-}
-
-.preview-value {
-    font-size: 14px;
-    color: #333;
-    font-weight: 500;
 }
 
 /* 零件行布局调整 */
