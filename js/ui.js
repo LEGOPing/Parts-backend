@@ -1963,6 +1963,38 @@ function recognizePartFromPhoto() {
     input.click();
 }
 
+// 重置识别 UI（第二次拍摄时清除之前的结果）
+function resetRecognizeUI() {
+    recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    
+    // 隐藏预览区（区域三）
+    const previewSection = document.getElementById('recognize-preview-section');
+    if (previewSection) previewSection.style.display = 'none';
+    
+    // 隐藏颜色预选区（区域四）
+    const colorSection = document.getElementById('color-preselection');
+    if (colorSection) colorSection.style.display = 'none';
+    const colorList = document.getElementById('color-preselect-list');
+    if (colorList) colorList.innerHTML = '';
+    
+    // 禁用确认按钮
+    const confirmBtn = document.getElementById('recognize-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.style.opacity = '0.4';
+        confirmBtn.style.pointerEvents = 'none';
+    }
+    
+    // 清除预览图片
+    const previewImg = document.getElementById('preview-part-image');
+    if (previewImg) previewImg.innerHTML = '<div class="no-image">暂无图片</div>';
+    
+    // 清除别名提示和同名零件选择器
+    const aliasHint = document.querySelector('.alias-hint');
+    if (aliasHint) aliasHint.remove();
+    const sameNamePicker = document.getElementById('same-name-parts-picker');
+    if (sameNamePicker) sameNamePicker.remove();
+}
+
 // 处理识别文件上传
 async function processRecognitionFile(input) {
     const file = input.files && input.files[0];
@@ -1973,6 +2005,10 @@ async function processRecognitionFile(input) {
     }
     if (recognizeUploading) return;
     recognizeUploading = true;
+    
+    // 重置之前的识别结果
+    resetRecognizeUI();
+    
     setRecognizeStatus('正在处理图片...');
 
     try {
@@ -1980,15 +2016,18 @@ async function processRecognitionFile(input) {
         const compressed = await compressImage(file, 1024);
         if (!compressed) { setRecognizeStatus('图片处理失败'); return; }
 
-        // 本地预览压缩后的图片（放入 Area 3 预览卡片）
-        const previewUrl = URL.createObjectURL(compressed);
+        // 裁剪到零件最小包围框（去除多余背景，提升识别精度和颜色分析准确度）
+        const cropped = await cropToPart(compressed);
+
+        // 本地预览裁剪后的图片（放入 Area 3 预览卡片）
+        const previewUrl = URL.createObjectURL(cropped);
         const previewImgContainer = document.getElementById('preview-part-image');
         if (previewImgContainer) {
             previewImgContainer.innerHTML = `<img class="recognize-thumb" src="${previewUrl}" alt="预览图片" />`;
         }
 
         setRecognizeStatus('正在上传识别中，请稍候...');
-        const candidate = await uploadToBrickognize(compressed);
+        const candidate = await uploadToBrickognize(cropped);
         URL.revokeObjectURL(previewUrl);
         if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
 
@@ -1999,8 +2038,8 @@ async function processRecognitionFile(input) {
         let bgColorId = candidate.colorId;
         let bgColorName = candidate.colorName;
 
-        // 计算图片中最接近的 RB 颜色（同时作为备选）
-        const result = await computeClosestRBColors(compressed, effectivePartNum || candidate.id);
+        // 计算裁剪后的图片中最接近的 RB 颜色（同时作为备选，背景已去除，颜色分析更准确）
+        const result = await computeClosestRBColors(cropped, effectivePartNum || candidate.id);
 
         // 确保 BG 颜色始终在颜色列表中（不在最近5个中就将其加入）
         if (bgColorId !== null && bgColorId !== undefined) {
@@ -2065,6 +2104,99 @@ async function compressImage(file, maxSize) {
             if (!blob) { resolve(null); return; }
             resolve(new File([blob], 'recognize.jpg', { type: 'image/jpeg' }));
         }, 'image/jpeg', 0.85);
+    });
+}
+
+// 裁剪图片到零件的最小包围框（去除多余背景）
+// 返回裁剪后的 File，如果无法裁剪则返回原图
+async function cropToPart(file) {
+    const img = await fileToImage(file);
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (nw < 50 || nh < 50) return file;
+
+    // 缩小到 256px 分析
+    const scale = Math.min(256 / nw, 256 / nh, 1);
+    const aw = Math.round(nw * scale), ah = Math.round(nh * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = aw;
+    canvas.height = ah;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, aw, ah);
+    let data;
+    try { data = ctx.getImageData(0, 0, aw, ah).data; } catch (e) { return file; }
+
+    // 从四个角采样背景色（取各角 10% 区域）
+    const cornerSize = 0.10;
+    let bgSamples = [];
+    const corners = [
+        [0, 0], [aw - Math.round(aw * cornerSize), 0],
+        [0, ah - Math.round(ah * cornerSize)], [aw - Math.round(aw * cornerSize), ah - Math.round(ah * cornerSize)]
+    ];
+    for (const [cx, cy] of corners) {
+        const cw = Math.round(aw * cornerSize), ch = Math.round(ah * cornerSize);
+        for (let y = cy; y < cy + ch && y < ah; y++) {
+            for (let x = cx; x < cx + cw && x < aw; x++) {
+                const i = (y * aw + x) * 4;
+                bgSamples.push([data[i], data[i + 1], data[i + 2]]);
+            }
+        }
+    }
+    if (bgSamples.length < 50) return file;
+
+    // 计算背景平均色
+    let sumR = 0, sumG = 0, sumB = 0;
+    for (const p of bgSamples) { sumR += p[0]; sumG += p[1]; sumB += p[2]; }
+    const bgR = sumR / bgSamples.length, bgG = sumG / bgSamples.length, bgB = sumB / bgSamples.length;
+    const bgBright = (bgR + bgG + bgB) / 3;
+    const threshold = Math.max(28, Math.min(60, Math.round(bgBright / 8)));
+    const threshold2 = threshold * threshold;
+
+    // 扫描前景像素，找最小包围框
+    let minX = aw, minY = ah, maxX = 0, maxY = 0;
+    let fgCount = 0;
+    // 步长 2（隔行扫描加速）
+    for (let y = 0; y < ah; y += 2) {
+        for (let x = 0; x < aw; x += 2) {
+            const i = (y * aw + x) * 4;
+            const dr = data[i] - bgR, dg = data[i + 1] - bgG, db = data[i + 2] - bgB;
+            if (dr * dr + dg * dg + db * db > threshold2) {
+                fgCount++;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+
+    // 如果前景太少或几乎充满画面（可能背景不均），不裁剪
+    const totalPixels = (aw / 2) * (ah / 2);
+    if (fgCount < totalPixels * 0.01 || fgCount > totalPixels * 0.95) return file;
+
+    // 映射回原图坐标，加 15% 内边距
+    const pad = 0.15;
+    let cropX = Math.round(minX / scale), cropY = Math.round(minY / scale);
+    let cropW = Math.round((maxX - minX) / scale), cropH = Math.round((maxY - minY) / scale);
+    const padX = Math.round(cropW * pad), padY = Math.round(cropH * pad);
+    cropX = Math.max(0, cropX - padX);
+    cropY = Math.max(0, cropY - padY);
+    cropW = Math.min(nw - cropX, cropW + padX * 2);
+    cropH = Math.min(nh - cropY, cropH + padY * 2);
+    if (cropW < 30 || cropH < 30) return file;
+
+    // 执行裁剪
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = cropW;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext('2d');
+    if (!cropCtx) return file;
+    cropCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    return new Promise((resolve) => {
+        cropCanvas.toBlob((blob) => {
+            if (!blob) { resolve(file); return; }
+            resolve(new File([blob], 'recognize_cropped.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
     });
 }
 
@@ -2193,21 +2325,26 @@ function setRecognizeStatus(msg) {
 
 // 计算图片中零件最接近的5种颜色，按亮度等级匹配（深/较深/正常/较浅/浅）
 // 若已知零件型号，只匹配该零件可能有的颜色，大幅提升准确度
+// 图片已裁剪到零件包围框，背景已大幅去除，颜色分析更准确
 async function computeClosestRBColors(file, partNum) {
     try {
         const img = await fileToImage(file);
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+        // 判断是否为裁剪后的图片（任一边小于 200px，说明经过裁剪，背景很少）
+        const isCropped = nw < 200 || nh < 200;
+
         // 白平衡校正：优先使用灰卡校准，其次自动估计背景白平衡
+        // 裁剪后的图片边缘可能已是零件，不适合用边缘估计背景白平衡，直接使用灰卡校准或跳过
         let wbInfo;
         if (isGrayCardCalibrationActive() && isGrayCardCalibrated()) {
-            // 使用灰卡校准增益
             const gains = getGrayCardGains();
             if (gains) {
                 wbInfo = { factors: [gains.r, gains.g, gains.b], bgColor: null };
             } else {
-                wbInfo = estimateIlluminant(img);
+                wbInfo = isCropped ? null : estimateIlluminant(img);
             }
         } else {
-            wbInfo = estimateIlluminant(img);
+            wbInfo = isCropped ? null : estimateIlluminant(img);
         }
         const dominant = getDominantColor(img, wbInfo);
         if (!dominant) return { colors: [], dominantHex: '' };
@@ -2597,6 +2734,8 @@ function applyWB(pixel, factors) {
 function getDominantColor(img, wbInfo) {
     const wbFactors = wbInfo ? wbInfo.factors : null;
     const bgColor = wbInfo ? wbInfo.bgColor : null;
+    // 没有背景色信息时（如裁剪后的图片），直接使用中心区域法，跳过边缘背景采样
+    const noBackground = !wbInfo || (!wbInfo.bgColor && !wbInfo.factors);
 
     // 缩小到 128x128 分析，兼顾性能与精度
     const W = 128, H = 128;
@@ -2614,7 +2753,7 @@ function getDominantColor(img, wbInfo) {
     let bgR, bgG, bgB;
     if (bgColor) {
         bgR = bgColor[0]; bgG = bgColor[1]; bgB = bgColor[2];
-    } else {
+    } else if (!noBackground) {
         // 从边缘 15% 区域采样背景色
         const border = 0.15;
         let sumR = 0, sumG = 0, sumB = 0, cnt = 0;
@@ -2634,54 +2773,56 @@ function getDominantColor(img, wbInfo) {
 
     // 2. 提取前景像素（与背景色差异明显的像素）
     // 动态阈值：根据背景色亮度调整，背景越亮阈值越高
-    const bgBrightness = (bgR + bgG + bgB) / 3;
-    const bgThreshold = Math.max(25, Math.min(50, Math.round(bgBrightness / 10)));
-    const bgThreshold2 = bgThreshold * bgThreshold;
-
     const partPixels = [];
-    const border = 0.12; // 分析时去掉边缘 12%（避免边缘残留背景）
+    let useFallback = noBackground; // 无背景信息时，直接走回退路径
 
-    for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
-        for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
-            const i = (y * W + x) * 4;
-            let r = data[i], g = data[i + 1], b = data[i + 2];
-            // 应用白平衡校正
-            if (wbFactors) {
-                const c = applyWB([r, g, b], wbFactors);
-                r = c[0]; g = c[1]; b = c[2];
-            }
-            // 计算与背景色的色差平方
-            const dr = r - bgR, dg = g - bgG, db = b - bgB;
-            if (dr * dr + dg * dg + db * db > bgThreshold2) {
-                partPixels.push([r, g, b]);
-            }
-        }
-    }
+    if (!noBackground) {
+        const bgBrightness = (bgR + bgG + bgB) / 3;
+        const bgThreshold = Math.max(25, Math.min(50, Math.round(bgBrightness / 10)));
+        const bgThreshold2 = bgThreshold * bgThreshold;
+        const border = 0.12; // 分析时去掉边缘 12%（避免边缘残留背景）
 
-    // 如果前景像素太少，降低阈值重试
-    let useFallback = false;
-    if (partPixels.length < 80) {
-        const lowerThreshold = Math.max(18, Math.round(bgThreshold * 0.7));
-        const lowerThreshold2 = lowerThreshold * lowerThreshold;
         for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
             for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
                 const i = (y * W + x) * 4;
                 let r = data[i], g = data[i + 1], b = data[i + 2];
+                // 应用白平衡校正
                 if (wbFactors) {
                     const c = applyWB([r, g, b], wbFactors);
                     r = c[0]; g = c[1]; b = c[2];
                 }
+                // 计算与背景色的色差平方
                 const dr = r - bgR, dg = g - bgG, db = b - bgB;
-                if (dr * dr + dg * dg + db * db > lowerThreshold2) {
+                if (dr * dr + dg * dg + db * db > bgThreshold2) {
                     partPixels.push([r, g, b]);
                 }
             }
         }
-    }
 
-    // 如果还是太少，回退到中心区域法
-    if (partPixels.length < 50) {
-        useFallback = true;
+        // 如果前景像素太少，降低阈值重试
+        if (partPixels.length < 80) {
+            const lowerThreshold = Math.max(18, Math.round(bgThreshold * 0.7));
+            const lowerThreshold2 = lowerThreshold * lowerThreshold;
+            for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
+                for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
+                    const i = (y * W + x) * 4;
+                    let r = data[i], g = data[i + 1], b = data[i + 2];
+                    if (wbFactors) {
+                        const c = applyWB([r, g, b], wbFactors);
+                        r = c[0]; g = c[1]; b = c[2];
+                    }
+                    const dr = r - bgR, dg = g - bgG, db = b - bgB;
+                    if (dr * dr + dg * dg + db * db > lowerThreshold2) {
+                        partPixels.push([r, g, b]);
+                    }
+                }
+            }
+        }
+
+        // 如果还是太少，回退到中心区域法
+        if (partPixels.length < 50) {
+            useFallback = true;
+        }
     }
 
     // 3. 颜色分桶，找最大桶
