@@ -1963,6 +1963,38 @@ function recognizePartFromPhoto() {
     input.click();
 }
 
+// 重置识别 UI（第二次拍摄时清除之前的结果）
+function resetRecognizeUI() {
+    recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    
+    // 隐藏预览区（区域三）
+    const previewSection = document.getElementById('recognize-preview-section');
+    if (previewSection) previewSection.style.display = 'none';
+    
+    // 隐藏颜色预选区（区域四）
+    const colorSection = document.getElementById('color-preselection');
+    if (colorSection) colorSection.style.display = 'none';
+    const colorList = document.getElementById('color-preselect-list');
+    if (colorList) colorList.innerHTML = '';
+    
+    // 禁用确认按钮
+    const confirmBtn = document.getElementById('recognize-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.style.opacity = '0.4';
+        confirmBtn.style.pointerEvents = 'none';
+    }
+    
+    // 清除预览图片
+    const previewImg = document.getElementById('preview-part-image');
+    if (previewImg) previewImg.innerHTML = '<div class="no-image">暂无图片</div>';
+    
+    // 清除别名提示和同名零件选择器
+    const aliasHint = document.querySelector('.alias-hint');
+    if (aliasHint) aliasHint.remove();
+    const sameNamePicker = document.getElementById('same-name-parts-picker');
+    if (sameNamePicker) sameNamePicker.remove();
+}
+
 // 处理识别文件上传
 async function processRecognitionFile(input) {
     const file = input.files && input.files[0];
@@ -1973,6 +2005,10 @@ async function processRecognitionFile(input) {
     }
     if (recognizeUploading) return;
     recognizeUploading = true;
+    
+    // 重置之前的识别结果
+    resetRecognizeUI();
+    
     setRecognizeStatus('正在处理图片...');
 
     try {
