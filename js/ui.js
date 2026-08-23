@@ -1543,7 +1543,6 @@ function confirmRecognizeResult() {
     closeRecognizeModal(false);
     
     // 触发颜色输入事件以更新零件图片预览
-    const colorInput = document.getElementById('new-part-color');
     if (colorInput) {
         colorInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
