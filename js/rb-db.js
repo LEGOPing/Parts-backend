@@ -266,7 +266,7 @@ async function searchPartsInRB(query, limit = 20) {
         return allParts
             .filter(p => 
                 p.part_num.toLowerCase().includes(q) || 
-                p.name.toLowerCase().includes(q)
+                p.name.toLowerCase().replace(/\s*x\s*/g, 'x').includes(q.replace(/\s*x\s*/g, 'x'))
             )
             .slice(0, limit);
     } catch (error) {
