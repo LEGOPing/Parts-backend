@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -20,7 +21,15 @@ def search_parts(
     if part_num:
         query = query.filter(Part.part_num.ilike(f"%{part_num}%"))
     if name:
-        query = query.filter(Part.name.ilike(f"%{name}%"))
+        name_normalized = re.sub(r'\s*x\s*', 'x', name, flags=re.IGNORECASE)
+        name_spaced = re.sub(r'x', ' x ', name_normalized, flags=re.IGNORECASE).strip()
+        name_spaced = re.sub(r'\s+', ' ', name_spaced)
+        query = query.filter(
+            or_(
+                Part.name.ilike(f"%{name_normalized}%"),
+                Part.name.ilike(f"%{name_spaced}%")
+            )
+        )
     if color_id:
         query = query.filter(Part.color_id == color_id)
     
@@ -32,12 +41,25 @@ def get_part_suggestions(
     db: Session = Depends(get_db)
 ):
     # 从系统数据库中获取零件型号和名称的联想建议
-    parts = db.query(Part).filter(
-        or_(
-            Part.part_num.ilike(f"{query}%"),
-            Part.name.ilike(f"%{query}%")
-        )
-    ).limit(10).all()
+    name_normalized = query
+    if 'x' in query.lower():
+        name_normalized = re.sub(r'\s*x\s*', 'x', query, flags=re.IGNORECASE)
+        name_spaced = re.sub(r'x', ' x ', name_normalized, flags=re.IGNORECASE).strip()
+        name_spaced = re.sub(r'\s+', ' ', name_spaced)
+        parts = db.query(Part).filter(
+            or_(
+                Part.part_num.ilike(f"{query}%"),
+                Part.name.ilike(f"%{name_normalized}%"),
+                Part.name.ilike(f"%{name_spaced}%")
+            )
+        ).limit(10).all()
+    else:
+        parts = db.query(Part).filter(
+            or_(
+                Part.part_num.ilike(f"{query}%"),
+                Part.name.ilike(f"%{query}%")
+            )
+        ).limit(10).all()
     
     suggestions = [
         {

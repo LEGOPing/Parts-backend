@@ -543,7 +543,7 @@ async function getPartSuggestions(query) {
     return parts
         .filter(p => 
             p.part_num.toLowerCase().includes(q) || 
-            p.name.toLowerCase().includes(q)
+            p.name.toLowerCase().replace(/\s*x\s*/g, 'x').includes(q.replace(/\s*x\s*/g, 'x'))
         )
         .slice(0, 20);
 }
@@ -815,8 +815,8 @@ async function searchParts(params) {
             filtered = filtered.filter(p => p.part_num.toLowerCase().includes(q));
         }
         if (name) {
-            const q = name.toLowerCase();
-            filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+            const q = name.toLowerCase().replace(/\s*x\s*/g, 'x');
+            filtered = filtered.filter(p => p.name.toLowerCase().replace(/\s*x\s*/g, 'x').includes(q));
         }
         
         return filtered;
