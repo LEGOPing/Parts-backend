@@ -3030,28 +3030,10 @@ function recognizePartFromSearch() {
                     updateColorPickButton(candidate.colorId);
                 }
 
-                // 如果有别名映射，提示用户
-                if (resolvedNum !== candidate.id) {
-                    // 在型号输入框下方显示数据来源提示
-                    const dsHint = document.getElementById('search-data-source-hint');
-                    if (dsHint) {
-                        dsHint.textContent = `数据来源：${resolvedNum}`;
-                    }
-                    const hint = document.createElement('div');
-                    hint.className = 'alias-hint';
-                    hint.style.marginTop = '8px';
-                    hint.style.marginBottom = '8px';
-                    hint.innerHTML = `ℹ️ BG识别型号（<b>${candidate.id}</b>）的RB数据来源于 <b>${resolvedNum}</b>，搜索时保持型号为 ${candidate.id}`;
-                    const resultsArea = document.getElementById('search-results');
-                    // 显示提示（在搜索前先清除旧提示）
-                    const oldHint = document.querySelector('.search-alias-hint');
-                    if (oldHint) oldHint.remove();
-                    hint.className += ' search-alias-hint';
-                    if (resultsArea) resultsArea.prepend(hint);
-                } else {
-                    // 没有别名映射，清空数据来源提示
-                    const dsHint = document.getElementById('search-data-source-hint');
-                    if (dsHint) dsHint.textContent = '';
+                // 在型号输入框下方显示数据来源提示（始终显示）
+                const dsHint = document.getElementById('search-data-source-hint');
+                if (dsHint) {
+                    dsHint.textContent = `数据来源：${resolvedNum}`;
                 }
 
                 // 执行搜索
@@ -4024,12 +4006,18 @@ async function handleAdvancedSearch() {
     // 渲染搜索结果
     renderSearchResults(parts);
 
+    // 更新数据来源提示
+    const dsHint = document.getElementById('search-data-source-hint');
+    if (dsHint) {
+        dsHint.textContent = aliasUsed && resolvedNum ? `数据来源：${resolvedNum}` : '';
+    }
+
     // 清除旧提示
     const oldHint = document.querySelector('.search-alias-hint');
     if (oldHint) oldHint.remove();
     const results = document.getElementById('search-results');
 
-    // 如果使用了别名，显示提示
+    // 如果使用了别名，在搜索结果显示提示
     if (aliasUsed && results) {
         const hint = document.createElement('div');
         hint.className = 'alias-hint search-alias-hint';
@@ -4105,6 +4093,8 @@ function resetSearchFilters() {
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
     updateColorPickButton('');
+    const dsHint = document.getElementById('search-data-source-hint');
+    if (dsHint) dsHint.textContent = '';
 }
 
 async function renderSearchResults(parts) {
