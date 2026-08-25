@@ -1328,6 +1328,7 @@ function showAddPartSheet() {
                     </div>
                     <button type="button" class="btn-recognize" onclick="showRecognizeModal()">识别</button>
                 </div>
+                <div class="data-source-hint" id="data-source-hint"></div>
             </div>
             <div class="form-section">
                 <div class="form-row part-name-row">
@@ -1640,11 +1641,13 @@ function initAddPartSuggestions() {
                 const partName = item.dataset.partName;
                 const aliasFrom = item.dataset.aliasFrom;
                 
-                // 如果是别名推荐，填写原始型号，但显示提示
+                // 如果是别名推荐，填写原始型号，但显示数据来源提示
                 if (aliasFrom) {
                     partNumInput.value = aliasFrom;
-                    partNameHint.textContent = `已映射到 ${partNum}`;
-                    partNameHint.style.color = '#e67e22';
+                    const dsHint = document.getElementById('data-source-hint');
+                    if (dsHint) {
+                        dsHint.textContent = `数据来源：${partNum}`;
+                    }
                 } else {
                     partNumInput.value = partNum;
                 }
@@ -1877,6 +1880,8 @@ function initAddPartSuggestions() {
         if (!value) {
             hidePartNumSuggestions();
             partNameHint.textContent = '';
+            const dsHint = document.getElementById('data-source-hint');
+            if (dsHint) dsHint.textContent = '';
             document.getElementById('color-count-hint') && (document.getElementById('color-count-hint').textContent = '');
             updateAddPartImage();
             return;

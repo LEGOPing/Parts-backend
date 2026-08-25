@@ -1743,6 +1743,15 @@ body {
     z-index: 1;
 }
 
+/* 数据来源提示（零件型号输入框下方） */
+.data-source-hint {
+    font-size: 10px;
+    color: #e67e22;
+    margin: 2px 0 0 100px;
+    min-height: 14px;
+    line-height: 14px;
+}
+
 /* 状态按钮 */
 .status-group {
     display: flex;

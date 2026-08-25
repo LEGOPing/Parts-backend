@@ -1327,6 +1327,7 @@ function showAddPartSheet() {
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
                 </div>
+                <div class="data-source-hint" id="data-source-hint"></div>
             </div>
             <div class="form-section">
                 <div class="form-row part-name-row">
