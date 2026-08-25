@@ -1640,10 +1640,10 @@ function initAddPartSuggestions() {
                 const partName = item.dataset.partName;
                 const aliasFrom = item.dataset.aliasFrom;
                 
-                // 如果是别名推荐，填写原始型号，但显示提示
+                // 如果是别名推荐，填写解析后的标准型号，并显示提示
                 if (aliasFrom) {
-                    partNumInput.value = aliasFrom;
-                    partNameHint.textContent = `已映射到 ${partNum}`;
+                    partNumInput.value = partNum;
+                    partNameHint.textContent = `别名 ${aliasFrom} → ${partNum}`;
                     partNameHint.style.color = '#e67e22';
                 } else {
                     partNumInput.value = partNum;
@@ -3243,7 +3243,7 @@ async function applyGrayCardToImage(file) {
 }
 
 async function saveNewPart(button) {
-    const partNum = document.getElementById('new-part-num').value;
+    let partNum = document.getElementById('new-part-num').value;
     const partName = document.getElementById('new-part-name').value;
     const colorInput = document.getElementById('new-part-color').value;
     const quantity = parseInt(document.getElementById('new-part-quantity').value);
@@ -3264,6 +3264,14 @@ async function saveNewPart(button) {
         document.getElementById('add-part-error').textContent = '请输入有效的数量';
         document.getElementById('add-part-error').style.display = 'block';
         return;
+    }
+    
+    // 解析别名：如果输入的是别名，自动转换为 RB 标准型号
+    const resolvedNum = await resolvePartAlias(partNum.trim());
+    if (resolvedNum && resolvedNum !== partNum.trim()) {
+        const numInput = document.getElementById('new-part-num');
+        if (numInput) numInput.value = resolvedNum;
+        partNum = resolvedNum;
     }
     
     const newPartData = {
