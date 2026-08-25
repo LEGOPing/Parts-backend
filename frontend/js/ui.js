@@ -1602,20 +1602,22 @@ function initAddPartSuggestions() {
         
         const suggestions = await searchPartsByNumber(query, 30);
         
-        // 如果直接搜索无结果，尝试通过别名查找
+        // 始终尝试通过别名查找，即使直接搜索有结果
+        // 例如输入 4073，可能数据库中也有 4073，但别名映射到 6141 才是标准号
         let aliasSuggestions = [];
-        if (suggestions.length === 0) {
-            const resolvedNum = await resolvePartAlias(query.trim());
-            if (resolvedNum && resolvedNum !== query.trim()) {
-                aliasSuggestions = await searchPartsByNumber(resolvedNum, 5);
-                // 标记为别名推荐
-                aliasSuggestions = aliasSuggestions.map(s => ({
+        const resolvedNum = await resolvePartAlias(query.trim());
+        if (resolvedNum && resolvedNum !== query.trim()) {
+            aliasSuggestions = await searchPartsByNumber(resolvedNum, 5);
+            // 过滤掉已经在直接搜索结果中的零件号，避免重复
+            const existingNums = new Set(suggestions.map(s => s.part_num));
+            aliasSuggestions = aliasSuggestions
+                .filter(s => !existingNums.has(s.part_num))
+                .map(s => ({
                     ...s,
                     part_num: s.part_num,
                     name: s.name,
                     aliasFrom: query.trim()
                 }));
-            }
         }
         
         const allSuggestions = [...suggestions, ...aliasSuggestions];
@@ -1825,15 +1827,16 @@ function initAddPartSuggestions() {
         }
 
         let effectivePartNum = partNum;
+        let part = null;
 
-        // 如果在 RB 中找不到，尝试通过别名解析
-        let part = await getPartByNum(partNum);
-        if (!part) {
-            const resolvedNum = await resolvePartAlias(partNum);
-            if (resolvedNum && resolvedNum !== partNum) {
-                effectivePartNum = resolvedNum;
-                part = await getPartByNum(resolvedNum);
-            }
+        // 先尝试别名解析，如果有别名映射，优先使用解析后的标准型号
+        // 即使输入的别名在数据库中也存在，仍然优先使用标准型号
+        const resolvedNum = await resolvePartAlias(partNum);
+        if (resolvedNum && resolvedNum !== partNum) {
+            effectivePartNum = resolvedNum;
+            part = await getPartByNum(resolvedNum);
+        } else {
+            part = await getPartByNum(partNum);
         }
 
         if (part) {
