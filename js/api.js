@@ -804,12 +804,35 @@ async function addWeightToGiteeJSON(partNum, weight) {
     }
 }
 
+// 从 Bricklink 商品页 HTML 中提取重量（克）
+function extractWeightFromHtml(html) {
+    const patterns = ['Weight：', 'Weight:', 'weight：', 'weight:'];
+    for (const pattern of patterns) {
+        const idx = html.indexOf(pattern);
+        if (idx !== -1) {
+            const segment = html.substring(idx, idx + 100);
+            const m = segment.match(/(\d+(?:\.\d+)?)/);
+            if (m) {
+                const w = parseFloat(m[1]);
+                if (w > 0) return Math.round(w * 10000) / 10000;
+            }
+        }
+    }
+    const fallback = html.match(/(\d+(?:\.\d+)?)\s*g/);
+    if (fallback) {
+        const w = parseFloat(fallback[1]);
+        if (w > 0) return Math.round(w * 10000) / 10000;
+    }
+    return null;
+}
+
 // 查询单个零件重量（克）。
 // 策略（按用户指定顺序）：
 // 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）
 // 2. 其次查 Supabase part_weights 缓存（零后端）
-// 3. 缓存未命中，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬，云 IP 被 Bricklink 拦截）
-// 4. 全部失败，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
+// 3. 缓存未命中，通过 CORS 代理从浏览器直接抓取 Bricklink 商品页（手机 IP 可避开反爬）
+// 4. 仅本机开发环境调 FastAPI 抓取（本机 IP 也可避开反爬）
+// 5. 全部失败，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
 // 返回 { part_number, weight, source } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
@@ -842,7 +865,23 @@ async function fetchBricklinkPartWeight(partNumber) {
         console.warn('重量缓存查询失败:', e.message);
     }
 
-    // 3. 缓存未命中，仅本机开发环境调 FastAPI 抓取（本机 IP 可避开 Bricklink 反爬）
+    // 3. 缓存未命中，通过 CORS 代理从浏览器直接抓取 Bricklink（手机 IP 可避开反爬，不限 localhost）
+    try {
+        const blUrl = `https://www.bricklink.com/v2/catalog/catalogitem.page?P=${encodeURIComponent(cleanNum)}`;
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(blUrl)}`;
+        const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+        if (resp.ok) {
+            const html = await resp.text();
+            const weight = extractWeightFromHtml(html);
+            if (weight !== null && weight > 0) {
+                return { part_number: cleanNum, weight, source: 'browser' };
+            }
+        }
+    } catch (e) {
+        console.warn('CORS 代理 Bricklink 抓取失败:', e.message);
+    }
+
+    // 4. 仅本机开发环境调 FastAPI 抓取（本机 IP 也可避开反爬）
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         try {
             const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
@@ -857,7 +896,7 @@ async function fetchBricklinkPartWeight(partNumber) {
         }
     }
 
-    // 4. 全部失败：返回空，调用方回退到手工输入
+    // 5. 全部失败：返回空，调用方回退到手工输入
     return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 

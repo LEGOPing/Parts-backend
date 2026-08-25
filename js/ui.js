@@ -2225,11 +2225,11 @@ async function fetchPartWeightForCalculator() {
             let sourceLabel = '';
             if (data.source === 'offline') sourceLabel = '离线';
             else if (data.source === 'supabase') sourceLabel = '缓存';
+            else if (data.source === 'browser') sourceLabel = 'BL在线';
             else sourceLabel = '在线';
 
-            // FastAPI 返回不包含 source 字段，此时是在线从 Bricklink 抓取成功
-            // 尝试写入 Gitee weights.json 以支持后续离线使用
-            if (data.source === undefined) {
+            // 在线抓取成功（FastAPI 或 CORS 代理），尝试写入 Gitee weights.json 以支持后续离线使用
+            if (data.source === undefined || data.source === 'browser') {
                 try {
                     const giteeResult = await addWeightToGiteeJSON(cleanPartNum, data.weight);
                     if (giteeResult.success) {
