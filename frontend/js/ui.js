@@ -3032,6 +3032,11 @@ function recognizePartFromSearch() {
 
                 // 如果有别名映射，提示用户
                 if (resolvedNum !== candidate.id) {
+                    // 在型号输入框下方显示数据来源提示
+                    const dsHint = document.getElementById('search-data-source-hint');
+                    if (dsHint) {
+                        dsHint.textContent = `数据来源：${resolvedNum}`;
+                    }
                     const hint = document.createElement('div');
                     hint.className = 'alias-hint';
                     hint.style.marginTop = '8px';
@@ -3043,6 +3048,10 @@ function recognizePartFromSearch() {
                     if (oldHint) oldHint.remove();
                     hint.className += ' search-alias-hint';
                     if (resultsArea) resultsArea.prepend(hint);
+                } else {
+                    // 没有别名映射，清空数据来源提示
+                    const dsHint = document.getElementById('search-data-source-hint');
+                    if (dsHint) dsHint.textContent = '';
                 }
 
                 // 执行搜索
@@ -4338,7 +4347,7 @@ async function showPartDetail(part) {
     }
 
     sheet.querySelector('#pd-minus-btn').addEventListener('click', () => {
-        currentQty = Math.max(0, currentQty - 1);
+        currentQty = currentQty - 1;
         updateQtyDisplay();
     });
 
