@@ -3511,12 +3511,12 @@ async function fetchPartWeightForCalculator() {
             // 来源标签
             let sourceLabel = '';
             if (data.source === 'offline') sourceLabel = '离线';
-            else if (data.source === 'bl') sourceLabel = 'BL在线';
             else if (data.source === 'supabase') sourceLabel = '缓存';
             else sourceLabel = '在线';
 
-            // 如果是从 BL 在线获取成功，尝试写入 Gitee weights.json 以支持后续离线使用
-            if (data.source === 'bl') {
+            // FastAPI 返回不包含 source 字段，此时是在线从 Bricklink 抓取成功
+            // 尝试写入 Gitee weights.json 以支持后续离线使用
+            if (data.source === undefined) {
                 try {
                     const giteeResult = await addWeightToGiteeJSON(cleanPartNum, data.weight);
                     if (giteeResult.success) {
@@ -3525,7 +3525,6 @@ async function fetchPartWeightForCalculator() {
                             messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g（已保存至 Gitee weights.json，建议更新 RB 数据库以离线使用）`;
                         }
                     } else {
-                        // 写入 Gitee 失败，仍显示成功但给出提示
                         if (messageEl) {
                             messageEl.style.color = '#27ae60';
                             messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g（保存至 Gitee 失败：${giteeResult.error}）`;

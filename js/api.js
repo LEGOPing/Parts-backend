@@ -808,9 +808,8 @@ async function addWeightToGiteeJSON(partNum, weight) {
 // 策略（按用户指定顺序）：
 // 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）
 // 2. 其次查 Supabase part_weights 缓存（零后端）
-// 3. 缓存未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
-// 4. 以上均未命中，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）
-// 5. 全部失败，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
+// 3. 缓存未命中，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬，云 IP 被 Bricklink 拦截）
+// 4. 全部失败，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
 // 返回 { part_number, weight, source } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
@@ -843,23 +842,7 @@ async function fetchBricklinkPartWeight(partNumber) {
         console.warn('重量缓存查询失败:', e.message);
     }
 
-    // 3. 缓存未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
-    try {
-        const efUrl = `${SUPABASE_URL}/functions/v1/get-part-weight?part_number=${encodeURIComponent(cleanNum)}`;
-        const efResp = await fetch(efUrl, {
-            headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-        });
-        if (efResp.ok) {
-            const efData = await efResp.json();
-            if (efData && efData.weight != null && efData.weight > 0) {
-                return { part_number: cleanNum, weight: efData.weight, source: 'bl' };
-            }
-        }
-    } catch (e) {
-        console.warn('BL 在线重量查询失败:', e.message);
-    }
-
-    // 4. 以上均未命中，仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
+    // 3. 缓存未命中，仅本机开发环境调 FastAPI 抓取（本机 IP 可避开 Bricklink 反爬）
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         try {
             const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
@@ -874,7 +857,7 @@ async function fetchBricklinkPartWeight(partNumber) {
         }
     }
 
-    // 5. 全部失败：返回空，调用方回退到手工输入
+    // 4. 全部失败：返回空，调用方回退到手工输入
     return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 
