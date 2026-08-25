@@ -1983,7 +1983,7 @@ async function saveNewPart(button) {
         return;
     }
     
-    if (isNaN(quantity) || quantity <= 0) {
+    if (isNaN(quantity)) {
         document.getElementById('add-part-error').textContent = '请输入有效的数量';
         document.getElementById('add-part-error').style.display = 'block';
         return;
