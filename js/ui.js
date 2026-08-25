@@ -3755,10 +3755,8 @@ async function loadColorGrid(partNum) {
 
     // 如果使用了别名，更新模态框标题显示
     if (effectivePartNum !== partNum) {
-        const titleEl = document.querySelector('.modal-title');
-        if (titleEl) {
-            titleEl.innerHTML = `选择颜色 (${partNum}) <span style="font-size:11px;color:#e67e22;font-weight:normal;">← 颜色数据来自 ${effectivePartNum}</span>`;
-        }
+        // 别名解析后，颜色数据使用有效型号
+        // 标题保持原样："选择颜色 (partNum)"
     }
 
     // 获取每个颜色的详细信息（从colors表）
