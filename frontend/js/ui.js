@@ -1839,6 +1839,12 @@ function initAddPartSuggestions() {
             }
         }
 
+        // 更新数据来源提示
+        const dsHint = document.getElementById('data-source-hint');
+        if (dsHint) {
+            dsHint.textContent = effectivePartNum !== partNum ? `数据来源：${effectivePartNum}` : '';
+        }
+
         if (part) {
             if (!partNameInput.value) {
                 partNameInput.value = part.name || '';
@@ -1895,6 +1901,7 @@ function initAddPartSuggestions() {
         // 延迟触发联想查询（不自动选择）
         partNumTimer = setTimeout(async () => {
             await showPartNumSuggestions(value);
+            await updatePartInfoPreview();
             await updateAddPartImage();
         }, 800);
     });

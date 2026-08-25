@@ -1622,17 +1622,26 @@ function initAddPartSuggestions() {
             return;
         }
         
-        const part = await getPartByNum(partNum);
+        let effectivePartNum = partNum;
+        let part = await getPartByNum(partNum);
+        if (!part) {
+            const resolvedNum = await resolvePartAlias(partNum);
+            if (resolvedNum && resolvedNum !== partNum) {
+                effectivePartNum = resolvedNum;
+                part = await getPartByNum(resolvedNum);
+            }
+        }
+
         if (part) {
             if (!partNameInput.value) {
                 partNameInput.value = part.name || '';
             }
             
-            const colorCount = await getPartColorCount(partNum);
+            const colorCount = await getPartColorCount(effectivePartNum);
             partInfoPreview.innerHTML = `
                 <div class="part-preview-item">
                     <span class="preview-label">型号</span>
-                    <span class="preview-value">${part.part_num}</span>
+                    <span class="preview-value">${part.part_num}${effectivePartNum !== partNum ? ` <span style="color:#e67e22;font-size:10px;">数据来源：${effectivePartNum}</span>` : ''}</span>
                 </div>
                 <div class="part-preview-item">
                     <span class="preview-label">名称</span>
@@ -1669,6 +1678,7 @@ function initAddPartSuggestions() {
         // 延迟触发联想查询（不自动选择）
         partNumTimer = setTimeout(async () => {
             await showPartNumSuggestions(value);
+            await updatePartInfoPreview();
         }, 800);
     });
     
