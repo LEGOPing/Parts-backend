@@ -3507,10 +3507,41 @@ async function fetchPartWeightForCalculator() {
                 unitWeightInput.value = data.weight;
                 unitWeightInput.placeholder = '克';
             }
-            if (messageEl) {
-                messageEl.style.color = '#27ae60';
-                const sourceLabel = data.source === 'offline' ? '离线' : (data.source === 'supabase' ? '缓存' : '在线');
-                messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g`;
+
+            // 来源标签
+            let sourceLabel = '';
+            if (data.source === 'offline') sourceLabel = '离线';
+            else if (data.source === 'bl') sourceLabel = 'BL在线';
+            else if (data.source === 'supabase') sourceLabel = '缓存';
+            else sourceLabel = '在线';
+
+            // 如果是从 BL 在线获取成功，尝试写入 Gitee weights.json 以支持后续离线使用
+            if (data.source === 'bl') {
+                try {
+                    const giteeResult = await addWeightToGiteeJSON(cleanPartNum, data.weight);
+                    if (giteeResult.success) {
+                        if (messageEl) {
+                            messageEl.style.color = '#27ae60';
+                            messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g（已保存至 Gitee weights.json，建议更新 RB 数据库以离线使用）`;
+                        }
+                    } else {
+                        // 写入 Gitee 失败，仍显示成功但给出提示
+                        if (messageEl) {
+                            messageEl.style.color = '#27ae60';
+                            messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g（保存至 Gitee 失败：${giteeResult.error}）`;
+                        }
+                    }
+                } catch (e) {
+                    if (messageEl) {
+                        messageEl.style.color = '#27ae60';
+                        messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g（保存至 Gitee 异常：${e.message}）`;
+                    }
+                }
+            } else {
+                if (messageEl) {
+                    messageEl.style.color = '#27ae60';
+                    messageEl.textContent = `获取成功（${sourceLabel}）：${cleanPartNum} = ${data.weight}g`;
+                }
             }
         } else {
             if (messageEl) {
