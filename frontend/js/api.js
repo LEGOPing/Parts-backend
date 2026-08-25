@@ -1035,10 +1035,10 @@ async function addWeightToGiteeJSON(partNum, weight) {
 // 查询单个零件重量（克）。
 // 策略（按用户指定顺序）：
 // 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）
-// 2. 离线未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
-// 3. 其次查 Supabase part_weights 缓存（零后端）
-// 4. 缓存未命中时，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）
-// 5. 以上都失败/出错，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
+// 2. 其次查 Supabase part_weights 缓存（零后端）
+// 3. 缓存未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
+// 4. 以上均未命中，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）
+// 5. 全部失败，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
 // 返回 { part_number, weight, source } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
@@ -1058,7 +1058,20 @@ async function fetchBricklinkPartWeight(partNumber) {
         console.warn('离线重量查询失败:', e.message);
     }
 
-    // 2. 离线未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
+    // 2. 查 Supabase part_weights 缓存（前端直连，零后端）
+    try {
+        const cached = await supabaseRequest('part_weights', {
+            select: 'weight',
+            filters: { part_num: cleanNum }
+        });
+        if (cached && cached.length > 0 && cached[0].weight != null) {
+            return { part_number: cleanNum, weight: cached[0].weight, source: 'supabase' };
+        }
+    } catch (e) {
+        console.warn('重量缓存查询失败:', e.message);
+    }
+
+    // 3. 缓存未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
     try {
         const efUrl = `${SUPABASE_URL}/functions/v1/get-part-weight?part_number=${encodeURIComponent(cleanNum)}`;
         const efResp = await fetch(efUrl, {
@@ -1074,20 +1087,7 @@ async function fetchBricklinkPartWeight(partNumber) {
         console.warn('BL 在线重量查询失败:', e.message);
     }
 
-    // 3. 尝试 Bricklink：查 Supabase part_weights 缓存（前端直连，零后端）
-    try {
-        const cached = await supabaseRequest('part_weights', {
-            select: 'weight',
-            filters: { part_num: cleanNum }
-        });
-        if (cached && cached.length > 0 && cached[0].weight != null) {
-            return { part_number: cleanNum, weight: cached[0].weight, source: 'supabase' };
-        }
-    } catch (e) {
-        console.warn('重量缓存查询失败:', e.message);
-    }
-
-    // 4. 缓存未命中：仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
+    // 4. 以上均未命中，仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         try {
             const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
