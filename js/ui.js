@@ -1431,15 +1431,36 @@ function initAddPartSuggestions() {
         
         const suggestions = await searchPartsByNumber(query, 30);
         
-        if (suggestions.length === 0) {
+        // 始终尝试通过别名查找，即使直接搜索有结果
+        // 例如输入 4073，可能数据库中也有 4073，但别名映射到 6141 才是标准号
+        let aliasSuggestions = [];
+        const resolvedNum = await resolvePartAlias(query.trim());
+        if (resolvedNum && resolvedNum !== query.trim()) {
+            aliasSuggestions = await searchPartsByNumber(resolvedNum, 5);
+            // 过滤掉已经在直接搜索结果中的零件号，避免重复
+            const existingNums = new Set(suggestions.map(s => s.part_num));
+            aliasSuggestions = aliasSuggestions
+                .filter(s => !existingNums.has(s.part_num))
+                .map(s => ({
+                    ...s,
+                    part_num: s.part_num,
+                    name: s.name,
+                    aliasFrom: query.trim()
+                }));
+        }
+        
+        const allSuggestions = [...suggestions, ...aliasSuggestions];
+        
+        if (allSuggestions.length === 0) {
             hidePartNumSuggestions();
             return;
         }
         
-        partNumSuggestions.innerHTML = suggestions.map(s => `
-            <div class="part-number-suggestion-item" data-part-num="${s.part_num}" data-part-name="${s.name}">
+        partNumSuggestions.innerHTML = allSuggestions.map(s => `
+            <div class="part-number-suggestion-item" data-part-num="${s.part_num}" data-part-name="${s.name}" data-alias-from="${s.aliasFrom || ''}">
                 <span class="suggestion-num">${s.part_num}</span>
                 <span class="suggestion-name">${s.name}</span>
+                ${s.aliasFrom ? `<span class="suggestion-alias" style="color: #e67e22; font-size: 12px; margin-left: 8px;">别名: ${s.aliasFrom}</span>` : ''}
             </div>
         `).join('');
         partNumSuggestions.style.display = 'block';
@@ -1449,13 +1470,22 @@ function initAddPartSuggestions() {
             item.addEventListener('click', () => {
                 const partNum = item.dataset.partNum;
                 const partName = item.dataset.partName;
+                const aliasFrom = item.dataset.aliasFrom;
                 
                 partNumInput.value = partNum;
                 hidePartNumSuggestions();
                 
+                // 如果是从别名推荐的，显示提示
+                if (aliasFrom) {
+                    partNameHint.textContent = `别名 ${aliasFrom} → ${partNum}`;
+                    partNameHint.style.color = '#e67e22';
+                }
+                
                 if (partName) {
                     partNameInput.value = partName;
-                    partNameHint.textContent = '';
+                    if (!aliasFrom) {
+                        partNameHint.textContent = '';
+                    }
                 }
                 
                 updatePartInfoPreview();
@@ -1621,13 +1651,24 @@ function initAddPartSuggestions() {
             return;
         }
         
-        const part = await getPartByNum(partNum);
+        let effectivePartNum = partNum;
+        let part = null;
+        
+        // 先尝试别名解析，如果有别名映射，优先使用解析后的标准型号
+        const resolvedNum = await resolvePartAlias(partNum);
+        if (resolvedNum && resolvedNum !== partNum) {
+            effectivePartNum = resolvedNum;
+            part = await getPartByNum(resolvedNum);
+        } else {
+            part = await getPartByNum(partNum);
+        }
+        
         if (part) {
             if (!partNameInput.value) {
                 partNameInput.value = part.name || '';
             }
             
-            const colorCount = await getPartColorCount(partNum);
+            const colorCount = await getPartColorCount(effectivePartNum);
             partInfoPreview.innerHTML = `
                 <div class="part-preview-item">
                     <span class="preview-label">型号</span>
@@ -1972,10 +2013,18 @@ async function saveNewPart(button) {
         return;
     }
     
-    if (isNaN(quantity) || quantity <= 0) {
+    if (isNaN(quantity) || quantity === 0) {
         document.getElementById('add-part-error').textContent = '请输入有效的数量';
         document.getElementById('add-part-error').style.display = 'block';
         return;
+    }
+    
+    // 解析别名：如果输入的是别名，自动转换为 RB 标准型号
+    const resolvedNum = await resolvePartAlias(partNum.trim());
+    if (resolvedNum && resolvedNum !== partNum.trim()) {
+        const numInput = document.getElementById('new-part-num');
+        if (numInput) numInput.value = resolvedNum;
+        partNum = resolvedNum;
     }
     
     const newPartData = {
