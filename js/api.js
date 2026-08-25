@@ -966,13 +966,80 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
     }
 }
 
+// 将单个零件重量记录添加到 Gitee 的 weights.json 文件中。
+// 如果文件已存在，追加/更新该零件条目；如果文件不存在，创建新文件。
+// 返回 { success: true } 或 { success: false, error }
+async function addWeightToGiteeJSON(partNum, weight) {
+    const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!token) {
+        return { success: false, error: '缺少 Gitee Token' };
+    }
+
+    const fileName = 'weights.json';
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/${fileName}`;
+
+    try {
+        // 1. 获取现有文件内容及 SHA
+        const checkResp = await fetch(`${apiUrl}?ref=main`, {
+            headers: { 'Authorization': `token ${token}` }
+        });
+
+        let weights = {};
+        let sha = null;
+
+        if (checkResp.ok) {
+            const existing = await checkResp.json();
+            sha = existing.sha;
+            // 解码现有内容
+            const decoded = decodeURIComponent(escape(atob(existing.content)));
+            try {
+                weights = JSON.parse(decoded);
+            } catch (e) {
+                console.warn('解析现有 weights.json 失败，将创建新文件:', e.message);
+            }
+        }
+
+        // 2. 添加/更新该零件记录
+        const cleanNum = String(partNum).replace(/[^a-zA-Z0-9]/g, '');
+        weights[cleanNum] = weight;
+
+        // 3. 编码并推送
+        const updatedJson = JSON.stringify(weights, null, 2);
+        const base64Data = btoa(unescape(encodeURIComponent(updatedJson)));
+
+        const body = {
+            message: `feat: 添加零件重量 ${cleanNum}=${weight}g [skip ci]`,
+            content: base64Data,
+            branch: 'main'
+        };
+        if (sha) {
+            body.sha = sha;
+        }
+
+        await giteeRequestWithRetry(() => fetch(apiUrl, {
+            method: sha ? 'PUT' : 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `token ${token}`
+            },
+            body: JSON.stringify(body)
+        }));
+
+        return { success: true };
+    } catch (e) {
+        console.error('添加重量到 Gitee weights.json 失败:', e.message);
+        return { success: false, error: e.message };
+    }
+}
+
 // 查询单个零件重量（克）。
 // 策略（按用户指定顺序）：
 // 1. 优先查离线 RB 数据库的 rb_weights（IndexedDB，来自 weights.json，离线可用）
-// 2. 其次尝试 Bricklink：优先读 Supabase part_weights 缓存（零后端）；
-//    缓存未命中时，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）并回写缓存；
-// 3. 以上都失败/出错，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
-// 返回 { part_number, weight } 或 { part_number, weight: null, error }
+// 2. 离线未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
+// 3. 其次查 Supabase part_weights 缓存（零后端）
+// 4. 缓存未命中时，仅本机开发环境调 FastAPI 抓 Bricklink（本机 IP 可避开反爬）
+// 5. 以上都失败/出错，返回 weight=null，由调用方（称重计算弹窗）回退到手工输入。
+// 返回 { part_number, weight, source } 或 { part_number, weight: null, error }
 async function fetchBricklinkPartWeight(partNumber) {
     const cleanNum = String(partNumber).replace(/[^a-zA-Z0-9]/g, '');
     if (!cleanNum) {
@@ -991,7 +1058,23 @@ async function fetchBricklinkPartWeight(partNumber) {
         console.warn('离线重量查询失败:', e.message);
     }
 
-    // 2. 尝试 Bricklink：先查 Supabase part_weights 缓存（前端直连，零后端）
+    // 2. 离线未命中，调用 Supabase Edge Function 从 Bricklink 在线抓取（BL 在线源）
+    try {
+        const efUrl = `${SUPABASE_URL}/functions/v1/get-part-weight?part_number=${encodeURIComponent(cleanNum)}`;
+        const efResp = await fetch(efUrl, {
+            headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+        });
+        if (efResp.ok) {
+            const efData = await efResp.json();
+            if (efData && efData.weight != null && efData.weight > 0) {
+                return { part_number: cleanNum, weight: efData.weight, source: 'bl' };
+            }
+        }
+    } catch (e) {
+        console.warn('BL 在线重量查询失败:', e.message);
+    }
+
+    // 3. 尝试 Bricklink：查 Supabase part_weights 缓存（前端直连，零后端）
     try {
         const cached = await supabaseRequest('part_weights', {
             select: 'weight',
@@ -1004,7 +1087,7 @@ async function fetchBricklinkPartWeight(partNumber) {
         console.warn('重量缓存查询失败:', e.message);
     }
 
-    // 2.1 缓存未命中：仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
+    // 4. 缓存未命中：仅本机开发环境调 FastAPI 抓取（本机 IP 避开 Bricklink 反爬）
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         try {
             const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
@@ -1019,7 +1102,7 @@ async function fetchBricklinkPartWeight(partNumber) {
         }
     }
 
-    // 3. 全部失败：返回空，调用方回退到手工输入
+    // 5. 全部失败：返回空，调用方回退到手工输入
     return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 
