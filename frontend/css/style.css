@@ -1776,6 +1776,10 @@ body {
     min-height: 14px;
     line-height: 14px;
 }
+/* 搜索页数据来源提示：覆盖大左间距，适应搜索筛选布局 */
+.search-filters .data-source-hint {
+    margin: 2px 0 0 0;
+}
 
 /* 状态按钮 */
 .status-group {

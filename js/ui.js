@@ -2960,7 +2960,7 @@ async function showPartDetail(part) {
     }
 
     sheet.querySelector('#pd-minus-btn').addEventListener('click', () => {
-        currentQty = Math.max(0, currentQty - 1);
+        currentQty = currentQty - 1;
         updateQtyDisplay();
     });
 
