@@ -3609,7 +3609,7 @@ body {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 8px;
-    height: 256px;
+    height: 272px;
     overflow-y: auto;
     padding: 2px;
 }
@@ -3791,6 +3791,11 @@ body {
 }
 
 /* 盒子区域改为 4 列网格，固定高度 5 行，垂直滚动 */
+/* 盒子行：标签顶部对齐 */
+.pt-row:has(#pt-box-row) {
+    align-items: flex-start;
+}
+
 #pt-box-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -3798,7 +3803,7 @@ body {
     height: 192px;
     overflow-y: auto;
     padding: 2px;
-    align-items: center;
+    align-content: start;
 }
 
 .pt-box-card {
