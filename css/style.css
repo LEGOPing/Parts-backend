@@ -3090,8 +3090,7 @@ body {
     padding: 8px 0;
 }
 
-.pt-repo-card,
-.pt-box-card {
+.pt-repo-card {
     flex-shrink: 0;
     padding: 6px 14px;
     background: white;
@@ -3102,6 +3101,34 @@ body {
     color: #333;
     cursor: pointer;
     white-space: nowrap;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+/* 盒子区域改为 4 列网格，固定高度 5 行，垂直滚动 */
+#pt-box-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    max-height: 184px;
+    overflow-y: auto;
+    padding: 2px;
+    align-items: center;
+}
+
+.pt-box-card {
+    padding: 8px 6px;
+    background: white;
+    border: 1.5px solid var(--warning-color);
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: all 0.2s;
     user-select: none;
 }
