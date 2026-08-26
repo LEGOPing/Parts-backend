@@ -2939,6 +2939,8 @@ body {
     text-align: center;
     transition: all 0.2s;
     user-select: none;
+    height: 128px;
+    overflow: hidden;
 }
 
 .pt-part-card:hover {
