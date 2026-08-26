@@ -918,7 +918,7 @@ async function showPartTransferModal() {
                     <div class="pt-row-label">仓库</div>
                     <div class="pt-row-scroll" id="pt-repo-row"></div>
                 </div>
-                <div class="pt-row">
+                <div class="pt-row pt-box-row">
                     <div class="pt-row-label">盒子</div>
                     <div class="pt-row-scroll" id="pt-box-row"></div>
                 </div>

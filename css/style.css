@@ -2939,7 +2939,7 @@ body {
     text-align: center;
     transition: all 0.2s;
     user-select: none;
-    height: 128px;
+    height: 135px;
     overflow: hidden;
 }
 
@@ -3107,9 +3107,7 @@ body {
     user-select: none;
 }
 
-/* 盒子区域改为 4 列网格，固定高度 5 行，垂直滚动 */
-/* 盒子行：标签顶部对齐 */
-.pt-row:has(#pt-box-row) {
+.pt-box-row {
     align-items: flex-start;
 }
 
