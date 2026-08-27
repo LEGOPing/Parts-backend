@@ -2902,9 +2902,6 @@ async function showSameNamePartsPicker(partName, currentPartNum) {
             <div class="snp-cards-row">
                 ${cardsHtml}
             </div>
-            <div class="snp-footer">
-                <span class="snp-current-tip">点击卡片切换型号</span>
-            </div>
         `;
     }
 
