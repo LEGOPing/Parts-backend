@@ -65,15 +65,32 @@ let cachedAliases = null;
 async function getAllPartAliases() {
     if (cachedAliases) return cachedAliases;
 
-    // 先从 Gitee 加载
+    // 1. 先从 Gitee 加载
     const giteeAliases = await fetchPartAliasesFromGitee();
     if (giteeAliases && Object.keys(giteeAliases).length > 0) {
         cachedAliases = giteeAliases;
-        return cachedAliases;
+    } else {
+        // 回退到本地嵌入数据
+        cachedAliases = { ...DEFAULT_PART_ALIASES };
     }
 
-    // 回退到本地嵌入数据
-    cachedAliases = { ...DEFAULT_PART_ALIASES };
+    // 2. 再从后端 Supabase part_aliases 表加载（兑底匹配自动建立的别名）
+    //    这些别名是用户通过「拍照识别 → 兑底匹配」生成的，优先级高于 Gitee/本地数据
+    try {
+        const supabaseAliases = await supabaseRequest('part_aliases', {
+            select: 'alias_part_num,rb_part_num',
+        });
+        if (Array.isArray(supabaseAliases)) {
+            for (const row of supabaseAliases) {
+                if (row.alias_part_num && row.rb_part_num) {
+                    cachedAliases[String(row.alias_part_num)] = String(row.rb_part_num);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[别名]从后端加载别名失败:', e.message);
+    }
+
     return cachedAliases;
 }
 
