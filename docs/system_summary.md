@@ -373,8 +373,8 @@ CREATE INDEX idx_colors_color_name ON colors(color_name);
 ### 3.3 本地 IndexedDB - RB_Database
 
 数据库名称：`RB_Database`
-版本号：`2`（v1 为 6 表，v2 新增 `rb_weights`）
-数据来源：Gitee parts-rb 仓库（6 个 CSV 文件 + weights.json，需 Token 访问）
+版本号：`3`（v1 为 6 表，v2 新增 `rb_weights`，v3 新增 `rb_bl_parts`）
+数据来源：Gitee parts-rb 仓库（6 个 CSV 文件 + weights.json + 可选 BL-parts.csv，需 Token 访问）
 
 | Object Store | 主键 | 对应 CSV/JSON | 说明 |
 |--------------|------|---------|------|
@@ -385,6 +385,9 @@ CREATE INDEX idx_colors_color_name ON colors(color_name);
 | rb_inventory_parts | 自增 | inventory_parts.csv | 库存零件（含图片URL） |
 | rb_part_relationships | 自增 | part_relationships.csv | 零件关系 |
 | rb_weights | `part_num` | weights.json | 零件重量缓存（Bricklink 数据源） |
+| rb_bl_parts | 自增 | BL-parts.csv | Bricklink 目录桥接表（方法一号型匹配用，可选） |
+
+> **BL-parts.csv（可选）**：文件名为 `BL-parts.csv`（带连字符），字段 `ITEMTYPE,ITEMID,COLOR,CODENAME`，约 11 万行。`CODENAME` 为**数字**（对应 `rb_elements.element_id`），`ITEMID` 为文本（可含字母如 `14pb10`）。系统在读入 RB / 更新 RB 时会**可选加载**，仓库缺失或导入失败不影响 RB 主库与就绪状态；该表用于"添加零件"兜底匹配的**方法一**。
 
 #### RB 数据类型 Schema（类型转换）
 
@@ -396,7 +399,8 @@ const RB_SCHEMAS = {
     part_categories:{ numeric: ['id'], string: ['name'] },
     elements:       { numeric: ['element_id','color_id','design_id'], string: ['part_num'] },
     inventory_parts:{ numeric: ['inventory_id','color_id','quantity'], boolean: ['is_spare'], string: ['part_num','img_url'] },
-    part_relationships: { string: ['rel_type','child_part_num','parent_part_num'] }
+    part_relationships: { string: ['rel_type','child_part_num','parent_part_num'] },
+    bl_parts:       { numeric: ['CODENAME'], string: ['ITEMTYPE','ITEMID','COLOR'] }
 };
 ```
 
@@ -407,7 +411,56 @@ const RB_SCHEMAS = {
 - "导出RB"按钮：导出为 `rb_database.json` 并上传到 Gitee Parts-json 仓库备份
 - 大文件解码使用 `TextDecoder` 替代 `escape+decodeURIComponent`，提升 14MB+ 文件解码性能
 
-### 3.4 网络兼容性说明
+### 3.4 添加零件时的"型号兜底匹配"逻辑（方法一 / 方法二）
+
+在"添加零件"的 **BG（拍照识别）流程**中，当型号无法直接匹配到 RB 型号时，触发兜底匹配。匹配优先级链（见 [ui.js](file:///workspace/frontend/js/ui.js) `fillRecognizedPart()`）：
+
+```
+场景A   BG型号 直接匹配 rb_parts.part_num                  ──→ 命中即用
+   ↓ 失败
+场景B   resolvePartAlias 别名解析 → rb_parts                ──→ 命中即用
+   ↓ 失败
+方法一  自动匹配（matchRBByColorFallback）
+   ↓ 失败
+方法二  人工选择（buildFallbackCandidates + showFallbackCandidatePicker）
+   ↓ 失败
+提示失败信息，保留原始型号供手动编辑
+```
+
+#### 方法一：BG型号 + 颜色名 → BL-parts → elements（自动）
+
+严格三步映射：
+
+```text
+① BG(型号 + 颜色名) ──匹配──> BL-parts 表(ITEMID + COLOR) ──> CODENAME
+② CODENAME ──匹配──> rb_elements 表(element_id) ──> part_num + color_id
+③ 成功 → 继续后续保存流程，保存时将 BG型号 与 RB型号 建立别名映射（写 Supabase part_aliases 表 + 刷新本地缓存）
+   任一步失败 → 进入方法二
+```
+
+要点：
+- 颜色名匹配按 BL 规则（`White`/`Black` 等），大小写、空格、全角统一归一化后比较。
+- `CODENAME` 为数字，直接对 `rb_elements.element_id`（数字主键）查询。
+- 若无 `BL-parts` 表数据（仓库未提供文件），方法一直接跳过，进入方法二。
+
+#### 方法二：按名称匹配 + 人工选择
+
+```text
+① 用 BG返回的名称 对 rb_parts.name 做相似度匹配
+   （完全一致 → 前缀 → 分词命中），按精确度从高到低排序，取前 10 个候选
+② 展示候选零件卡片列表：
+   每行一个，左侧图片 + 右侧文字（型号 / 名称占三行可垂直滚动 / 颜色），
+   列表整体垂直滚动
+③ 用户点选某卡片 → 完成匹配，继续后续保存流程，并保存「BG型号→RB型号」别名映射
+   用户取消 / 无候选 → 提示失败信息
+```
+
+#### 别名保存（savePartAlias）
+
+- 方法一 / 方法二任一成功后都会建立 `BG型号 → RB型号` 别名映射。
+- 写入后端 Supabase `part_aliases` 表（直连 REST）并刷新前端本地别名缓存，使下次识别同类型号可直接走"场景B"命中。
+
+### 3.5 网络兼容性说明
 
 | 项目 | v2.0 (CloudBase) | v3.0 (Supabase REST) |
 |------|------------------|---------------------|
