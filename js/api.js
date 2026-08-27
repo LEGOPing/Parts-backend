@@ -441,6 +441,9 @@ const RB_SCHEMAS = {
     },
     part_relationships: {
         string: ['rel_type', 'child_part_num', 'parent_part_num']
+    },
+    bl_parts: {
+        string: ['itemtype', 'itemid', 'color', 'codename']
     }
 };
 
