@@ -1518,6 +1518,12 @@ body {
     box-sizing: border-box;
 }
 
+/* 拍照识别弹窗 body 限制高度，避免内容溢出屏幕 */
+.add-part-modal .modal-body {
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
 /* 添加零件-标题栏（取消左 + 标题中 + 保存右） */
 .add-part-modal .modal-header {
     display: grid;
