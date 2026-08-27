@@ -2331,38 +2331,51 @@ function _nameSimilarityScore(query, candidate) {
     return score;
 }
 
-// 方法一：BG型号 + 颜色名 → RB 标准型号 + 颜色ID
-// 说明：需求方描述的 BL-parts(ITEMID+COLOR→CODENAME) 表当前不在 RB 数据库中，
-// 这里用现有 rb_elements / rb_parts / rb_colors 实现等价的「型号+颜色」双重精确匹配。
+// 方法一：BG型号 + 颜色名 → BL-parts(ITEMID+COLOR) → CODENAME → elements(element_id) → RB型号 + 颜色ID
+// 严格遵循需求方流程：
+//   1) 在 BL-parts 表中按 (ITEMID, COLOR) 匹配 BG 返回的 (型号, 颜色名)，得到 CODENAME
+//   2) 用 CODENAME 匹配 rb_elements 表的 element_id，得到 RB 型号(part_num) 与 颜色ID(color_id)
+// 任一步匹配不到则返回 null（交给方法二）。
 async function matchRBByColorFallback(bgPartNum, bgColorName) {
     if (!bgPartNum) return null;
-    const normPart = String(bgPartNum).trim().toLowerCase().replace(/\s+/g, '');
-    if (!normPart) return null;
+    const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, '');
+    const normItem = norm(bgPartNum);
+    if (!normItem) return null;
+    const normColor = bgColorName ? norm(bgColorName) : null;
 
-    let colorId = null;
-    if (bgColorName) {
-        const c = await matchColorNameToId(bgColorName);
-        if (c) colorId = c.id;
+    // —— 第 1 步：BL-parts：(ITEMID + COLOR) → CODENAME ——
+    let blParts;
+    try {
+        blParts = await getAll(RB_STORES.BL_PARTS);
+    } catch (e) {
+        blParts = []; // 旧库未升级或未导入该表
     }
+    if (!blParts.length) return null; // 无 BL-parts 数据 → 方法二
 
-    const elements = await getAll(RB_STORES.ELEMENTS);
+    // 先按 ITEMID 收窄，再在颜色维度上精确匹配
+    const itemRows = blParts.filter(r => norm(r.ITEMID) === normItem);
+    if (!itemRows.length) return null;
 
-    // 1) 型号 + 颜色都命中 → 最精确
-    if (colorId !== null) {
-        const hit = elements.find(e =>
-            e.part_num && e.part_num.toLowerCase().replace(/\s+/g, '') === normPart &&
-            String(e.color_id) === String(colorId)
-        );
-        if (hit) return { rbPartNum: hit.part_num, colorId: colorId };
+    let hit = normColor
+        ? (itemRows.find(r => norm(r.COLOR) === normColor) || null)
+        : itemRows[0]; // BG 未提供颜色名时，取该型号唯一/首条映射
+    if (!hit || hit.CODENAME == null || hit.CODENAME === '') return null;
+
+    // —— 第 2 步：elements：element_id == CODENAME → RB 型号 + 颜色ID ——
+    // CODENAME 通常是数字字符串，而 element_id 主键多为数字，做安全转换
+    const rawCode = String(hit.CODENAME).trim();
+    const numCode = Number(rawCode);
+    const elKey = (!isNaN(numCode) && rawCode !== '') ? numCode : rawCode;
+
+    let el;
+    try {
+        el = await getByKey(RB_STORES.ELEMENTS, elKey);
+    } catch (e) {
+        el = null;
     }
-    // 2) 仅型号命中（在 elements 中存在）→ 返回该型号、颜色待定
-    const byPart = elements.find(e => e.part_num && e.part_num.toLowerCase().replace(/\s+/g, '') === normPart);
-    if (byPart) return { rbPartNum: byPart.part_num, colorId: colorId };
-    // 3) 型号在 rb_parts 主表中存在（可能无 elements 记录）
-    const p = await getPartByNum(bgPartNum);
-    if (p) return { rbPartNum: p.part_num, colorId: colorId };
+    if (!el) return null;
 
-    return null;
+    return { rbPartNum: el.part_num, colorId: el.color_id };
 }
 
 // 方法二：按 BG 名称模糊搜索候选（精确→模糊排序，至多 10 个，并为每个候选绑定颜色）
@@ -5795,6 +5808,19 @@ async function loadRBOnStartup() {
             console.error('加载 weights.json 失败:', error);
         }
 
+        // 可选：加载 BL-parts（BG型号+颜色名→CODENAME），用于方法一兑底匹配。
+        // 若仓库暂无 bl_parts.csv 或导入失败，不阻塞 RB 主库与 ready 状态。
+        try {
+            const blCsv = await fetchRBFile('bl_parts.csv');
+            if (blCsv) {
+                const { data } = parseRBCSV(blCsv);
+                await importRBData(RB_STORES.BL_PARTS, convertRBData('bl_parts', data));
+                console.log(`BL-parts 加载成功: ${data.length} 条`);
+            }
+        } catch (error) {
+            console.warn('BL-parts 可选加载失败（不影响RB主库）:', error.message);
+        }
+
         if (successCount === csvFiles.length) {
             console.log('RB数据库建立成功');
             showRBStatusHint('rb-ready');
@@ -6306,6 +6332,24 @@ async function updateRB() {
             importResults['weights'] = false;
         }
 
+        // 可选：加载 BL-parts（BG型号+颜色名→CODENAME），用于方法一兑底匹配
+        try {
+            updateProgress(0.83, '读取BL-parts数据...', 'bl_parts.csv');
+            const blCsv = await fetchRBFile('bl_parts.csv');
+            if (blCsv) {
+                const { data } = parseRBCSV(blCsv);
+                await importRBData(RB_STORES.BL_PARTS, convertRBData('bl_parts', data));
+                importResults['bl_parts'] = true;
+                updateProgress(0.88, 'BL-parts - 导入成功', `${data.length}条`);
+            } else {
+                importResults['bl_parts'] = false;
+                updateProgress(0.88, 'BL-parts - 未提供', '');
+            }
+        } catch (error) {
+            console.warn('BL-parts 可选加载失败:', error.message);
+            importResults['bl_parts'] = false;
+        }
+
         // 显示结果
         updateProgress(1, '更新完成！', '');
 
@@ -6320,6 +6364,7 @@ async function updateRB() {
             statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
+            statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
             statsHtml += '</div>';
         }
 

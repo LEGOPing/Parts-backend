@@ -441,6 +441,10 @@ const RB_SCHEMAS = {
     },
     part_relationships: {
         string: ['rel_type', 'child_part_num', 'parent_part_num']
+    },
+    // BL-parts：Bricklink 目录桥接表，字段全按字符串处理以兼容型号/颜色混合格式
+    bl_parts: {
+        string: ['ITEMID', 'COLOR', 'CODENAME']
     }
 };
 
