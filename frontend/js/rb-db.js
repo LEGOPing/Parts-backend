@@ -333,7 +333,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'elements': RB_STORES.ELEMENTS,
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
-        'weights': RB_STORES.WEIGHTS
+        'weights': RB_STORES.WEIGHTS,
+        'bl_parts': RB_STORES.BL_PARTS
     };
     
     const results = {};
@@ -379,7 +380,8 @@ async function exportRBDatabaseToJSON() {
         'elements': RB_STORES.ELEMENTS,
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
-        'weights': RB_STORES.WEIGHTS
+        'weights': RB_STORES.WEIGHTS,
+        'bl_parts': RB_STORES.BL_PARTS
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {

@@ -5760,14 +5760,15 @@ async function loadRBOnStartup() {
         
         console.log('RB本地数据库不存在，从Parts-RB读取CSV文件建立...');
         
-        // 从 Parts-RB 读取 6 个 CSV 文件
+        // 从 Parts-RB 读取 7 个 CSV 文件
         const csvFiles = [
             { name: 'colors.csv', store: RB_STORES.COLORS, schemaKey: 'colors', label: '颜色' },
             { name: 'parts.csv', store: RB_STORES.PARTS, schemaKey: 'parts', label: '零件' },
             { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, schemaKey: 'part_categories', label: '类别' },
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
-            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' }
+            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
         ];
 
         let successCount = 0;
@@ -6267,7 +6268,7 @@ async function updateRB() {
     };
 
     try {
-        // 1. 从 Parts-RB 读取 6 个 CSV 文件
+        // 1. 从 Parts-RB 读取 7 个 CSV 文件
         updateProgress(0.05, '从Parts-RB仓库读取CSV文件...', '');
         
         const csvFiles = [
@@ -6276,7 +6277,8 @@ async function updateRB() {
             { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, schemaKey: 'part_categories', label: '类别' },
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
-            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' }
+            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
         ];
 
         let successCount = 0;
