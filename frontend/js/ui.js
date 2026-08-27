@@ -2362,7 +2362,8 @@ async function matchRBByColorFallback(bgPartNum, bgColorName) {
     if (!hit || hit.CODENAME == null || hit.CODENAME === '') return null;
 
     // —— 第 2 步：elements：element_id == CODENAME → RB 型号 + 颜色ID ——
-    // CODENAME 通常是数字字符串，而 element_id 主键多为数字，做安全转换
+    // CODENAME 在数据源中为数字字符串（对应 element_id 数字主键），导入时会转 numeric；
+    // 这里再做一次安全转换，兼容号码边界/前导零等 edge case
     const rawCode = String(hit.CODENAME).trim();
     const numCode = Number(rawCode);
     const elKey = (!isNaN(numCode) && rawCode !== '') ? numCode : rawCode;
@@ -5811,7 +5812,7 @@ async function loadRBOnStartup() {
         // 可选：加载 BL-parts（BG型号+颜色名→CODENAME），用于方法一兑底匹配。
         // 若仓库暂无 bl_parts.csv 或导入失败，不阻塞 RB 主库与 ready 状态。
         try {
-            const blCsv = await fetchRBFile('bl_parts.csv');
+            const blCsv = await fetchRBFile('BL-parts.csv');
             if (blCsv) {
                 const { data } = parseRBCSV(blCsv);
                 await importRBData(RB_STORES.BL_PARTS, convertRBData('bl_parts', data));
@@ -6335,7 +6336,7 @@ async function updateRB() {
         // 可选：加载 BL-parts（BG型号+颜色名→CODENAME），用于方法一兑底匹配
         try {
             updateProgress(0.83, '读取BL-parts数据...', 'bl_parts.csv');
-            const blCsv = await fetchRBFile('bl_parts.csv');
+            const blCsv = await fetchRBFile('BL-parts.csv');
             if (blCsv) {
                 const { data } = parseRBCSV(blCsv);
                 await importRBData(RB_STORES.BL_PARTS, convertRBData('bl_parts', data));

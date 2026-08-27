@@ -63,9 +63,10 @@ function openRBDatabase() {
             if (!db.objectStoreNames.contains(RB_STORES.WEIGHTS)) {
                 db.createObjectStore(RB_STORES.WEIGHTS, { keyPath: 'part_num' });
             }
-            // BL-parts：每条记录 (ITEMID, COLOR) 唯一，主键取 CODENAME（对应 elements.element_id）
+            // BL-parts：Bricklink 目录桥接表（方法一「BG型号+颜色名→CODENAME」）
+            // 仅作查询桥接，无需主键唯一（CODENAME 存在重复），用自增主键避免导入冲突
             if (!db.objectStoreNames.contains(RB_STORES.BL_PARTS)) {
-                db.createObjectStore(RB_STORES.BL_PARTS, { keyPath: 'CODENAME' });
+                db.createObjectStore(RB_STORES.BL_PARTS, { autoIncrement: true });
             }
         };
 
