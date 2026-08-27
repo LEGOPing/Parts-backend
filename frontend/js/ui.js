@@ -1386,6 +1386,9 @@ function showAddPartSheet() {
 
 // 拍照识别结果暂存
 let recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+// 标记本次识别是否由「兑底匹配（方法一/方法二）」确定了零件颜色，
+// 用于防止后续 BG 默认颜色覆盖该方法选定的颜色。
+let recognizeFallbackSetColor = false;
 
 // 打开拍照识别弹窗
 function showRecognizeModal() {
@@ -1974,6 +1977,7 @@ function recognizePartFromPhoto() {
 // 重置识别 UI（第二次拍摄时清除之前的结果，但保持区域可见）
 function resetRecognizeUI() {
     recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    recognizeFallbackSetColor = false;
     
     // 保持区域三（预览区）可见，清除内容
     const previewImg = document.getElementById('preview-part-image');
@@ -2041,8 +2045,8 @@ async function processRecognitionFile(input) {
         URL.revokeObjectURL(previewUrl);
         if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
 
-        // 填入零件信息（支持别名解析），获取有效的RB零件型号
-        const effectivePartNum = await fillRecognizedPart(candidate.id, candidate.name);
+        // 填入零件信息（支持别名解析与兑底匹配），获取有效的RB零件型号
+        const effectivePartNum = await fillRecognizedPart(candidate.id, candidate.name, candidate.colorName);
 
         // 颜色处理：优先使用 BG 返回的颜色，其次通过图片分析计算
         let bgColorId = candidate.colorId;
@@ -2073,7 +2077,8 @@ async function processRecognitionFile(input) {
         if (statusBox) statusBox.style.display = 'none';
 
         // 如果 BG 返回了颜色，自动选中（存入暂存数据）
-        if (bgColorId !== null && bgColorId !== undefined) {
+        // 注意：若兑底匹配已确定更精确的颜色（recognizeFallbackSetColor），则优先保留该颜色
+        if (!recognizeFallbackSetColor && bgColorId !== null && bgColorId !== undefined) {
             recognizeResultData.colorId = String(bgColorId);
             recognizeResultData.colorName = bgColorName || '';
             updateRecognizePreview();
@@ -2299,24 +2304,232 @@ async function uploadToBrickognize(file) {
     };
 }
 
-// 将识别到的型号/名称填入表单，支持别名解析
-// 如果 partNum 在 RB 数据库中找不到，尝试通过别名表查找对应的 RB 标准型号
+// —— 以下为「兑底匹配」辅助函数（场景 A/B 均匹配不到 RB 型号时使用）——
+// 场景 A：BG 型号能直接匹配 rb_parts 的 part_num
+// 场景 B：BG 型号通过别名表（resolvePartAlias）映射到 RB 标准型号
+// 当 A/B 都失败时依次尝试：
+//   方法一：BG型号 + 颜色名 在 RB 数据中等价匹配（BL 匹配的近似实现，返回标准 part_num + color_id）
+//   方法二：按 BG 名称精确度排序提供至多 10 个候选零件，由用户人工选择
+
+// 名称相似度评分（用于方法二候选排序与过滤）
+function _nameSimilarityScore(query, candidate) {
+    const q = String(query || '').toLowerCase().trim();
+    const c = String(candidate || '').toLowerCase().trim();
+    if (!c || !q) return -1;
+    if (c === q) return 100;                        // 完全一致
+    if (c.startsWith(q)) return 80;                 // 名称以关键词开头
+    if (q.startsWith(c)) return 70;                 // 关键词以名称为开头
+    const qWords = q.split(/\s+/).filter(Boolean);
+    const cWords = c.split(/\s+/).filter(Boolean);
+    if (!qWords.length || !cWords.length) return 0;
+    let hit = 0;
+    for (const w of qWords) {
+        if (cWords.some(cw => cw.includes(w) || w.includes(cw))) hit++;
+    }
+    let score = (hit / qWords.length) * 60;         // 分词命中比例
+    if (c.includes(q)) score += 5;                  // 整体包含加分
+    return score;
+}
+
+// 方法一：BG型号 + 颜色名 → RB 标准型号 + 颜色ID
+// 说明：需求方描述的 BL-parts(ITEMID+COLOR→CODENAME) 表当前不在 RB 数据库中，
+// 这里用现有 rb_elements / rb_parts / rb_colors 实现等价的「型号+颜色」双重精确匹配。
+async function matchRBByColorFallback(bgPartNum, bgColorName) {
+    if (!bgPartNum) return null;
+    const normPart = String(bgPartNum).trim().toLowerCase().replace(/\s+/g, '');
+    if (!normPart) return null;
+
+    let colorId = null;
+    if (bgColorName) {
+        const c = await matchColorNameToId(bgColorName);
+        if (c) colorId = c.id;
+    }
+
+    const elements = await getAll(RB_STORES.ELEMENTS);
+
+    // 1) 型号 + 颜色都命中 → 最精确
+    if (colorId !== null) {
+        const hit = elements.find(e =>
+            e.part_num && e.part_num.toLowerCase().replace(/\s+/g, '') === normPart &&
+            String(e.color_id) === String(colorId)
+        );
+        if (hit) return { rbPartNum: hit.part_num, colorId: colorId };
+    }
+    // 2) 仅型号命中（在 elements 中存在）→ 返回该型号、颜色待定
+    const byPart = elements.find(e => e.part_num && e.part_num.toLowerCase().replace(/\s+/g, '') === normPart);
+    if (byPart) return { rbPartNum: byPart.part_num, colorId: colorId };
+    // 3) 型号在 rb_parts 主表中存在（可能无 elements 记录）
+    const p = await getPartByNum(bgPartNum);
+    if (p) return { rbPartNum: p.part_num, colorId: colorId };
+
+    return null;
+}
+
+// 方法二：按 BG 名称模糊搜索候选（精确→模糊排序，至多 10 个，并为每个候选绑定颜色）
+async function buildFallbackCandidates(bgName, bgColorName) {
+    const allParts = await getAll(RB_STORES.PARTS);
+    if (!allParts || !allParts.length) return [];
+
+    // 优先确定 BG 颜色对应的 RB color_id（用于候选优选及兜底展示）
+    let bgColorId = null;
+    if (bgColorName) {
+        const c = await matchColorNameToId(bgColorName);
+        if (c) bgColorId = c.id;
+    }
+
+    const scored = allParts
+        .filter(p => p.name && p.name.trim())
+        .map(p => ({ p, score: _nameSimilarityScore(bgName, p.name) }))
+        .filter(x => x.score > 0)
+        .sort((a, b) => (b.score - a.score) || (a.p.name.length - b.p.name.length))
+        .slice(0, 10);
+
+    const out = [];
+    for (const { p } of scored) {
+        let colorId = null;
+        let colorName = '';
+        const colors = await getPartColors(p.part_num); // [{ color_id }]
+        if (bgColorId !== null && colors.some(c => String(c.color_id) === String(bgColorId))) {
+            colorId = bgColorId;                        // 优先使用 BG 颜色
+        } else if (colors.length) {
+            colorId = colors[0].color_id;               // 否则取该零件第一个颜色
+        }
+        if (colorId !== null) {
+            const cl = await getColorById(colorId);
+            if (cl) colorName = cl.name;
+        }
+        out.push({ part_num: p.part_num, name: p.name, score: Math.round(p.score), colorId, colorName });
+    }
+    return out;
+}
+
+// 保存别名映射（后端 part_aliases 表 + 刷新前端本地别名缓存）
+async function savePartAlias(aliasPartNum, rbPartNum) {
+    if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
+    // 1) 持久化到后端 Supabase part_aliases 表
+    try {
+        await supabaseRequest('part_aliases', {
+            method: 'POST',
+            headers: { 'Prefer': 'return=minimal' },
+            body: {
+                alias_part_num: String(aliasPartNum),
+                rb_part_num: String(rbPartNum),
+                remark: 'BG识别兑底匹配自动建立'
+            }
+        });
+        console.log(`[兑底]别名已写入后端: ${aliasPartNum} → ${rbPartNum}`);
+    } catch (e) {
+        console.warn('[兑底]写入后端别名失败:', e.message);
+    }
+    // 2) 刷新/注入前端本地别名缓存（本次会话立即生效）
+    try {
+        const aliases = await getAllPartAliases();
+        if (aliases) aliases[String(aliasPartNum)] = String(rbPartNum);
+    } catch (e) {
+        console.warn('[兑底]刷新前端别名缓存失败:', e.message);
+    }
+}
+
+// 展示成功兑底提示（复用 alias-hint 样式）
+function showFallbackSuccessHint(partNum, rbPartNum, methodLabel) {
+    const box = document.getElementById('recognize-preview-section');
+    if (!box) return;
+    const hint = document.createElement('div');
+    hint.className = 'alias-hint';
+    hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）未直接匹配RB型号，已通过 <b>${methodLabel}</b> 匹配到 <b>${rbPartNum}</b>。保存时将建立别名 ${partNum} → ${rbPartNum}。`;
+    box.insertBefore(hint, box.firstChild);
+}
+
+// 方法二：候选选择面板（左图 + 右文；每行一个卡片；列表与名称垂直滚动）
+function showFallbackCandidatePicker(candidates, bgInfo) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.id = 'fallback-picker-overlay';
+
+        const sheet = document.createElement('div');
+        sheet.className = 'modal-content add-part-modal fallback-picker-modal';
+
+        const cardsHtml = candidates.map(c =>
+            `<div class="fallback-part-card" data-part-num="${c.part_num}" data-color-id="${c.colorId != null ? c.colorId : ''}">
+                <div class="fallback-card-left">
+                    <div class="fallback-card-img" data-img-for="${c.part_num}-${c.colorId}"><div class="no-image">无图</div></div>
+                </div>
+                <div class="fallback-card-right">
+                    <div class="fallback-card-num">${c.part_num}</div>
+                    <div class="fallback-card-name">${c.name || '-'}</div>
+                    <div class="fallback-card-color">${c.colorId != null ? `颜色：${c.colorName || c.colorId}` : ''}</div>
+                </div>
+            </div>`
+        ).join('');
+
+        sheet.innerHTML = `
+            <div class="modal-header">
+                <span class="modal-title">未匹配到RB零件，请选择</span>
+                <button class="btn-cancel" id="fallback-cancel-btn">取消</button>
+            </div>
+            <div class="modal-body">
+                <div class="fallback-query-info">BG识别：<b>${bgInfo.partNum || ''}</b>${bgInfo.name ? ' · ' + bgInfo.name : ''}${bgInfo.colorName ? ' · ' + bgInfo.colorName : ''}</div>
+                <div class="fallback-part-list">
+                    ${cardsHtml || '<div class="fallback-empty">无候选零件</div>'}
+                </div>
+                <div class="fallback-tip">点击匹配的零件完成选择；如无匹配请点「取消」</div>
+            </div>
+        `;
+
+        // 异步加载每个候选的图片
+        candidates.forEach(c => {
+            getPartImageUrl(c.part_num, c.colorId).then(url => {
+                const el = sheet.querySelector(`[data-img-for="${c.part_num}-${c.colorId}"]`);
+                if (el && url) el.innerHTML = `<img src="${url}" alt="${c.part_num}" loading="lazy" />`;
+            }).catch(() => {});
+        });
+
+        sheet.querySelectorAll('.fallback-part-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const sel = {
+                    part_num: card.dataset.partNum,
+                    colorId: card.dataset.colorId !== '' ? Number(card.dataset.colorId) : null
+                };
+                overlay.remove();
+                resolve(sel);
+            });
+        });
+
+        const cancelBtn = sheet.querySelector('#fallback-cancel-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(null);
+        });
+
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+    });
+}
+
+// ==================== 模型匹配主函数（含兑底逻辑）====================
+// 将识别到的型号/名称填入表单，支持别名解析与兑底匹配
+// 优先级：场景A 直接匹配 → 场景B 别名解析 → 方法一 自动匹配 → 方法二 人工选择
 // 输入框始终显示原始 BG 识别型号（如 4073），别名仅用于内部查询 RB 数据
 // 返回解析后的有效 RB 零件型号（可能和输入不同）
-async function fillRecognizedPart(partNum, fallbackName) {
+async function fillRecognizedPart(partNum, fallbackName, bgColorName) {
+    // 0. 重置兑底颜色标志
+    recognizeFallbackSetColor = false;
+
     // 1. 存储识别型号到暂存数据
     recognizeResultData.partNum = partNum;
 
-    // 2. 尝试直接查询 RB 数据库
+    // 2. 尝试直接查询 RB 数据库（场景 A）
     let rbPart = null;
     let effectivePartNum = partNum;
     let usedAlias = false;
+    let fallbackMethod = null; // 'm1' 自动 | 'm2' 人工
 
     try {
         rbPart = await getPartByNum(partNum);
     } catch (e) { /* 忽略 */ }
 
-    // 3. 如果在 RB 中找不到，尝试通过别名表解析
+    // 3. 如果在 RB 中找不到，尝试通过别名表解析（场景 B）
     if (!rbPart) {
         const resolvedNum = await resolvePartAlias(partNum);
         if (resolvedNum && resolvedNum !== partNum) {
@@ -2326,6 +2539,58 @@ async function fillRecognizedPart(partNum, fallbackName) {
                 rbPart = await getPartByNum(resolvedNum);
             } catch (e) { /* 忽略 */ }
             console.log(`零件别名解析: ${partNum} → ${resolvedNum}`);
+        }
+    }
+
+    // 3.5 兑底匹配：场景 A/B 均失败
+    if (!rbPart) {
+        // —— 方法一：BG型号 + 颜色名 自动匹配 RB ——
+        const m1 = await matchRBByColorFallback(partNum, bgColorName);
+        if (m1 && m1.rbPartNum) {
+            effectivePartNum = m1.rbPartNum;
+            usedAlias = true;
+            fallbackMethod = 'm1';
+            try { rbPart = await getPartByNum(effectivePartNum); } catch (e) { /* 忽略 */ }
+            await savePartAlias(partNum, effectivePartNum); // 建立并保存别名
+            if (m1.colorId !== null) {
+                recognizeResultData.colorId = String(m1.colorId);
+                const cl = await getColorById(m1.colorId);
+                if (cl) recognizeResultData.colorName = cl.name;
+                recognizeFallbackSetColor = true;
+            }
+            showFallbackSuccessHint(partNum, effectivePartNum, '自动匹配（方法一）');
+            console.log(`[兑底]方法一自动匹配: ${partNum} → ${effectivePartNum}`);
+        } else {
+            // —— 方法二：人工选择候选 ——
+            const bgInfoName = recognizeResultData.partName || fallbackName;
+            const candidates = await buildFallbackCandidates(bgInfoName, bgColorName);
+            const picked = candidates.length
+                ? await showFallbackCandidatePicker(candidates, {
+                      partNum: partNum,
+                      name: bgInfoName,
+                      colorName: (recognizeResultData.colorName || bgColorName || '')
+                  })
+                : null;
+
+            if (picked && picked.part_num) {
+                effectivePartNum = picked.part_num;
+                usedAlias = true;
+                fallbackMethod = 'm2';
+                try { rbPart = await getPartByNum(effectivePartNum); } catch (e) { /* 忽略 */ }
+                await savePartAlias(partNum, effectivePartNum); // 建立并保存别名
+                if (picked.colorId != null) {
+                    recognizeResultData.colorId = String(picked.colorId);
+                    const cl = await getColorById(picked.colorId);
+                    if (cl) recognizeResultData.colorName = cl.name;
+                    recognizeFallbackSetColor = true;
+                }
+                showFallbackSuccessHint(partNum, effectivePartNum, '人工选择（方法二）');
+                console.log(`[兑底]方法二人工选择: ${partNum} → ${effectivePartNum}`);
+            } else {
+                // 人工选择取消 / 无候选 → 提示失败信息
+                setRecognizeStatus(`⚠️ 未匹配到该零件的RB型号（BG型号 ${partNum}）。请重新拍摄识别或手动输入`);
+                console.warn(`[兑底]方法二取消或失败: ${partNum}`);
+            }
         }
     }
 
@@ -2341,8 +2606,8 @@ async function fillRecognizedPart(partNum, fallbackName) {
     }
     recognizeResultData.partName = name;
 
-    // 5. 如果使用了别名，在识别结果区域显示提示
-    if (usedAlias) {
+    // 5. 如果使用了别名（场景 B 或兑底方法一/二），在识别结果区域显示提示
+    if (usedAlias && !fallbackMethod) {
         const box = document.getElementById('recognize-preview-section');
         if (box) {
             const hint = document.createElement('div');
