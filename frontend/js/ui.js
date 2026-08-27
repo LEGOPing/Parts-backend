@@ -2522,7 +2522,7 @@ function showFallbackSuccessHint(partNum, rbPartNum, methodLabel) {
     if (!box) return;
     const hint = document.createElement('div');
     hint.className = 'alias-hint';
-    hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）未直接匹配RB型号，已通过 <b>${methodLabel}</b> 匹配到 <b>${rbPartNum}</b>。保存时将建立别名 ${partNum} → ${rbPartNum}。`;
+    hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）未直接匹配RB型号，已通过 <b>${methodLabel}</b> 匹配到 <b>${rbPartNum}</b>，将使用标准型号保存。已建立别名 ${partNum} → ${rbPartNum}。`;
     box.insertBefore(hint, box.firstChild);
 }
 
@@ -2621,6 +2621,7 @@ async function fillRecognizedPart(partNum, fallbackName, bgColorName) {
         if (resolvedNum && resolvedNum !== partNum) {
             effectivePartNum = resolvedNum;
             usedAlias = true;
+            recognizeResultData.partNum = effectivePartNum; // 更新为 RB 标准型号，确保图片/保存正确
             try {
                 rbPart = await getPartByNum(resolvedNum);
             } catch (e) { /* 忽略 */ }
@@ -2636,6 +2637,7 @@ async function fillRecognizedPart(partNum, fallbackName, bgColorName) {
             effectivePartNum = m1.rbPartNum;
             usedAlias = true;
             fallbackMethod = 'm1';
+            recognizeResultData.partNum = effectivePartNum; // 更新为 RB 标准型号
             try { rbPart = await getPartByNum(effectivePartNum); } catch (e) { /* 忽略 */ }
             await savePartAlias(partNum, effectivePartNum); // 建立并保存别名
             if (m1.colorId !== null) {
@@ -2662,6 +2664,7 @@ async function fillRecognizedPart(partNum, fallbackName, bgColorName) {
                 effectivePartNum = picked.part_num;
                 usedAlias = true;
                 fallbackMethod = 'm2';
+                recognizeResultData.partNum = effectivePartNum; // 更新为 RB 标准型号
                 try { rbPart = await getPartByNum(effectivePartNum); } catch (e) { /* 忽略 */ }
                 await savePartAlias(partNum, effectivePartNum); // 建立并保存别名
                 if (picked.colorId != null) {
@@ -2698,7 +2701,7 @@ async function fillRecognizedPart(partNum, fallbackName, bgColorName) {
         if (box) {
             const hint = document.createElement('div');
             hint.className = 'alias-hint';
-            hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）的RB数据（图片/名称/颜色）来源于 <b>${effectivePartNum}</b>，保存时型号保持为 ${partNum}`;
+            hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）已通过别名映射为RB标准型号 <b>${effectivePartNum}</b>，将使用标准型号保存`;
             box.insertBefore(hint, box.firstChild);
         }
     }
