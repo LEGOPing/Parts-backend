@@ -442,8 +442,11 @@ const RB_SCHEMAS = {
     part_relationships: {
         string: ['rel_type', 'child_part_num', 'parent_part_num']
     },
+// BL-parts：Bricklink 目录桥接表。CODENAME 实为数字（对应 elements.element_id 数字主键），
+    // 故转 numeric 便于 getByKey 直接匹配；ITEMID/COLOR 为文本（ITEMID 可能含字母，如 "14pb10"）。
     bl_parts: {
-        string: ['itemtype', 'itemid', 'color', 'codename']
+        numeric: ['CODENAME'],
+        string: ['ITEMTYPE', 'ITEMID', 'COLOR']
     }
 };
 

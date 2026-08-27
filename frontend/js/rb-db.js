@@ -9,6 +9,7 @@ const RB_STORES = {
     PART_RELATIONSHIPS: 'rb_part_relationships',
     PARTS: 'rb_parts',
     WEIGHTS: 'rb_weights',
+    // BL-parts：Bricklink 目录表（方法一「BG型号+颜色名→CODENAME」的桥接表）
     BL_PARTS: 'rb_bl_parts'
 };
 
@@ -62,6 +63,8 @@ function openRBDatabase() {
             if (!db.objectStoreNames.contains(RB_STORES.WEIGHTS)) {
                 db.createObjectStore(RB_STORES.WEIGHTS, { keyPath: 'part_num' });
             }
+            // BL-parts：Bricklink 目录桥接表（方法一「BG型号+颜色名→CODENAME」）
+            // 仅作查询桥接，无需主键唯一（CODENAME 存在重复），用自增主键避免导入冲突
             if (!db.objectStoreNames.contains(RB_STORES.BL_PARTS)) {
                 db.createObjectStore(RB_STORES.BL_PARTS, { autoIncrement: true });
             }
