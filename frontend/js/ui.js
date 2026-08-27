@@ -5488,7 +5488,8 @@ async function loadRBOnStartup() {
             { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, schemaKey: 'part_categories', label: '类别' },
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
-            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' }
+            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
         ];
 
         let successCount = 0;
@@ -5984,7 +5985,8 @@ async function updateRB() {
             { name: 'part_categories.csv', store: RB_STORES.PART_CATEGORIES, schemaKey: 'part_categories', label: '类别' },
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
-            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' }
+            { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
         ];
 
         let successCount = 0;
@@ -6055,6 +6057,7 @@ async function updateRB() {
             statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
+            statsHtml += `<div>BL零件: ${stats.rb_bl_parts || 0} 条</div>`;
             statsHtml += '</div>';
         }
 

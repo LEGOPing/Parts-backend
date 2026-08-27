@@ -1,5 +1,5 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 2;
+const RB_DB_VERSION = 3;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -8,7 +8,8 @@ const RB_STORES = {
     PART_CATEGORIES: 'rb_part_categories',
     PART_RELATIONSHIPS: 'rb_part_relationships',
     PARTS: 'rb_parts',
-    WEIGHTS: 'rb_weights'
+    WEIGHTS: 'rb_weights',
+    BL_PARTS: 'rb_bl_parts'
 };
 
 const RB_STORE_KEYS = {
@@ -18,7 +19,8 @@ const RB_STORE_KEYS = {
     'rb_elements': 'elements',
     'rb_inventory_parts': 'inventory_parts',
     'rb_part_relationships': 'part_relationships',
-    'rb_weights': 'weights'
+    'rb_weights': 'weights',
+    'rb_bl_parts': 'bl_parts'
 };
 
 let rbDbInstance = null;
@@ -59,6 +61,9 @@ function openRBDatabase() {
             }
             if (!db.objectStoreNames.contains(RB_STORES.WEIGHTS)) {
                 db.createObjectStore(RB_STORES.WEIGHTS, { keyPath: 'part_num' });
+            }
+            if (!db.objectStoreNames.contains(RB_STORES.BL_PARTS)) {
+                db.createObjectStore(RB_STORES.BL_PARTS, { autoIncrement: true });
             }
         };
 
@@ -174,7 +179,8 @@ async function getRBStats() {
             'rb_elements': RB_STORES.ELEMENTS,
             'rb_inventory_parts': RB_STORES.INVENTORY_PARTS,
             'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
-            'rb_weights': RB_STORES.WEIGHTS
+            'rb_weights': RB_STORES.WEIGHTS,
+            'rb_bl_parts': RB_STORES.BL_PARTS
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -324,7 +330,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'elements': RB_STORES.ELEMENTS,
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
-        'weights': RB_STORES.WEIGHTS
+        'weights': RB_STORES.WEIGHTS,
+        'bl_parts': RB_STORES.BL_PARTS
     };
     
     const results = {};
@@ -370,7 +377,8 @@ async function exportRBDatabaseToJSON() {
         'elements': RB_STORES.ELEMENTS,
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
-        'weights': RB_STORES.WEIGHTS
+        'weights': RB_STORES.WEIGHTS,
+        'bl_parts': RB_STORES.BL_PARTS
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
