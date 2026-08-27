@@ -1845,7 +1845,14 @@ function initAddPartSuggestions() {
         // 更新数据来源提示
         const dsHint = document.getElementById('data-source-hint');
         if (dsHint) {
-            dsHint.textContent = effectivePartNum !== partNum ? `数据来源：${effectivePartNum}` : '';
+            if (effectivePartNum !== partNum) {
+                dsHint.innerHTML = `数据来源：${effectivePartNum}`;
+            } else if (!part) {
+                // 直接匹配和别名都失败时，显示 BL 匹配按钮
+                dsHint.innerHTML = 'RB未匹配 <button class="btn-bl-match" onclick="triggerBLMatchForManual()">BL</button>';
+            } else {
+                dsHint.textContent = '';
+            }
         }
 
         if (part) {
@@ -2452,6 +2459,125 @@ function showFallbackSuccessHint(partNum, rbPartNum, methodLabel) {
     hint.className = 'alias-hint';
     hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）未直接匹配RB型号，已通过 <b>${methodLabel}</b> 匹配到 <b>${rbPartNum}</b>。保存时将建立别名 ${partNum} → ${rbPartNum}。`;
     box.insertBefore(hint, box.firstChild);
+}
+
+// ==================== 手动添加零件时的 BL 匹配（添加零件表单）====================
+// 当直接匹配和别名都失败时，用户点击"BL"按钮触发此函数
+// 复用兑底匹配的方法一（自动）和方法二（人工选择）
+
+// 刷新添加零件表单的预览（名称、颜色提示、图片、数据来源）
+async function _refreshAddPartPreview(originalPartNum, effectivePartNum) {
+    const partNameInput = document.getElementById('new-part-name');
+    const hintEl = document.getElementById('color-count-hint');
+    const dsHint = document.getElementById('data-source-hint');
+    const imagePreview = document.getElementById('add-part-image-preview');
+    const colorId = document.getElementById('new-part-color')?.value.trim() || '';
+
+    if (dsHint && originalPartNum !== effectivePartNum) {
+        dsHint.innerHTML = `数据来源：${effectivePartNum}`;
+    }
+
+    // 查找 RB 名称
+    if (partNameInput && !partNameInput.value) {
+        try {
+            const rbPart = await getPartByNum(effectivePartNum);
+            if (rbPart && rbPart.name) partNameInput.value = rbPart.name;
+        } catch (e) { /* 忽略 */ }
+    }
+
+    // 颜色数量提示
+    if (hintEl) {
+        try {
+            const colorCount = await getPartColorCount(effectivePartNum);
+            hintEl.textContent = colorCount > 0 ? `可能有${colorCount}种颜色` : '';
+        } catch (e) {
+            hintEl.textContent = '';
+        }
+    }
+
+    // 更新图片
+    if (imagePreview && effectivePartNum && colorId) {
+        try {
+            const imgUrl = await getPartImageUrl(effectivePartNum, colorId);
+            if (imgUrl) {
+                imagePreview.innerHTML = `<img src="${imgUrl}" alt="${effectivePartNum}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+                return;
+            }
+        } catch (e) { /* 忽略 */ }
+    }
+    if (imagePreview) {
+        imagePreview.innerHTML = '<div class="no-image">暂无图片</div>';
+    }
+}
+
+async function triggerBLMatchForManual() {
+    const partNumInput = document.getElementById('new-part-num');
+    const partNameInput = document.getElementById('new-part-name');
+    const colorInput = document.getElementById('new-part-color');
+    const dsHint = document.getElementById('data-source-hint');
+
+    const partNum = partNumInput.value.trim();
+    const colorId = colorInput.value.trim();
+    const partName = partNameInput.value.trim();
+
+    if (!partNum) return;
+
+    // 禁用按钮，防止重复点击
+    if (dsHint) {
+        dsHint.innerHTML = 'RB未匹配 <button class="btn-bl-match" disabled style="opacity:0.5">匹配中...</button>';
+    }
+
+    // 如果有颜色ID，获取颜色名称（方法一需要颜色名）
+    let colorName = '';
+    if (colorId) {
+        try {
+            const color = await getColorById(parseInt(colorId));
+            if (color) colorName = color.name;
+        } catch (e) { /* 忽略 */ }
+    }
+
+    // 方法一：BL-parts 自动匹配（型号 + 颜色名 → RB 型号）
+    const m1 = await matchRBByColorFallback(partNum, colorName);
+    if (m1 && m1.rbPartNum) {
+        // 自动匹配成功，填入结果
+        partNumInput.value = m1.rbPartNum;
+        if (m1.colorId !== null) {
+            colorInput.value = String(m1.colorId);
+        }
+        // 刷新名称/颜色提示/图片
+        await _refreshAddPartPreview(partNum, m1.rbPartNum);
+        // 保存别名（下次直接匹配）
+        await savePartAlias(partNum, m1.rbPartNum);
+        showToast(`BL匹配成功: ${partNum} → ${m1.rbPartNum}`, 2000);
+        return;
+    }
+
+    // 方法二：按名称模糊搜索候选，由用户人工选择
+    const candidates = await buildFallbackCandidates(partName || partNum, colorName);
+    if (candidates.length > 0) {
+        const picked = await showFallbackCandidatePicker(candidates, {
+            partNum: partNum,
+            name: partName,
+            colorName: colorName
+        });
+        if (picked && picked.part_num) {
+            partNumInput.value = picked.part_num;
+            if (picked.colorId != null) {
+                colorInput.value = String(picked.colorId);
+            }
+            await _refreshAddPartPreview(partNum, picked.part_num);
+            await savePartAlias(partNum, picked.part_num);
+            showToast(`BL匹配成功: ${partNum} → ${picked.part_num}`, 2000);
+            return;
+        }
+    } else {
+        showToast('BL匹配失败：未找到候选零件', 2000);
+    }
+
+    // 匹配失败，恢复 BL 按钮
+    if (dsHint) {
+        dsHint.innerHTML = 'RB未匹配 <button class="btn-bl-match" onclick="triggerBLMatchForManual()">BL</button>';
+    }
 }
 
 // 方法二：候选选择面板（左图 + 右文；每行一个卡片；列表与名称垂直滚动）
