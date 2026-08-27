@@ -1865,7 +1865,7 @@ function initAddPartSuggestions() {
                 part = await getPartByNum(blMatchedNum);
                 if (part) {
                     // 自动保存别名映射，下次可直接命中
-                    savePartAlias(partNum, blMatchedNum);
+                    await savePartAlias(partNum, blMatchedNum);
                 }
             }
         }
