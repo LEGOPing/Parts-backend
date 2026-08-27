@@ -1621,8 +1621,23 @@ function initAddPartSuggestions() {
                 }));
             }
         }
+
+        // (c) 别名也无结果，尝试通过 BL-parts ITEMID → elements 兜底匹配
+        let blSuggestions = [];
+        if (suggestions.length === 0 && aliasSuggestions.length === 0) {
+            const blMatchedNum = await matchRBByBLPartNum(query.trim());
+            if (blMatchedNum) {
+                blSuggestions = await searchPartsByNumber(blMatchedNum, 5);
+                blSuggestions = blSuggestions.map(s => ({
+                    ...s,
+                    part_num: s.part_num,
+                    name: s.name,
+                    aliasFrom: query.trim()
+                }));
+            }
+        }
         
-        const allSuggestions = [...suggestions, ...aliasSuggestions];
+        const allSuggestions = [...suggestions, ...aliasSuggestions, ...blSuggestions];
         
         if (allSuggestions.length === 0) {
             hidePartNumSuggestions();
@@ -1839,6 +1854,19 @@ function initAddPartSuggestions() {
             if (resolvedNum && resolvedNum !== partNum) {
                 effectivePartNum = resolvedNum;
                 part = await getPartByNum(resolvedNum);
+            }
+        }
+
+        // (c) 别名映射也失败，尝试通过 BL-parts ITEMID → elements 兜底匹配
+        if (!part) {
+            const blMatchedNum = await matchRBByBLPartNum(partNum);
+            if (blMatchedNum) {
+                effectivePartNum = blMatchedNum;
+                part = await getPartByNum(blMatchedNum);
+                if (part) {
+                    // 自动保存别名映射，下次可直接命中
+                    savePartAlias(partNum, blMatchedNum);
+                }
             }
         }
 
@@ -2377,6 +2405,50 @@ async function matchRBByColorFallback(bgPartNum, bgColorName) {
     if (!el) return null;
 
     return { rbPartNum: el.part_num, colorId: el.color_id };
+}
+
+// 方法三（手动输入场景）：输入型号 → BL-parts(ITEMID) → CODENAME → elements → RB part_num
+// 用于「添加零件」页面手动输入型号时，直接匹配 RB 和别名映射都失败后的兜底。
+// 不需要颜色匹配，同一个 ITEMID 可能有多个颜色行，逐个尝试直到找到第一个有效的 RB 型号。
+async function matchRBByBLPartNum(inputPartNum) {
+    if (!inputPartNum) return null;
+    const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, '');
+    const normItem = norm(inputPartNum);
+    if (!normItem) return null;
+
+    let blParts;
+    try {
+        blParts = await getAll(RB_STORES.BL_PARTS);
+    } catch (e) {
+        blParts = [];
+    }
+    if (!blParts.length) return null;
+
+    // 按 ITEMID 匹配（可能有多个颜色/CODENAME）
+    const itemRows = blParts.filter(r => norm(r.ITEMID) === normItem);
+    if (!itemRows.length) return null;
+
+    // 遍历每个匹配行，通过 CODENAME → element_id → RB part_num
+    // 第一个成功即返回（不需要颜色匹配）
+    for (const hit of itemRows) {
+        if (hit.CODENAME == null || hit.CODENAME === '') continue;
+
+        const rawCode = String(hit.CODENAME).trim();
+        const numCode = Number(rawCode);
+        const elKey = (!isNaN(numCode) && rawCode !== '') ? numCode : rawCode;
+
+        let el;
+        try {
+            el = await getByKey(RB_STORES.ELEMENTS, elKey);
+        } catch (e) {
+            el = null;
+        }
+        if (el && el.part_num) {
+            return el.part_num; // 第一个成功匹配即返回
+        }
+    }
+
+    return null;
 }
 
 // 方法二：按 BG 名称模糊搜索候选（精确→模糊排序，至多 10 个，并为每个候选绑定颜色）
