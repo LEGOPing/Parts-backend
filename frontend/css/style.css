@@ -2110,8 +2110,7 @@ body {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 8px;
-    flex-wrap: wrap;
-    gap: 4px;
+    gap: 8px;
 }
 
 .snp-title {
@@ -2121,8 +2120,9 @@ body {
 }
 
 .snp-hint {
-    font-size: 11px;
+    font-size: 8px;
     color: #7f8c8d;
+    white-space: nowrap;
 }
 
 .snp-cards-row {
