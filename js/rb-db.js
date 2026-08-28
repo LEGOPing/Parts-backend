@@ -691,11 +691,15 @@ async function deletePartImageFromOfflineCache(partNum, colorId) {
 // 检查 Gitee Parts-img 仓库是否存在该零件图片
 // 用 API 端点检查：raw URL 302→raw.giteeusercontent.com 无 CORS 头会被浏览器拦截；
 // API 端点返回 Access-Control-Allow-Origin:*，文件存在返回 JSON 对象，不存在返回空数组 []
+// 注意：必须携带 Token 避免 Gitee API 未认证限流（429）
 async function checkPartsImgOnGitee(partNum, colorId) {
     try {
         const filePath = `parts/${partNum}_${colorId}.jpg`;
         const apiUrl = `${GITEE_IMG_API_URL}/${filePath}?ref=${GITEE_IMG_BRANCH}`;
-        const response = await fetch(apiUrl, { cache: 'no-store' });
+        const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('gitee_token') : null)
+            || (typeof DEFAULT_GITEE_TOKEN !== 'undefined' ? DEFAULT_GITEE_TOKEN : null);
+        const headers = token ? { 'Authorization': `token ${token}` } : {};
+        const response = await fetch(apiUrl, { cache: 'no-store', headers });
         if (!response.ok) return false;
         const data = await response.json();
         return Array.isArray(data) ? data.length > 0 : !!data;
@@ -751,8 +755,7 @@ async function getRBPartImageUrl(partNum, colorId) {
     return urls.length ? urls[0] : null;
 }
 
-// 根据 part_num 和 color_id 查询图片URL（二级读取：① Gitee Parts-img → ② RB数据库）
-// 离线缓存仅用于离线存储，不参与 URL 解析，避免自动缓存的 RB 图片误返回 Gitee URL
+// 根据 part_num 和 color_id 查询图片URL（三级读取：① Gitee Parts-img → ② 离线缓存 → ③ RB数据库）
 // 注：Gitee 用原始型号查询（缓存图片以原始型号命名，如 4073_colorId.jpg）；
 //     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
 async function getPartImageUrl(partNum, colorId) {
@@ -760,7 +763,13 @@ async function getPartImageUrl(partNum, colorId) {
     if (await checkPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ② 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
+    // ② 检查离线缓存（用户自定义上传的图片在上传前已存入离线缓存；
+    //    即使 Gitee API 限流或上传因网络问题仅存了离线缓存，也能显示）
+    const cached = await getPartImageFromOfflineCache(partNum, colorId);
+    if (cached) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ③ 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
     const resolvedNum = typeof resolvePartAlias === 'function'
         ? await resolvePartAlias(partNum) : partNum;
     return await getRBPartImageUrl(resolvedNum, colorId);
