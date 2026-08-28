@@ -706,7 +706,10 @@ async function checkPartsImgOnGitee(partNum, colorId) {
 // 无匹配或 img_url 为空（暂时失效）时按暂无图片处理，返回空列表
 async function getRBPartImageUrls(partNum, colorId) {
     try {
-        const normPart = String(partNum).trim().toLowerCase();
+        // 解析别名：如果 partNum 是别名（如 4073），用 RB 标准型号（如 6141）查询
+        const resolvedNum = typeof resolvePartAlias === 'function'
+            ? await resolvePartAlias(partNum) : partNum;
+        const normPart = String(resolvedNum).trim().toLowerCase();
         const normColor = String(colorId).trim().toLowerCase();
         const inventory = await getAll(RB_STORES.INVENTORY_PARTS);
         const urls = [];
@@ -717,6 +720,20 @@ async function getRBPartImageUrls(partNum, colorId) {
                 urls.push(i.img_url);
             }
         });
+        // inventory_parts 无匹配时，回退 elements 表（element 级图片，按 part_num+color_id 匹配 element_id）
+        if (urls.length === 0) {
+            const elements = await getAll(RB_STORES.ELEMENTS);
+            elements.forEach(e => {
+                if (String(e.part_num).trim().toLowerCase() === normPart &&
+                    String(e.color_id).trim().toLowerCase() === normColor &&
+                    e.element_id) {
+                    const url = `https://cdn.rebrickable.com/media/parts/elements/${e.element_id}.jpg`;
+                    if (!urls.includes(url)) {
+                        urls.push(url);
+                    }
+                }
+            });
+        }
         return urls;
     } catch (error) {
         console.error('查询RB数据库图片URL失败:', error);
@@ -762,13 +779,17 @@ function confirmChooseRBImageUrl(partNum, colorId, urls) {
 // 根据 part_num 和 color_id 查询图片URL（二级读取：① Gitee Parts-img → ② RB数据库）
 // confirmOnMultiple=true 时，RB数据库匹配到多个不同URL会弹窗让用户确认
 // 离线缓存仅用于离线存储，不参与 URL 解析，避免自动缓存的 RB 图片误返回 Gitee URL
+// 注：Gitee 用原始型号查询（缓存图片以原始型号命名，如 4073_colorId.jpg）；
+//     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
 async function getPartImageUrl(partNum, colorId, confirmOnMultiple) {
-    // ① Gitee Parts-img 仓库（人工添加的图片优先）
+    // ① Gitee Parts-img 仓库（人工添加的图片优先，用原始型号查询）
     if (await checkPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ② RB数据库（inventory_parts 表按型号+颜色匹配）
-    return await getRBPartImageUrl(partNum, colorId, confirmOnMultiple);
+    // ② 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
+    const resolvedNum = typeof resolvePartAlias === 'function'
+        ? await resolvePartAlias(partNum) : partNum;
+    return await getRBPartImageUrl(resolvedNum, colorId, confirmOnMultiple);
 }
 
 // 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
