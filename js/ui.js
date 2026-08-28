@@ -2109,9 +2109,14 @@ async function saveNewPart(button) {
         // 绑定新增按钮事件
         document.getElementById('dup-new-btn').addEventListener('click', async () => {
             confirmOverlay.remove();
+            // 先保存选中图片，再创建零件
+            await persistSelectedPartImage(newPartData.part_num, newPartData.color_id);
             const newPart = await createPart(newPartData);
             if (newPart) {
                 button.closest('.modal-overlay').remove();
+                window._partImgKey = '';
+                window.newPartImageUrl = '';
+                window.newPartImgExplicit = false;
                 if (selectedBox) {
                     await loadParts(selectedBox.id);
                 }
@@ -2127,6 +2132,10 @@ async function saveNewPart(button) {
     
     if (newPart) {
         button.closest('.modal-overlay').remove();
+        // 保存成功后清理全局图片缓存状态，防止污染下一次添加
+        window._partImgKey = '';
+        window.newPartImageUrl = '';
+        window.newPartImgExplicit = false;
         if (selectedBox) {
             await loadParts(selectedBox.id);
         }
