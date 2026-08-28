@@ -652,13 +652,33 @@ function buildPartsImgUrl(partNum, colorId) {
     return `${GITEE_IMG_URL}parts/${partNum}_${colorId}.jpg`;
 }
 
+// 将 data URL 转换为 Blob（修复 Service Worker 缓存优先策略下，data URL 字符串被当作图片二进制返回导致加载失败的问题）
+function dataURLToBlob(dataUrl) {
+    const parts = dataUrl.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const bytes = atob(parts[1]);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+        arr[i] = bytes.charCodeAt(i);
+    }
+    return new Blob([arr], { type: mime || 'image/jpeg' });
+}
+
 // 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
+// 注意：data URL 必须转为 Blob 再存储，否则 Service Worker 缓存优先策略下，
+// 浏览器会把 data URL 字符串当作图片二进制返回，导致 onerror 加载失败
 async function savePartImageToOfflineCache(partNum, colorId, imageData) {
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
-        const response = imageData instanceof Response
-            ? imageData
-            : new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+        let response;
+        if (imageData instanceof Response) {
+            response = imageData;
+        } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
+            const blob = dataURLToBlob(imageData);
+            response = new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
+        } else {
+            response = new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+        }
         await cache.put(buildPartsImgUrl(partNum, colorId), response);
         return true;
     } catch (error) {
