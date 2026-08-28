@@ -645,7 +645,8 @@ async function getPartColorCount(partNum) {
 }
 
 // ===== 零件图片缓存机制 =====
-const PART_IMAGE_CACHE_NAME = 'part-images-cache-v1';
+// v2: 修复 data URL 被存为字符串导致 Service Worker 返回后浏览器无法解析为 JPEG 二进制的问题
+const PART_IMAGE_CACHE_NAME = 'part-images-cache-v2';
 
 // 构造 Gitee Parts-img 仓库中的零件图片地址
 function buildPartsImgUrl(partNum, colorId) {
@@ -679,7 +680,17 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
         } else {
             response = new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
         }
-        await cache.put(buildPartsImgUrl(partNum, colorId), response);
+        const url = buildPartsImgUrl(partNum, colorId);
+        await cache.put(url, response);
+        // 清理旧 v1 缓存中的同 key 条目（避免 Service Worker 缓存优先时取到 v1 中的 data URL 字符串）
+        try {
+            const oldCache = await caches.open('part-images-cache-v1');
+            const oldEntry = await oldCache.match(url);
+            if (oldEntry) {
+                await oldCache.delete(url);
+                console.log('已清理旧 v1 缓存条目:', url);
+            }
+        } catch (_) { /* 忽略 */ }
         return true;
     } catch (error) {
         console.error('保存零件图片到离线缓存失败:', error);
