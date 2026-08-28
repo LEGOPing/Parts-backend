@@ -797,7 +797,10 @@ async function getPartImageUrl(partNum, colorId, confirmOnMultiple) {
 async function clearPartImageUrlInRB(partNum, colorId) {
     try {
         const db = await openRBDatabase();
-        const normPart = String(partNum).trim().toLowerCase();
+        // 解析别名，与读取(getPartImageUrl)使用同一规范零件号
+        const resolvedNum = typeof resolvePartAlias === 'function'
+            ? await resolvePartAlias(partNum) : partNum;
+        const normPart = String(resolvedNum).trim().toLowerCase();
         const normColor = String(colorId).trim().toLowerCase();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
@@ -834,7 +837,10 @@ async function clearPartImageUrlInRB(partNum, colorId) {
 async function updateRBPartImageUrl(partNum, colorId, newUrl) {
     try {
         const db = await openRBDatabase();
-        const normPart = String(partNum).trim().toLowerCase();
+        // 解析别名，与读取(getPartImageUrl)使用同一规范零件号，避免以别名写入、以规范号读取导致错位
+        const resolvedNum = typeof resolvePartAlias === 'function'
+            ? await resolvePartAlias(partNum) : partNum;
+        const normPart = String(resolvedNum).trim().toLowerCase();
         const normColor = String(colorId).trim().toLowerCase();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
