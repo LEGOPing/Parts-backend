@@ -938,22 +938,32 @@ async function uploadPartImageToGitee(partNum, colorId, imageBase64) {
         const apiUrl = `${GITEE_IMG_API_URL}/${filePath}`;
 
         // 检查文件是否已存在，获取 sha 用于更新
-        const checkResp = await fetch(`${apiUrl}?ref=${GITEE_IMG_BRANCH}`, {
-            headers: { 'Authorization': `token ${token}` }
-        });
-        const existing = checkResp.ok ? await checkResp.json() : null;
+        let checkResp, existing, hasExisting = false;
+        try {
+            checkResp = await fetch(`${apiUrl}?ref=${GITEE_IMG_BRANCH}`, {
+                headers: { 'Authorization': `token ${token}` }
+            });
+            if (checkResp.ok) {
+                const data = await checkResp.json();
+                existing = data;
+                // Gitee 返回 [] 空数组或缺失 sha 时视为新文件
+                hasExisting = !Array.isArray(data) && data && data.sha;
+            }
+        } catch (_) {
+            // 检查失败时视为新文件
+        }
 
         const body = {
-            message: existing ? `更新零件图片 ${partNum}_${colorId}` : `添加零件图片 ${partNum}_${colorId}`,
+            message: hasExisting ? `更新零件图片 ${partNum}_${colorId}` : `添加零件图片 ${partNum}_${colorId}`,
             content: base64Data,
             branch: GITEE_IMG_BRANCH
         };
-        if (existing && existing.sha) {
+        if (hasExisting) {
             body.sha = existing.sha;
         }
 
         const response = await fetch(apiUrl, {
-            method: existing ? 'PUT' : 'POST',
+            method: hasExisting ? 'PUT' : 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `token ${token}`
