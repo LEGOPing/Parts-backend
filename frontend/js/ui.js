@@ -2488,7 +2488,7 @@ function showFallbackSuccessHint(partNum, rbPartNum, methodLabel) {
 // 复用兑底匹配的方法一（自动）和方法二（人工选择）
 
 // 刷新添加零件表单的预览（名称、颜色提示、图片、数据来源）
-async function _refreshAddPartPreview(originalPartNum, effectivePartNum) {
+async function _refreshAddPartPreview(originalPartNum, effectivePartNum, forceName = false) {
     const partNameInput = document.getElementById('new-part-name');
     const hintEl = document.getElementById('color-count-hint');
     const dsHint = document.getElementById('data-source-hint');
@@ -2499,8 +2499,8 @@ async function _refreshAddPartPreview(originalPartNum, effectivePartNum) {
         dsHint.innerHTML = `数据来源：${effectivePartNum}`;
     }
 
-    // 查找 RB 名称
-    if (partNameInput && !partNameInput.value) {
+    // 查找 RB 名称（forceName=true 时始终覆盖为匹配到的 RB 名称）
+    if (partNameInput && (forceName || !partNameInput.value)) {
         try {
             const rbPart = await getPartByNum(effectivePartNum);
             if (rbPart && rbPart.name) partNameInput.value = rbPart.name;
@@ -2561,13 +2561,12 @@ async function triggerBLMatchForManual() {
     // 方法一：BL-parts 自动匹配（型号 + 颜色名 → RB 型号）
     const m1 = await matchRBByColorFallback(partNum, colorName);
     if (m1 && m1.rbPartNum) {
-        // 自动匹配成功，填入结果
-        partNumInput.value = m1.rbPartNum;
+        // 匹配成功：不改变型号输入框（保持用户输入），只更新颜色/名称/提示/图片
         if (m1.colorId !== null) {
             colorInput.value = String(m1.colorId);
         }
-        // 刷新名称/颜色提示/图片
-        await _refreshAddPartPreview(partNum, m1.rbPartNum);
+        // 刷新名称（强制填入RB名称）/颜色提示/图片
+        await _refreshAddPartPreview(partNum, m1.rbPartNum, true);
         // 保存别名（下次直接匹配）
         await savePartAlias(partNum, m1.rbPartNum);
         showToast(`BL匹配成功: ${partNum} → ${m1.rbPartNum}`, 2000);
@@ -2583,11 +2582,11 @@ async function triggerBLMatchForManual() {
             colorName: colorName
         });
         if (picked && picked.part_num) {
-            partNumInput.value = picked.part_num;
+            // 匹配成功：不改变型号输入框（保持用户输入），只更新颜色/名称/提示/图片
             if (picked.colorId != null) {
                 colorInput.value = String(picked.colorId);
             }
-            await _refreshAddPartPreview(partNum, picked.part_num);
+            await _refreshAddPartPreview(partNum, picked.part_num, true);
             await savePartAlias(partNum, picked.part_num);
             showToast(`BL匹配成功: ${partNum} → ${picked.part_num}`, 2000);
             return;
