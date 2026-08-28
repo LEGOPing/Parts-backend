@@ -2451,6 +2451,28 @@ async function savePartAlias(aliasPartNum, rbPartNum) {
     }
 }
 
+// 检查并确保别名映射已持久化到线上（Supabase）
+// 如果线上不存在该别名映射，则保存；已存在则跳过
+async function ensureAliasPersisted(aliasPartNum, rbPartNum) {
+    if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
+    try {
+        // 查询线上是否已存在该别名映射
+        const existing = await supabaseRequest('part_aliases', {
+            select: 'id',
+            filters: { alias_part_num: `eq.${String(aliasPartNum)}` },
+        });
+        // 如果线上已有记录（数组非空），无需重复保存
+        if (Array.isArray(existing) && existing.length > 0) {
+            console.log(`[别名]线上已存在映射: ${aliasPartNum} → ${rbPartNum}`);
+            return;
+        }
+    } catch (e) {
+        console.warn('[别名]查询线上别名失败，将尝试重新保存:', e.message);
+    }
+    // 线上不存在或查询失败，尝试保存
+    await savePartAlias(aliasPartNum, rbPartNum);
+}
+
 // 展示成功兑底提示（复用 alias-hint 样式）
 function showFallbackSuccessHint(partNum, rbPartNum, methodLabel) {
     const box = document.getElementById('recognize-preview-section');
@@ -3778,6 +3800,11 @@ async function saveNewPart(button) {
             const newQty = selectedPart.quantity + newPartData.quantity;
             const success = await updatePart(selectedPart.id, { quantity: newQty });
             if (success) {
+                // 确保别名映射已持久化到线上
+                const originalPartNum = recognizeResultData.partNum;
+                if (originalPartNum && originalPartNum !== partNum) {
+                    await ensureAliasPersisted(originalPartNum, partNum);
+                }
                 confirmOverlay.remove();
                 button.closest('.modal-overlay').remove();
                 if (selectedBox) {
@@ -3793,6 +3820,11 @@ async function saveNewPart(button) {
             confirmOverlay.remove();
             const newPart = await createPart(newPartData);
             if (newPart) {
+                // 确保别名映射已持久化到线上
+                const originalPartNum = recognizeResultData.partNum;
+                if (originalPartNum && originalPartNum !== partNum) {
+                    await ensureAliasPersisted(originalPartNum, partNum);
+                }
                 button.closest('.modal-overlay').remove();
                 if (selectedBox) {
                     await loadParts(selectedBox.id);
@@ -3807,6 +3839,11 @@ async function saveNewPart(button) {
     const newPart = await createPart(newPartData);
     
     if (newPart) {
+        // 确保别名映射已持久化到线上
+        const originalPartNum = recognizeResultData.partNum;
+        if (originalPartNum && originalPartNum !== partNum) {
+            await ensureAliasPersisted(originalPartNum, partNum);
+        }
         button.closest('.modal-overlay').remove();
         if (selectedBox) {
             await loadParts(selectedBox.id);
