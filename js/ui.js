@@ -3354,10 +3354,13 @@ async function saveImageFromUrl(partNum, colorId) {
             reader.readAsDataURL(blob);
         });
         
+        // 缩放到 192x192 JPG
+        const resizedDataUrl = await resizeImageTo192(imageBase64);
+        
         // ① 保存到浏览器离线缓存
-        await savePartImageToOfflineCache(partNum, colorId, imageBase64);
+        await savePartImageToOfflineCache(partNum, colorId, resizedDataUrl);
         // ② 上传到 Gitee Parts-img
-        const uploadResult = await uploadPartImageToGitee(partNum, colorId, imageBase64);
+        const uploadResult = await uploadPartImageToGitee(partNum, colorId, resizedDataUrl);
         
         statusEl.textContent = uploadResult.success
             ? '✓ 图片添加成功！'
@@ -3374,6 +3377,31 @@ async function saveImageFromUrl(partNum, colorId) {
         statusEl.textContent = `✗ 保存失败：${e.message}`;
         statusEl.style.color = '#f44336';
     }
+}
+
+// 将图片缩放到 192x192 JPG（居中裁剪为正方形再缩放）
+async function resizeImageTo192(imageDataUrl) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 192;
+                canvas.height = 192;
+                const ctx = canvas.getContext('2d');
+                // 居中裁剪为正方形：取原图宽高的较小值作为正方形边长
+                const size = Math.min(img.width, img.height);
+                const sx = (img.width - size) / 2;
+                const sy = (img.height - size) / 2;
+                ctx.drawImage(img, sx, sy, size, size, 0, 0, 192, 192);
+                resolve(canvas.toDataURL('image/jpeg', 0.92));
+            } catch (e) {
+                reject(e);
+            }
+        };
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = imageDataUrl;
+    });
 }
 
 // 上传本地图片
@@ -3404,13 +3432,16 @@ function uploadLocalImage(partNum, colorId) {
         
         preview.style.display = 'block';
         previewImg.src = imageDataUrl;
-        statusEl.textContent = '⏳ 正在保存图片...';
+        statusEl.textContent = '⏳ 正在处理图片（缩放到192x192）...';
         statusEl.style.color = '#2196F3';
         
+        // 缩放到 192x192 JPG
+        const resizedDataUrl = await resizeImageTo192(imageDataUrl);
+        
         // ① 保存到浏览器离线缓存
-        await savePartImageToOfflineCache(partNum, colorId, imageDataUrl);
+        await savePartImageToOfflineCache(partNum, colorId, resizedDataUrl);
         // ② 上传到 Gitee Parts-img
-        const uploadResult = await uploadPartImageToGitee(partNum, colorId, imageDataUrl);
+        const uploadResult = await uploadPartImageToGitee(partNum, colorId, resizedDataUrl);
         
         statusEl.textContent = uploadResult.success
             ? '✓ 图片上传成功！'
