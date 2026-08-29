@@ -4664,18 +4664,15 @@ async function showPartDetail(part) {
     }
 
     // 检测零件型号是否为别名映射（如 BG 识别型号 4073 → RB 6141）
-    // 若是，取映射到的 RB 标准型号名称，在型号后以绿色括号显示
-    let aliasRbName = '';
+    // 若是，在型号后以绿色括号显示映射到的 RB 标准型号
+    let aliasRbNum = '';
     try {
         const resolvedNum = await resolvePartAlias(part.part_num);
         if (resolvedNum && String(resolvedNum).trim() !== String(part.part_num).trim()) {
-            const rbPart = await getPartByNum(resolvedNum);
-            if (rbPart && rbPart.name) {
-                aliasRbName = rbPart.name;
-            }
+            aliasRbNum = resolvedNum;
         }
     } catch (e) {
-        console.warn('获取别名映射RB名称失败:', e);
+        console.warn('获取别名映射RB型号失败:', e);
     }
 
     // 从RB数据库获取颜色名称（回退到本地颜色）
@@ -4751,7 +4748,7 @@ async function showPartDetail(part) {
             </div>
         </div>
         <div class="pd-row pd-model-row">
-            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span>${aliasRbName ? `<span class="pd-alias-rb-name">（${aliasRbName}）</span>` : ''}</span>
+            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span>${aliasRbNum ? `<span class="pd-alias-rb-num">（${aliasRbNum}）</span>` : ''}</span>
             <span class="pd-status ${isNew ? 'pd-status-new' : 'pd-status-used'}">${isNew ? '新' : '旧'}</span>
         </div>
         <div class="pd-row pd-name-row">
