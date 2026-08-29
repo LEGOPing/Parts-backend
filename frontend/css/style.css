@@ -3036,18 +3036,6 @@ body {
     flex-shrink: 0;
 }
 
-.pd-img-del-btn {
-    border: none;
-    border-radius: 6px;
-    padding: 8px 10px;
-    background: #f44336;
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-    white-space: nowrap;
-    line-height: 1;
-}
-
 .pd-img-change-btn {
     border: none;
     border-radius: 6px;
@@ -3096,6 +3084,14 @@ body {
 
 .pd-model {
     font-weight: 600;
+}
+
+/* 别名映射型号后的 RB 名称（绿色括号） */
+.pd-alias-rb-name {
+    color: #4CAF50;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 2px;
 }
 
 /* 圆形新旧图标 */
