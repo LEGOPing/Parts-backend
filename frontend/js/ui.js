@@ -5175,7 +5175,7 @@ async function manageCustomImage(partNum, colorId) {
             </div>
             <div style="display:flex;gap:8px;">
                 <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">替换图片</button>
-                <button onclick="removeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">删除图片</button>
+                <button onclick="deleteCustomImageWithOptions('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">删除图片</button>
             </div>
         </div>
     `;
@@ -5193,21 +5193,62 @@ function changeCustomImage(partNum, colorId) {
     addCustomImage(partNum, colorId);
 }
 
-// 删除自定义图片（离线缓存 + Gitee Parts-img）
-async function removeCustomImage(partNum, colorId) {
-    if (!confirm('确定要删除自定义图片吗？')) return;
-    
-    // 删除浏览器离线缓存
+// 删除自定义图片：弹窗选择 仅删除离线图片 / 删除 Gitee 图片
+function deleteCustomImageWithOptions(partNum, colorId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'max-width:320px;padding:20px;text-align:center;';
+    box.innerHTML = `
+        <div style="margin-bottom:16px;font-size:16px;font-weight:bold;">选择删除方式</div>
+        <div style="margin-bottom:20px;font-size:14px;color:#888;">${partNum}_${colorId}.jpg</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <button id="del-offline-img" style="padding:12px;border:none;border-radius:8px;background:#ff9800;color:#fff;font-size:14px;cursor:pointer;">仅删除离线图片</button>
+            <button id="del-gitee-img" style="padding:12px;border:none;border-radius:8px;background:#f44336;color:#fff;font-size:14px;cursor:pointer;">删除 Gitee 图片</button>
+            <button id="del-img-cancel" style="padding:10px;border:none;border-radius:8px;background:#666;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+        </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    box.querySelector('#del-offline-img').onclick = () => {
+        overlay.remove();
+        deleteCustomOfflineImage(partNum, colorId);
+    };
+    box.querySelector('#del-gitee-img').onclick = () => {
+        overlay.remove();
+        deleteCustomGiteeImage(partNum, colorId);
+    };
+    box.querySelector('#del-img-cancel').onclick = () => overlay.remove();
+}
+
+// 仅删除离线图片（保留Gitee云端图片），关闭管理弹窗并刷新详情
+async function deleteCustomOfflineImage(partNum, colorId) {
     await deletePartImageFromOfflineCache(partNum, colorId);
-    // 删除 Gitee Parts-img 仓库图片（失败不阻塞本地删除）
-    await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url，避免 getPartImageUrl 回退到旧图
+    showToast('已删除离线图片，下次联网可重新加载');
+    await closeManageModalAndRefresh(partNum, colorId);
+}
+
+// 删除 Gitee 图片 + 离线缓存 + RB 数据库记录，关闭管理弹窗并刷新详情
+async function deleteCustomGiteeImage(partNum, colorId) {
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
     await clearPartImageUrlInRB(partNum, colorId);
-    
+    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
+        showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
+    } else {
+        showToast('图片已删除');
+    }
+    await closeManageModalAndRefresh(partNum, colorId);
+}
+
+// 关闭当前管理弹窗并刷新零件详情
+async function closeManageModalAndRefresh(partNum, colorId) {
     const overlay = document.querySelector('.modal-overlay.active');
     if (overlay) overlay.remove();
-    
-    // 刷新详情
     refreshPartDetailWithCustomImage(partNum, colorId);
 }
 
