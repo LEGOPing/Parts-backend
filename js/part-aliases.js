@@ -215,6 +215,56 @@ async function persistPartAlias(aliasPartNum, rbPartNum) {
     return { ok: rbOK && giteeOK, rbOK, giteeOK, skipped: false };
 }
 
+// 删除一条别名映射：写 RB 离线数据库 + Gitee part_aliases.csv + localStorage
+// 与 persistPartAlias 对称，用于"直接匹配RB（不使用别名）"时需要移除旧别名记录。
+// 返回 { ok, rbOK, giteeOK, skipped }（skipped=true 表示本就不存在该别名）
+async function deletePartAlias(aliasPartNum) {
+    const alias = String(aliasPartNum).trim();
+    if (!alias) {
+        return { ok: true, skipped: true };
+    }
+
+    // 1. 汇总当前完整别名表（以 RB 库现有记录为准）
+    const map = { ...DEFAULT_PART_ALIASES, ...(await getAliasesFromRBDB()) };
+    Object.assign(map, getLocalAliasMap());
+    const existed = Object.prototype.hasOwnProperty.call(map, alias);
+    delete map[alias];
+
+    // 2. 更新 localStorage（兜底，同样移除该键，而非写入"空映射"）
+    try {
+        const localMap = getLocalAliasMap();
+        delete localMap[alias];
+        localStorage.setItem(ALIAS_LOCAL_STORAGE_KEY, JSON.stringify(localMap));
+    } catch (e) {
+        console.warn('[别名]写本地存储失败:', e.message);
+    }
+
+    // 3. 写入 RB 离线数据库（全量）
+    let rbOK = true;
+    try {
+        await saveAliasesToRBDB(map);
+    } catch (e) {
+        rbOK = false;
+        console.warn('[别名]写RB离线库失败:', e.message);
+    }
+
+    // 4. 写回 Gitee part_aliases.csv（全量）
+    let giteeOK = true;
+    if (typeof updatePartAliasesCSV === 'function') {
+        try {
+            await updatePartAliasesCSV(map);
+        } catch (e) {
+            giteeOK = false;
+            console.warn('[别名]写回Gitee CSV失败:', e.message);
+        }
+    }
+
+    // 5. 刷新内存缓存
+    cachedAliases = { ...map };
+
+    return { ok: rbOK && giteeOK, rbOK, giteeOK, skipped: !existed };
+}
+
 // 清除别名缓存（当Gitee数据更新时调用）
 function clearPartAliasesCache() {
     cachedAliases = null;

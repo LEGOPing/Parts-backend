@@ -5039,6 +5039,215 @@ async function blReconfigurePartById(partId) {
     await reconfigurePartBLMatch(part);
 }
 
+// ==================== 批量BL重配：遍历同型号全部记录，不去重列出所有配对供选择 ====================
+// 流程：
+//   1) 输入原型号（如 32209）
+//   2) 遍历系统中该型号全部记录，对每条记录依次用 直接RB / 别名解析 / BL匹配 产出候选配对
+//      （同一型号不同颜色可能得到不同结果），不去重、也不合并为单一"胜出"结果
+//   3) 展示所有候选配对 + 一个"直接匹配RB（删除别名）"选项，由用户选择
+//   4) 按选择更新别名映射文件：删除 / 变更 / 添加
+// 入口：设置-数据管理-RB数据管理-批量BL重配
+function blBatchReconfigure() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'bl-batch-overlay';
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content';
+    sheet.style.maxWidth = '440px';
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    sheet.innerHTML = `
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span class="modal-title" style="font-size:16px;font-weight:600;">批量BL重配</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+        </div>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#666;margin-bottom:8px;">输入原型号（如 32209），将遍历该型号全部记录并列出所有匹配配对：</div>
+            <input type="text" id="bl-batch-num" class="form-input" placeholder="请输入零件型号" style="width:100%;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:15px;box-sizing:border-box;">
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button id="bl-batch-run" style="flex:1;padding:10px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">开始匹配</button>
+            </div>
+            <div id="bl-batch-result" style="margin-top:14px;"></div>
+        </div>
+    `;
+
+    const numInput = sheet.querySelector('#bl-batch-num');
+    const runBtn = sheet.querySelector('#bl-batch-run');
+    const resultEl = sheet.querySelector('#bl-batch-result');
+
+    runBtn.onclick = async () => {
+        const num = numInput.value.trim();
+        if (!num) return;
+        await runBLBatchMatch(num, resultEl);
+    };
+    numInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runBtn.click();
+    });
+}
+
+// 执行批量匹配：遍历该型号全部记录，收集候选配对（不去重）
+async function runBLBatchMatch(num, resultEl) {
+    resultEl.innerHTML = '<div style="color:#888;text-align:center;padding:16px 0;">正在遍历匹配…</div>';
+
+    // 1. 找出系统中所有该型号的记录
+    let records = [];
+    try {
+        const all = await searchParts({ part_num: num });
+        records = (all || []).filter(p => String(p.part_num).trim() === num);
+    } catch (e) {
+        console.warn('[批量BL重配]查询记录失败:', e.message);
+    }
+
+    // 2. 对每条记录收集候选配对（不去重：保留各匹配方式产出的不同结果）
+    const candMap = new Map(); // key = method|rb
+    const addCandidate = (method, methodLabel, rb, colorId) => {
+        const alias = num;
+        if (!rb) return;
+        const key = `${method}|${String(rb).trim()}`;
+        if (candMap.has(key)) {
+            const c = candMap.get(key);
+            c.count++;
+            if (colorId != null && c.colorId == null) c.colorId = colorId;
+        } else {
+            candMap.set(key, {
+                method, methodLabel,
+                alias, rb: String(rb).trim(),
+                colorId: colorId != null ? colorId : null,
+                count: 1
+            });
+        }
+    };
+
+    for (const rec of records) {
+        const colorId = (rec.color_id != null && rec.color_id !== '') ? Number(rec.color_id) : null;
+
+        // direct：直接RB匹配
+        try {
+            const rb = await getPartByNum(num);
+            if (rb) addCandidate('direct', '直接RB匹配', num, colorId);
+        } catch (e) { /* 忽略 */ }
+
+        // alias：别名解析
+        try {
+            const resolved = await resolvePartAlias(num);
+            if (resolved && String(resolved).trim() !== num) {
+                const rb = await getPartByNum(String(resolved).trim());
+                if (rb) addCandidate('alias', '别名映射', String(resolved).trim(), colorId);
+            }
+        } catch (e) { /* 忽略 */ }
+
+        // bl：BL匹配
+        try {
+            let colorName = null;
+            if (colorId != null) {
+                try {
+                    const c = await getColorById(colorId);
+                    if (c && c.name) colorName = c.name;
+                } catch (e2) { /* 忽略 */ }
+            }
+            const m = await matchRBByColorFallback(num, colorName);
+            if (m && m.rbPartNum) {
+                addCandidate('bl', 'BL匹配', String(m.rbPartNum).trim(), (m.colorId != null ? Number(m.colorId) : colorId));
+            }
+        } catch (e) { /* 忽略 */ }
+    }
+
+    const candidates = [...candMap.values()];
+
+    // 3. 无任何候选
+    if (!candidates.length) {
+        resultEl.innerHTML = `
+            <div style="color:#e53935;text-align:center;padding:16px 0;">型号 <b>${num}</b> 未找到可用的匹配配对（直接/别名/BL 均未命中）</div>
+            <div style="color:#999;text-align:center;font-size:12px;">系统中匹配到 <b>${records.length}</b> 条该型号记录</div>
+        `;
+        return;
+    }
+
+    // 4. 渲染候选列表（radio 选择）+ 直接匹配RB（删除别名）选项
+    const cards = candidates.map((c, i) => {
+        const current = c.method === 'alias' ? '（当前该型号已有此别名映射）' : '';
+        const colorPart = c.colorId != null ? `<div style="font-size:11px;color:#999;">颜色ID：${c.colorId}</div>` : '';
+        return `
+            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #E0E0E0;border-radius:8px;margin-bottom:8px;cursor:pointer;background:#FAFAFA;">
+                <input type="radio" name="bl-batch-choice" value="pair:${i}" style="width:16px;height:16px;">
+                <div style="flex:1;">
+                    <div style="font-size:13px;">
+                        <span style="font-weight:600;">${num}</span>
+                        <span style="color:#bbb;"> → </span>
+                        <span style="font-weight:700;color:#2E7D32;">${c.rb}</span>
+                        <span style="font-size:11px;color:#1976D2;margin-left:6px;">${c.methodLabel}</span>${current}
+                    </div>
+                    <div style="font-size:12px;color:#666;">出现在 <b>${c.count}</b> 条该型号记录中${c.rb === num ? '，即直接匹配RB自身' : ''}</div>
+                    ${colorPart}
+                </div>
+            </label>
+        `;
+    }).join('');
+
+    // 直接匹配RB（删除别名）选项
+    const directOption = `
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #CDDC39;border-radius:8px;margin-bottom:8px;cursor:pointer;background:#F9FBE7;">
+            <input type="radio" name="bl-batch-choice" value="direct" style="width:16px;height:16px;">
+            <div style="flex:1;">
+                <div style="font-size:13px;"><span style="font-weight:700;color:#558B2F;">直接匹配RB（${num} → ${num}）</span></div>
+                <div style="font-size:12px;color:#666;">不使用别名映射；若已存在 ${num} 的别名，将同时删除该别名记录</div>
+            </div>
+        </label>
+    `;
+
+    resultEl.innerHTML = `
+        <div style="font-size:12px;color:#999;margin-bottom:8px;">找到 <b>${records.length}</b> 条型号为 <b>${num}</b> 的记录，共 <b>${candidates.length}</b> 种匹配配对（不去重，全部列出），请选择要采用的配对：</div>
+        ${cards}
+        ${directOption}
+        <div style="display:flex;gap:8px;margin-top:12px;">
+            <button id="bl-batch-cancel" style="flex:1;padding:10px;border:none;border-radius:6px;background:#607D8B;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+            <button id="bl-batch-confirm" style="flex:2;padding:10px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">确认并更新别名</button>
+        </div>
+    `;
+
+    const confirmBtn = resultEl.querySelector('#bl-batch-confirm');
+    const cancelBtn = resultEl.querySelector('#bl-batch-cancel');
+    cancelBtn.onclick = () => {
+        resultEl.querySelectorAll('input[name="bl-batch-choice"]').forEach(r => r.checked = false);
+    };
+
+    confirmBtn.onclick = async () => {
+        const checked = resultEl.querySelector('input[name="bl-batch-choice"]:checked');
+        if (!checked) {
+            alert('请先选择一个配对或选择直接匹配RB');
+            return;
+        }
+        confirmBtn.disabled = true;
+        const val = checked.value;
+        try {
+            if (val === 'direct') {
+                // 删除别名映射
+                const r = await deletePartAlias(num);
+                if (r.skipped) {
+                    showToast(`型号 ${num} 本就无别名映射，无需更改`, 2200);
+                } else {
+                    showToast(r.ok ? `已删除别名 ${num}（直接匹配RB）` : `删除别名 ${num} 部分失败`, 2500);
+                }
+            } else {
+                // 采用某一配对 → 新增/变更该别名
+                const idx = Number(val.replace('pair:', ''));
+                const c = candidates[idx];
+                if (!c) { alert('配对数据无效'); return; }
+                const r = await persistPartAlias(c.alias, c.rb);
+                showToast(r.ok ? `已更新别名 ${c.alias} → ${c.rb}` : `更新别名 ${c.alias} → ${c.rb} 部分失败`, 2500);
+            }
+            // 刷新缓存，让后续解析立即生效
+            clearPartAliasesCache();
+        } catch (e) {
+            console.warn('[批量BL重配]更新失败:', e);
+            alert('更新别名失败：' + (e.message || '未知错误'));
+        } finally {
+            confirmBtn.disabled = false;
+        }
+    };
+}
+
 // 匹配型号到 RB：返回 { inputNum, matchedPartNum, method, rbPart, colorId, colorName }
 //   method: 'direct' 直接RB匹配 | 'alias' 别名解析 | 'bl' BL匹配 | null 未命中
 async function matchPartNumToRB(partNum, colorId) {
