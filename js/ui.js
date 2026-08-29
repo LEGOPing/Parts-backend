@@ -2435,58 +2435,21 @@ async function buildFallbackCandidates(bgName, bgColorName) {
     return out;
 }
 
-// 保存别名映射（后端 part_aliases 表 + 刷新前端本地别名缓存）
+// 保存别名映射（写 RB 离线数据库 + Gitee part_aliases.csv + localStorage）
 async function savePartAlias(aliasPartNum, rbPartNum) {
     if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
-    // 1) 持久化到后端 Supabase part_aliases 表
     try {
-        await supabaseRequest('part_aliases', {
-            method: 'POST',
-            headers: { 'Prefer': 'return=minimal' },
-            body: {
-                alias_part_num: String(aliasPartNum),
-                rb_part_num: String(rbPartNum),
-                remark: 'BG识别兑底匹配自动建立'
-            }
-        });
-        console.log(`[兑底]别名已写入后端: ${aliasPartNum} → ${rbPartNum}`);
+        const result = await persistPartAlias(aliasPartNum, rbPartNum);
+        console.log(`[别名]已保存: ${aliasPartNum} → ${rbPartNum}`, result);
     } catch (e) {
-        console.warn('[兑底]写入后端别名失败:', e.message);
-    }
-    // 2) 持久化到本地 localStorage（跨重启可靠，后端失败时也能兜底）
-    try {
-        persistAliasToLocal(aliasPartNum, rbPartNum);
-    } catch (e) {
-        console.warn('[兑底]写入本地别名失败:', e.message);
-    }
-    // 3) 刷新/注入前端本地别名缓存（本次会话立即生效）
-    try {
-        const aliases = await getAllPartAliases();
-        if (aliases) aliases[String(aliasPartNum)] = String(rbPartNum);
-    } catch (e) {
-        console.warn('[兑底]刷新前端别名缓存失败:', e.message);
+        console.warn('[别名]保存失败:', e.message);
     }
 }
 
-// 检查并确保别名映射已持久化到线上（Supabase）
-// 如果线上不存在该别名映射，则保存；已存在则跳过
+// 确保别名映射已持久化到线上（Gitee CSV + RB离线库）
+// persistPartAlias 内部做合并写回，同一映射再次保存直接覆盖，幂等无需去重判断
 async function ensureAliasPersisted(aliasPartNum, rbPartNum) {
     if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
-    try {
-        // 查询线上是否已存在该别名映射
-        const existing = await supabaseRequest('part_aliases', {
-            select: 'id',
-            filters: { alias_part_num: `eq.${String(aliasPartNum)}` },
-        });
-        // 如果线上已有记录（数组非空），无需重复保存
-        if (Array.isArray(existing) && existing.length > 0) {
-            console.log(`[别名]线上已存在映射: ${aliasPartNum} → ${rbPartNum}`);
-            return;
-        }
-    } catch (e) {
-        console.warn('[别名]查询线上别名失败，将尝试重新保存:', e.message);
-    }
-    // 线上不存在或查询失败，尝试保存
     await savePartAlias(aliasPartNum, rbPartNum);
 }
 
@@ -5291,63 +5254,51 @@ async function applyRematchToPart(part, result) {
 }
 
 // 别名映射：查记录 → 无则新增 / 有则比较（相同返回 / 不同让用户选择后更新）
+// 数据源统一为 RB 离线数据库别名表；更新时通过 persistPartAlias 同时写回 RB库 + Gitee CSV
 async function handleAliasAfterRematch(aliasNum, rbNum) {
     if (!aliasNum || !rbNum || aliasNum === rbNum) {
         console.log('[BL重配] 直接匹配RB，无需别名映射');
-        return;
+        return true;
     }
 
+    // 查询现有记录（RB 离线数据库 / 历史 localStorage，代替 Supabase）
     let existing = null;
     try {
-        const rows = await supabaseRequest('part_aliases', {
-            select: 'id,alias_part_num,rb_part_num,remark',
-            filters: { alias_part_num: `eq.${aliasNum}` }
-        });
-        existing = Array.isArray(rows) && rows.length ? rows[0] : null;
+        const aliases = await getAllPartAliases();
+        if (aliases && aliases[aliasNum]) {
+            existing = { alias_part_num: aliasNum, rb_part_num: String(aliases[aliasNum]) };
+        }
     } catch (e) {
         console.warn('[BL重配]查询别名记录失败:', e.message);
     }
 
     // 无记录 → 添加保存
     if (!existing) {
-        if (typeof savePartAlias === 'function') {
-            await savePartAlias(aliasNum, rbNum);
-        }
-        console.log(`[BL重配]已新增别名: ${aliasNum} → ${rbNum}`);
-        return;
+        const r = await persistPartAlias(aliasNum, rbNum);
+        console.log(`[BL重配]已新增别名: ${aliasNum} → ${rbNum}`, r);
+        return !!r.ok;
     }
 
     // 有记录 → 比较
     const existingRb = String(existing.rb_part_num).trim();
     if (existingRb === rbNum) {
         console.log('[BL重配]别名已有且一致，无需更新');
-        return; // 相同 → 返回
+        return true; // 相同 → 返回
     }
 
     // 不同 → 对比后让用户选择确认，再更新
     const choice = await showAliasDiffConfirm(aliasNum, existingRb, rbNum);
     if (choice !== 'update') {
         console.log('[BL重配]用户保持原别名，未更新');
-        return;
+        return true;
     }
-    try {
-        await supabaseRequest('part_aliases', {
-            method: 'PATCH',
-            filters: { id: existing.id },
-            body: { rb_part_num: rbNum }
-        });
-        if (typeof persistAliasToLocal === 'function') {
-            persistAliasToLocal(aliasNum, rbNum);
-        }
-        try {
-            const aliases = await getAllPartAliases();
-            if (aliases) aliases[String(aliasNum)] = String(rbNum);
-        } catch (e) { /* 忽略 */ }
-        console.log(`[BL重配]已更新别名: ${aliasNum} → ${rbNum}`);
-    } catch (e) {
-        console.warn('[BL重配]更新别名失败:', e.message);
+    const r = await persistPartAlias(aliasNum, rbNum);
+    console.log(`[BL重配]已更新别名: ${aliasNum} → ${rbNum}`, r);
+    if (!r.ok) {
         alert('更新别名映射失败');
+        return false;
     }
+    return true;
 }
 
 // 别名差异对比弹窗：返回 'update' 或 'keep'
@@ -6489,6 +6440,14 @@ async function loadRBOnStartup() {
             console.warn('BL-parts 可选加载失败（不影响RB主库）:', error.message);
         }
 
+        // 加载零件别名映射（part_aliases.csv → RB离线数据库 rb_part_aliases 表）
+        try {
+            const aliases = await loadPartAliasesFromGiteeToRBDB();
+            console.log(`零件别名映射加载成功: ${Object.keys(aliases).length} 条`);
+        } catch (error) {
+            console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
+        }
+
         if (successCount === csvFiles.length) {
             console.log('RB数据库建立成功');
             showRBStatusHint('rb-ready');
@@ -7017,6 +6976,17 @@ async function updateRB() {
         } catch (error) {
             console.warn('BL-parts 可选加载失败:', error.message);
             importResults['bl_parts'] = false;
+        }
+
+        // 加载零件别名映射（part_aliases.csv → RB离线数据库 rb_part_aliases 表）
+        try {
+            updateProgress(0.91, '读取别名映射数据...', 'part_aliases.csv');
+            const aliases = await loadPartAliasesFromGiteeToRBDB();
+            importResults['part_aliases'] = true;
+            updateProgress(0.95, '别名映射 - 导入成功', `${Object.keys(aliases).length}条`);
+        } catch (error) {
+            console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
+            importResults['part_aliases'] = false;
         }
 
         // 显示结果
