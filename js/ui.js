@@ -4166,6 +4166,23 @@ async function initializeApp() {
 }
 
 // 启动时自动建立 RB 数据库（如果不存在）
+// 从 Gitee parts-rb 仓库导入 part_aliases.csv 到本地 RB 离线库（rb_aliases 表）
+// 别名解析（resolvePartAlias）即基于 RB 离线库，不依赖 Supabase。失败不阻塞主流程。
+async function importPartAliasesFromGitee() {
+    try {
+        const csvText = await fetchRBFile(PART_ALIASES_CSV);
+        if (!csvText) return { success: false, error: '缺少 part_aliases.csv' };
+        const { data } = parseRBCSV(csvText);
+        await importRBData(RB_STORES.PART_ALIASES, convertRBData('part_aliases', data));
+        clearPartAliasesCache();
+        console.log(`别名数据导入成功: ${data.length} 条`);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.warn('导入 part_aliases.csv 失败:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
 async function loadRBOnStartup() {
     try {
         showRBStatusHint('rb-loading');
@@ -4188,6 +4205,9 @@ async function loadRBOnStartup() {
             } catch (e) {
                 console.warn('补充加载重量数据失败:', e.message);
             }
+            // 别名:随每次启动同步 part_aliases.csv（非阻塞，失败不影响 RB 主库）
+            try { await importPartAliasesFromGitee(); }
+            catch (e) { console.warn('补充加载别名数据失败:', e.message); }
             showRBStatusHint('rb-ready');
             return;
         }
@@ -4202,7 +4222,8 @@ async function loadRBOnStartup() {
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
             { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
-            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' },
+            { name: 'part_aliases.csv', store: RB_STORES.PART_ALIASES, schemaKey: 'part_aliases', label: '别名' }
         ];
 
         let successCount = 0;
@@ -4556,7 +4577,8 @@ async function updateRB() {
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
             { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
-            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' },
+            { name: 'part_aliases.csv', store: RB_STORES.PART_ALIASES, schemaKey: 'part_aliases', label: '别名' }
         ];
 
         let successCount = 0;
@@ -4625,6 +4647,7 @@ async function updateRB() {
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += `<div>BL零件: ${stats.rb_bl_parts || 0} 条</div>`;
+            statsHtml += `<div>别名: ${stats.rb_aliases || 0} 条</div>`;
             statsHtml += '</div>';
         }
 

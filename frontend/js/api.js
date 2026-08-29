@@ -447,6 +447,10 @@ const RB_SCHEMAS = {
     bl_parts: {
         numeric: ['CODENAME'],
         string: ['ITEMTYPE', 'ITEMID', 'COLOR']
+    },
+    // 零件别名表（part_aliases.csv）：alias_part_num（别名/BG型号）→ rb_part_num（RB标准型号）
+    part_aliases: {
+        string: ['alias_part_num', 'rb_part_num', 'remark']
     }
 };
 

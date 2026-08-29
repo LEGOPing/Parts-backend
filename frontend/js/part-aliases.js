@@ -3,10 +3,12 @@
 // 匹配不到的问题。例如：BG 返回 4073，但 RB 数据库中该零件编号为 6141，
 // 两者是同一个零件，通过别名表可以将 4073 映射到 6141。
 //
-// 别名数据来源：Gitee parts-rb 仓库的 part_aliases.json（在线优先）
-// 本地嵌入的数据作为离线回退。
+// 别名数据来源：Gitee parts-rb 仓库的 part_aliases.csv（可在系统外编辑）
+// 系统在"加载/更新 RB 数据库"时把 part_aliases.csv 写入本地 RB 离线库（rb_aliases 表），
+// 别名解析优先读取 RB 离线库，不依赖 Supabase 系统数据库。
+// 本地嵌入的数据 + localStorage 仅作离线 / 跨设备回退。
 
-const PART_ALIASES_FILE = 'part_aliases.json';
+const PART_ALIASES_CSV = 'part_aliases.csv';
 
 // 本地嵌入的默认别名数据（离线回退）
 // 格式：{ "alias_part_num": "rb_part_num" }
@@ -21,51 +23,32 @@ const DEFAULT_PART_ALIASES = {
     // 3063b 和 85080 是外表相同的零件，这里不做别名映射，而是通过同名零件消歧处理
 };
 
-// 从 Gitee 零件别名 JSON 文件加载别名数据
-// 用 Gitee API + Token 获取（与 fetchRBFile 相同的方式）
-async function fetchPartAliasesFromGitee() {
+// 从 Gitee parts-rb 仓库读取 part_aliases.csv（用 Gitee API + Token，与 fetchRBFile 相同的方式），
+// 解析为 { alias_part_num: rb_part_num }。文件不存在或解析失败返回 null。
+async function fetchPartAliasesCsvFromGitee() {
+    const csvText = await fetchRBFile(PART_ALIASES_CSV);
+    if (!csvText) return null;
     try {
-        const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
-        if (token) {
-            const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/${PART_ALIASES_FILE}?ref=main`;
-            const response = await fetch(apiUrl, {
-                headers: { 'Authorization': `token ${token}` }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                if (data.content) {
-                    const binaryString = atob(data.content);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    const text = new TextDecoder('utf-8').decode(bytes);
-                    const json = JSON.parse(text);
-                    // 支持两种格式：数组 [{alias, rb}] 或对象 {alias: rb}
-                    if (Array.isArray(json)) {
-                        const map = {};
-                        json.forEach(item => {
-                            map[item.alias_part_num || item.alias] = item.rb_part_num || item.rb;
-                        });
-                        return map;
-                    }
-                    return json;
-                }
+        const { data } = parseRBCSV(csvText);
+        const map = {};
+        (data || []).forEach(r => {
+            if (r.alias_part_num && r.rb_part_num) {
+                map[String(r.alias_part_num).trim()] = String(r.rb_part_num).trim();
             }
-        }
+        });
+        return Object.keys(map).length ? map : null;
     } catch (error) {
-        console.warn('从Gitee加载别名数据失败，使用本地数据:', error.message);
+        console.warn('解析 part_aliases.csv 失败:', error.message);
+        return null;
     }
-    return null;
 }
 
-// 获取完整的别名映射表（在线优先，离线回退本地）
+// 获取完整的别名映射表（RB 离线库优先 + 本地缺省表 + localStorage 兜底）
 let cachedAliases = null;
 
 // ==================== 本地持久化（localStorage）====================
-// BL匹配/BG兑底自动建立的别名会写入 localStorage，实现跨浏览器会话（重启）可靠持久化。
-// 这样即使后端 Supabase part_aliases 表写入失败（无权限/网络），本机别名也不会丢失，
-// 重启后 resolvePartAlias 仍能正确解析（如 2431p52 → 2431pr0017）。
+// BG兑底/BL匹配自动建立的别名会写入 localStorage，实现跨浏览器会话（重启）可靠持久化，
+// 即使 RB 离线库尚未加载/更新，本机别名也不会丢失（如 2431p52 → 2431pr0017）。
 const ALIAS_LOCAL_STORAGE_KEY = 'bl_alias_map';
 
 // 从 localStorage 读取本地别名映射 { aliasPartNum: rbPartNum }
@@ -78,7 +61,7 @@ function getLocalAliasMap() {
     }
 }
 
-// 将一条别名写入 localStorage（BL匹配/BG兑底建立的别名，优先级最高）
+// 将一条别名写入 localStorage（BG兑底/BL匹配建立的别名，优先级最高）
 function persistAliasToLocal(aliasPartNum, rbPartNum) {
     try {
         const map = getLocalAliasMap();
@@ -94,43 +77,21 @@ function persistAliasToLocal(aliasPartNum, rbPartNum) {
 async function getAllPartAliases() {
     if (cachedAliases) return cachedAliases;
 
-    // 1. 先从 Gitee 加载
-    const giteeAliases = await fetchPartAliasesFromGitee();
-    if (giteeAliases && Object.keys(giteeAliases).length > 0) {
-        cachedAliases = giteeAliases;
-    } else {
-        // 回退到本地嵌入数据
-        cachedAliases = { ...DEFAULT_PART_ALIASES };
-    }
-
-    // 2. 再从后端 Supabase part_aliases 表加载（兑底匹配自动建立的别名）
-    //    这些别名是用户通过「拍照识别 → 兑底匹配」生成的
-    try {
-        const supabaseAliases = await supabaseRequest('part_aliases', {
-            select: 'alias_part_num,rb_part_num',
-        });
-        if (Array.isArray(supabaseAliases)) {
-            for (const row of supabaseAliases) {
-                if (row.alias_part_num && row.rb_part_num) {
-                    cachedAliases[String(row.alias_part_num)] = String(row.rb_part_num);
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('[别名]从后端加载别名失败:', e.message);
-    }
-
-    // 3. 最后应用 localStorage 本地别名（BL匹配/BG兑底自动建立的，优先级最高）
-    //    覆盖 Gitee/后端，确保本机建立的别名跨重启仍生效
+    const map = {};
+    // 1. RB 离线库（来自 Gitee part_aliases.csv，随"加载/更新RB"写入 rb_aliases 表）
+    const rbAliases = await getAllPartAliasesFromRB();
+    if (rbAliases && Object.keys(rbAliases).length > 0) Object.assign(map, rbAliases);
+    // 2. 本地嵌入缺省表（离线兜底）
+    Object.assign(map, DEFAULT_PART_ALIASES);
+    // 3. localStorage 本机别名（BG兑底/BL匹配自动建立，优先级最高）
     const localMap = getLocalAliasMap();
-    if (localMap && Object.keys(localMap).length > 0) {
-        Object.assign(cachedAliases, localMap);
-    }
+    if (localMap && Object.keys(localMap).length > 0) Object.assign(map, localMap);
 
+    cachedAliases = map;
     return cachedAliases;
 }
 
-// 清除别名缓存（当Gitee数据更新时调用）
+// 清除别名缓存（RB 离线库更新时调用，使新别名立即生效）
 function clearPartAliasesCache() {
     cachedAliases = null;
 }
@@ -167,6 +128,71 @@ async function getAliasesForRBPart(rbPartNum) {
         console.warn('查询RB零件别名失败:', error.message);
     }
     return results;
+}
+
+// 将单条别名持久化到 Gitee parts-rb 仓库的 part_aliases.csv（共享、可在系统外编辑）
+// 按 alias_part_num 去重：已存在则更新该行，否则追加。返回 { success } 或 { success:false, error }。
+async function savePartAliasToGiteeCsv(aliasPartNum, rbPartNum) {
+    const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!token) return { success: false, error: '缺少 Gitee Token' };
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/${PART_ALIASES_CSV}`;
+    const alias = String(aliasPartNum).trim();
+    const rb = String(rbPartNum).trim();
+
+    const csvEscape = (v) => (v && (v.includes(',') || v.includes('"') || v.includes('\n')))
+        ? '"' + v.replace(/"/g, '""') + '"' : v;
+
+    try {
+        // 1) 读取现有 CSV 与 SHA
+        let text = 'alias_part_num,rb_part_num,remark\n';
+        let sha = null;
+        const checkResp = await fetch(`${apiUrl}?ref=main`, { headers: { 'Authorization': `token ${token}` } });
+        if (checkResp.ok) {
+            const existing = await checkResp.json();
+            sha = existing.sha;
+            if (existing.content) {
+                const bin = atob(existing.content);
+                text = new TextDecoder('utf-8').decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+            }
+        }
+
+        // 2) 按 alias_part_num 去重：已存在则更新该行，否则追加新行
+        let found = false;
+        const lines = text.split(/\r?\n/);
+        const headerIdx = lines.findIndex(l => l.trim().toLowerCase().startsWith('alias_part_num'));
+        for (let i = headerIdx + 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            if (parseRBCSVLine(lines[i])[0].trim() === alias) {
+                lines[i] = `${csvEscape(alias)},${csvEscape(rb)},BG识别兑底匹配自动建立`;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            lines.push(`${csvEscape(alias)},${csvEscape(rb)},BG识别兑底匹配自动建立`);
+        }
+        const newText = lines.join('\n');
+
+        // 3) 编码并推送（POST 新建 / PUT 更新）
+        const contentB64 = btoa(unescape(encodeURIComponent(newText)));
+        const body = {
+            message: `feat: 添加零件别名 ${alias} → ${rb} [skip ci]`,
+            content: contentB64,
+            branch: 'main'
+        };
+        if (sha) body.sha = sha;
+        const resp = await fetch(apiUrl, {
+            method: sha ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `token ${token}` },
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+        console.log(`[别名]已写入 Gitee part_aliases.csv: ${alias} → ${rb}`);
+        return { success: true };
+    } catch (e) {
+        console.warn('[别名]写入 Gitee part_aliases.csv 失败:', e.message);
+        return { success: false, error: e.message };
+    }
 }
 
 // ==================== 颜色名称 → 颜色ID 匹配 ====================

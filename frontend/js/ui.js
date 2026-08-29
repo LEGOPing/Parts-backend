@@ -2424,58 +2424,54 @@ async function buildFallbackCandidates(bgName, bgColorName) {
     return out;
 }
 
-// 保存别名映射（后端 part_aliases 表 + 刷新前端本地别名缓存）
+// 保存别名映射（写入本地 RB 离线库 + localStorage + Gitee part_aliases.csv）
+// 别名解析基于 RB 离线库，不再依赖 Supabase 系统数据库。
 async function savePartAlias(aliasPartNum, rbPartNum) {
     if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
-    // 1) 持久化到后端 Supabase part_aliases 表
+    aliasPartNum = String(aliasPartNum).trim();
+    rbPartNum = String(rbPartNum).trim();
+    // 1) 持久化到本地 RB 离线库（rb_aliases 表，别名解析直接基于此）
     try {
-        await supabaseRequest('part_aliases', {
-            method: 'POST',
-            headers: { 'Prefer': 'return=minimal' },
-            body: {
-                alias_part_num: String(aliasPartNum),
-                rb_part_num: String(rbPartNum),
-                remark: 'BG识别兑底匹配自动建立'
-            }
-        });
-        console.log(`[兑底]别名已写入后端: ${aliasPartNum} → ${rbPartNum}`);
+        await putPartAliasToRB(aliasPartNum, rbPartNum);
     } catch (e) {
-        console.warn('[兑底]写入后端别名失败:', e.message);
+        console.warn('[兑底]写入RB离线库失败:', e.message);
     }
-    // 2) 持久化到本地 localStorage（跨重启可靠，后端失败时也能兜底）
+    // 2) 持久化到本地 localStorage（跨重启兜底）
     try {
         persistAliasToLocal(aliasPartNum, rbPartNum);
     } catch (e) {
         console.warn('[兑底]写入本地别名失败:', e.message);
     }
-    // 3) 刷新/注入前端本地别名缓存（本次会话立即生效）
+    // 3) 同步到 Gitee part_aliases.csv（共享、可在系统外编辑）
+    try {
+        await savePartAliasToGiteeCsv(aliasPartNum, rbPartNum);
+    } catch (e) {
+        console.warn('[兑底]写入Gitee别名失败:', e.message);
+    }
+    // 4) 刷新/注入前端本地别名缓存（本次会话立即生效）
     try {
         const aliases = await getAllPartAliases();
-        if (aliases) aliases[String(aliasPartNum)] = String(rbPartNum);
+        if (aliases) aliases[aliasPartNum] = rbPartNum;
     } catch (e) {
         console.warn('[兑底]刷新前端别名缓存失败:', e.message);
     }
 }
 
-// 检查并确保别名映射已持久化到线上（Supabase）
-// 如果线上不存在该别名映射，则保存；已存在则跳过
+// 检查并确保别名映射已持久化到线上（Gitee part_aliases.csv + RB离线库）
+// 若 RB 离线库中已存在且一致则跳过；否则保存
 async function ensureAliasPersisted(aliasPartNum, rbPartNum) {
     if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
+    aliasPartNum = String(aliasPartNum).trim();
+    rbPartNum = String(rbPartNum).trim();
     try {
-        // 查询线上是否已存在该别名映射
-        const existing = await supabaseRequest('part_aliases', {
-            select: 'id',
-            filters: { alias_part_num: `eq.${String(aliasPartNum)}` },
-        });
-        // 如果线上已有记录（数组非空），无需重复保存
-        if (Array.isArray(existing) && existing.length > 0) {
-            console.log(`[别名]线上已存在映射: ${aliasPartNum} → ${rbPartNum}`);
+        const known = await resolvePartAliasFromRB(aliasPartNum);
+        if (known && known.trim() === rbPartNum) {
+            console.log(`[别名]RB离线库已存在映射: ${aliasPartNum} → ${rbPartNum}`);
             return;
         }
     } catch (e) {
-        console.warn('[别名]查询线上别名失败，将尝试重新保存:', e.message);
+        console.warn('[别名]查询RB离线库失败，将尝试保存:', e.message);
     }
-    // 线上不存在或查询失败，尝试保存
     await savePartAlias(aliasPartNum, rbPartNum);
 }
 
@@ -5928,6 +5924,23 @@ async function initializeApp() {
 }
 
 // 启动时自动建立 RB 数据库（如果不存在）
+// 从 Gitee parts-rb 仓库导入 part_aliases.csv 到本地 RB 离线库（rb_aliases 表）
+// 别名解析（resolvePartAlias）即基于 RB 离线库，不依赖 Supabase。失败不阻塞主流程。
+async function importPartAliasesFromGitee() {
+    try {
+        const csvText = await fetchRBFile(PART_ALIASES_CSV);
+        if (!csvText) return { success: false, error: '缺少 part_aliases.csv' };
+        const { data } = parseRBCSV(csvText);
+        await importRBData(RB_STORES.PART_ALIASES, convertRBData('part_aliases', data));
+        clearPartAliasesCache();
+        console.log(`别名数据导入成功: ${data.length} 条`);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.warn('导入 part_aliases.csv 失败:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
 async function loadRBOnStartup() {
     try {
         showRBStatusHint('rb-loading');
@@ -5950,6 +5963,9 @@ async function loadRBOnStartup() {
             } catch (e) {
                 console.warn('补充加载重量数据失败:', e.message);
             }
+            // 别名:随每次启动同步 part_aliases.csv（非阻塞，失败不影响 RB 主库）
+            try { await importPartAliasesFromGitee(); }
+            catch (e) { console.warn('补充加载别名数据失败:', e.message); }
             showRBStatusHint('rb-ready');
             return;
         }
@@ -5964,7 +5980,8 @@ async function loadRBOnStartup() {
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
             { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
-            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' },
+            { name: 'part_aliases.csv', store: RB_STORES.PART_ALIASES, schemaKey: 'part_aliases', label: '别名' }
         ];
 
         let successCount = 0;
@@ -6474,7 +6491,8 @@ async function updateRB() {
             { name: 'elements.csv', store: RB_STORES.ELEMENTS, schemaKey: 'elements', label: '元素' },
             { name: 'inventory_parts.csv', store: RB_STORES.INVENTORY_PARTS, schemaKey: 'inventory_parts', label: '库存' },
             { name: 'part_relationships.csv', store: RB_STORES.PART_RELATIONSHIPS, schemaKey: 'part_relationships', label: '关系' },
-            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' }
+            { name: 'BL-parts.csv', store: RB_STORES.BL_PARTS, schemaKey: 'bl_parts', label: 'BL零件' },
+            { name: 'part_aliases.csv', store: RB_STORES.PART_ALIASES, schemaKey: 'part_aliases', label: '别名' }
         ];
 
         let successCount = 0;
@@ -6564,6 +6582,7 @@ async function updateRB() {
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
+            statsHtml += `<div>别名: ${stats.rb_aliases || 0} 条</div>`;
             statsHtml += '</div>';
         }
 

@@ -1,5 +1,5 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 3;
+const RB_DB_VERSION = 4;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -9,7 +9,9 @@ const RB_STORES = {
     PART_RELATIONSHIPS: 'rb_part_relationships',
     PARTS: 'rb_parts',
     WEIGHTS: 'rb_weights',
-    BL_PARTS: 'rb_bl_parts'
+    BL_PARTS: 'rb_bl_parts',
+    // 零件别名表（part_aliases.csv）：alias_part_num → rb_part_num，随"加载/更新RB"写入
+    PART_ALIASES: 'rb_aliases'
 };
 
 const RB_STORE_KEYS = {
@@ -20,7 +22,8 @@ const RB_STORE_KEYS = {
     'rb_inventory_parts': 'inventory_parts',
     'rb_part_relationships': 'part_relationships',
     'rb_weights': 'weights',
-    'rb_bl_parts': 'bl_parts'
+    'rb_bl_parts': 'bl_parts',
+    'rb_aliases': 'part_aliases'
 };
 
 let rbDbInstance = null;
@@ -64,6 +67,10 @@ function openRBDatabase() {
             }
             if (!db.objectStoreNames.contains(RB_STORES.BL_PARTS)) {
                 db.createObjectStore(RB_STORES.BL_PARTS, { autoIncrement: true });
+            }
+            // rb_aliases：零件别名表（alias_part_num 唯一主键，供 resolvePartAlias 离线解析）
+            if (!db.objectStoreNames.contains(RB_STORES.PART_ALIASES)) {
+                db.createObjectStore(RB_STORES.PART_ALIASES, { keyPath: 'alias_part_num' });
             }
         };
 
@@ -180,7 +187,8 @@ async function getRBStats() {
             'rb_inventory_parts': RB_STORES.INVENTORY_PARTS,
             'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
             'rb_weights': RB_STORES.WEIGHTS,
-            'rb_bl_parts': RB_STORES.BL_PARTS
+            'rb_bl_parts': RB_STORES.BL_PARTS,
+            'rb_aliases': RB_STORES.PART_ALIASES
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -331,7 +339,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
-        'bl_parts': RB_STORES.BL_PARTS
+        'bl_parts': RB_STORES.BL_PARTS,
+        'part_aliases': RB_STORES.PART_ALIASES
     };
     
     const results = {};
@@ -378,7 +387,8 @@ async function exportRBDatabaseToJSON() {
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
-        'bl_parts': RB_STORES.BL_PARTS
+        'bl_parts': RB_STORES.BL_PARTS,
+        'part_aliases': RB_STORES.PART_ALIASES
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
@@ -909,4 +919,52 @@ async function importWeightsFromJSON(weightsJson, onProgress) {
         console.error('导入重量数据失败:', error);
         return { success: false, count: 0, error: error.message };
     }
+}
+
+// ===== 零件别名（rb_aliases，来自 Gitee part_aliases.csv）=====
+
+// 读取 RB 离线库中全部别名，返回 { alias_part_num: rb_part_num }
+async function getAllPartAliasesFromRB() {
+    try {
+        const rows = await getAll(RB_STORES.PART_ALIASES);
+        const map = {};
+        (rows || []).forEach(r => {
+            if (r && r.alias_part_num) {
+                map[String(r.alias_part_num).trim()] = String(r.rb_part_num).trim();
+            }
+        });
+        return map;
+    } catch (error) {
+        console.error('读取RB别名表失败:', error.message);
+        return {};
+    }
+}
+
+// 从 RB 离线库按别名查询标准型号；命中返回 rb_part_num，未命中返回 null
+async function resolvePartAliasFromRB(partNum) {
+    if (!partNum) return null;
+    const cleanNum = String(partNum).trim();
+    try {
+        const row = await getByKey(RB_STORES.PART_ALIASES, cleanNum);
+        return (row && row.rb_part_num) ? String(row.rb_part_num).trim() : null;
+    } catch (error) {
+        console.error('查询RB别名失败:', error.message);
+        return null;
+    }
+}
+
+// 将单条别名写入 RB 离线库（put，覆盖同别名记录），用于兑底匹配建立别名后本次立即生效
+async function putPartAliasToRB(aliasPartNum, rbPartNum) {
+    await openRBDatabase();
+    if (!rbDbInstance) throw new Error('RB数据库未初始化');
+    return new Promise((resolve, reject) => {
+        const tx = rbDbInstance.transaction(RB_STORES.PART_ALIASES, 'readwrite');
+        const store = tx.objectStore(RB_STORES.PART_ALIASES);
+        store.put({
+            alias_part_num: String(aliasPartNum).trim(),
+            rb_part_num: String(rbPartNum).trim()
+        });
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = (event) => reject(event.target.error);
+    });
 }
