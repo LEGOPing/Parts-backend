@@ -683,6 +683,13 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
         let response;
         if (imageData instanceof Response) {
+            // 拒绝缓存不透明响应（no-cors 抓取得到，status 0）和非成功状态码：
+            // 这类响应无法被可靠重放为可渲染的图片，存入会污染离线缓存，
+            // 导致 Service Worker 缓存优先时一直返回坏图（详见零件图"加载失败/暂无图片"问题）
+            if (imageData.type === 'opaque' || !imageData.ok) {
+                console.warn('拒绝缓存不可用的图片响应:', imageData.type, imageData.status);
+                return false;
+            }
             response = imageData;
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
@@ -712,7 +719,17 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
 async function getPartImageFromOfflineCache(partNum, colorId) {
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
-        return await cache.match(buildPartsImgUrl(partNum, colorId));
+        const url = buildPartsImgUrl(partNum, colorId);
+        const entry = await cache.match(url);
+        // 自愈：不透明（no-cors）或非成功状态的缓存条目不透明/无法渲染，
+        // 若直接返回会被 Service Worker 缓存优先命中，导致图片"加载失败/暂无图片"。
+        // 这里删除坏条目并返回 null，让上层回退到 RB 数据库好图。
+        if (entry && (entry.type === 'opaque' || !entry.ok)) {
+            console.warn('离线缓存条目不可用，删除:', url, entry.type, entry.status);
+            await cache.delete(url);
+            return null;
+        }
+        return entry || null;
     } catch (error) {
         return null;
     }
