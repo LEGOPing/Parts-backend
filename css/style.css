@@ -3086,8 +3086,8 @@ body {
     font-weight: 600;
 }
 
-/* 别名映射型号后的 RB 名称（绿色括号） */
-.pd-alias-rb-name {
+/* 别名映射型号后的 RB 标准型号（绿色括号） */
+.pd-alias-rb-num {
     color: #4CAF50;
     font-size: 12px;
     font-weight: 600;
