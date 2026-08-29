@@ -6859,6 +6859,216 @@ async function doSplitUploadRB(file) {
     }
 }
 
+// 别名映射：遍历离线缓冲区（IndexedDB RB_Database）的 BL-parts 表，
+// 用 CODENAME 匹配 elements 表 element_id 得到 RB 型号 part_num，与 ITEMID 比对；
+// 相同则直接匹配无需处理，不同则生成 (ITEMID, part_num) 别名对 →
+// 去重（ITEMID 与 part_num 同时相同）→ 写入离线缓冲区临时文件 AL.json →
+// 确认后合并写入 Gitee parts-rb 仓库 part_aliases.csv（跳过已有）→ 提示执行"更新RB"
+async function generateAliasMapping() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 440px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">别名映射</span>
+            </div>
+            <div class="modal-body">
+                <div id="al-progress" style="padding: 5px 0;">
+                    <div class="rb-progress-bar" style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; margin: 10px 0;">
+                        <div id="al-progress-fill" style="background: #9C27B0; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="al-progress-text" style="font-size: 14px; color: #666; margin-top: 10px;">准备分析...</div>
+                    <div id="al-progress-detail" style="font-size: 12px; color: #999; margin-top: 5px;"></div>
+                </div>
+                <div id="al-result" style="display: none;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const updateProgress = (percent, text, detail) => {
+        const fill = document.getElementById('al-progress-fill');
+        const textEl = document.getElementById('al-progress-text');
+        const detailEl = document.getElementById('al-progress-detail');
+        if (fill) fill.style.width = Math.round(percent * 100) + '%';
+        if (text && textEl) textEl.textContent = text;
+        if (detail && detailEl) detailEl.textContent = detail;
+    };
+
+    try {
+        // 1. 读取离线缓冲区（IndexedDB RB_Database）的 BL-parts 与 elements 表
+        updateProgress(0.05, '读取离线 BL-parts / elements 数据...', 'RB_Database');
+        const [blParts, elements] = await Promise.all([
+            getAll(RB_STORES.BL_PARTS).catch(() => []),
+            getAll(RB_STORES.ELEMENTS).catch(() => [])
+        ]);
+        if (!blParts.length) throw new Error('离线数据库无 BL-parts 数据，请先点击"更新RB"导入');
+        if (!elements.length) throw new Error('离线数据库无 elements 数据，请先点击"更新RB"导入');
+
+        // 2. 构建 element_id → part_num 映射（element_id 为数字主键）
+        updateProgress(0.2, '构建 element_id → part_num 映射...', `${elements.length} 条`);
+        const elMap = new Map();
+        for (const el of elements) {
+            if (el.element_id != null && el.part_num != null) elMap.set(el.element_id, String(el.part_num).trim());
+        }
+
+        // 3. 遍历 BL-parts：CODENAME → element_id → part_num，与 ITEMID 比对
+        updateProgress(0.35, '遍历 BL-parts 匹配 RB 型号...', `${blParts.length} 条`);
+        const alPairs = [];
+        let directMatched = 0, noMatch = 0;
+        for (const row of blParts) {
+            const itemId = String(row.ITEMID == null ? '' : row.ITEMID).trim();
+            if (!itemId) continue;
+            // CODENAME 为数字字符串（对应 element_id 数字主键），兼容号码边界/前导零
+            const rawCode = String(row.CODENAME == null ? '' : row.CODENAME).trim();
+            if (rawCode === '') { noMatch++; continue; }
+            const numCode = Number(rawCode);
+            const elKey = (!isNaN(numCode) && rawCode !== '') ? numCode : rawCode;
+            const rb = elMap.get(elKey);
+            if (rb == null) { noMatch++; continue; }
+            if (rb === itemId) { directMatched++; continue; } // 2.1 直接匹配，无需处理
+            alPairs.push({ ITEMID: itemId, part_num: rb });    // 2.2 需要别名映射
+        }
+
+        // 4. 去重（ITEMID 与 part_num 同时相同才去重）
+        updateProgress(0.6, '去重...', `${alPairs.length} → ...`);
+        const seen = new Set();
+        const alDedup = [];
+        for (const p of alPairs) {
+            const key = p.ITEMID + '\u0000' + p.part_num;
+            if (!seen.has(key)) { seen.add(key); alDedup.push(p); }
+        }
+
+        // 5. 写入离线缓冲区临时文件 AL.json
+        updateProgress(0.75, '写入离线缓冲区临时文件 AL.json...', `${alDedup.length} 条`);
+        localStorage.setItem('AL.json', JSON.stringify(alDedup));
+
+        // 6. 展示分析结果并确认是否写入 Gitee
+        updateProgress(1, '分析完成！', '');
+        const stats = {
+            blCount: blParts.length,
+            elCount: elements.length,
+            directMatched,
+            noMatch,
+            needAlias: alPairs.length,
+            dedupCount: alDedup.length,
+            alDedup
+        };
+        showAliasMappingConfirm(overlay, stats);
+    } catch (error) {
+        console.error('别名映射分析失败:', error);
+        updateProgress(1, '分析失败', '');
+        setTimeout(() => {
+            const resultDiv = document.getElementById('al-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px; color: #f44336;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✗ 分析失败</div>
+                    <div style="font-size: 12px; margin: 10px 0; word-break: break-all;">${error.message}</div>
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 500);
+    }
+}
+
+// 别名映射确认弹窗：展示匹配/去重结果，确认后写入 Gitee
+function showAliasMappingConfirm(overlay, stats) {
+    const resultDiv = overlay.querySelector('#al-result');
+    resultDiv.style.display = 'block';
+
+    if (stats.dedupCount === 0) {
+        // 无需映射：仅提示，无需写入 Gitee
+        resultDiv.innerHTML = `
+            <div style="padding: 15px; margin-top: 10px;">
+                <div style="font-size: 16px; margin-bottom: 10px;">✓ 分析完成</div>
+                <div style="font-size: 12px; color: #666; text-align: left; line-height: 1.8;">
+                    <div>BL-parts 行数：${stats.blCount} 条</div>
+                    <div>elements 行数：${stats.elCount} 条</div>
+                    <div>直接匹配（ITEMID = part_num）：${stats.directMatched} 条</div>
+                    <div>CODENAME 未匹配到 RB：${stats.noMatch} 条</div>
+                    <div style="margin-top: 4px;">无需别名映射，AL.json 已生成（空）</div>
+                </div>
+                <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
+        `;
+        return;
+    }
+
+    resultDiv.innerHTML = `
+        <div style="padding: 15px; margin-top: 10px;">
+            <div style="font-size: 16px; margin-bottom: 10px;">✓ 分析完成</div>
+            <div style="font-size: 12px; color: #666; text-align: left; line-height: 1.8;">
+                <div>BL-parts 行数：${stats.blCount} 条</div>
+                <div>elements 行数：${stats.elCount} 条</div>
+                <div>直接匹配（ITEMID = part_num）：${stats.directMatched} 条</div>
+                <div>CODENAME 未匹配到 RB：${stats.noMatch} 条</div>
+                <div>需别名映射（匹配数量）：${stats.needAlias} 条</div>
+                <div>去重后数量：${stats.dedupCount} 条</div>
+                <div style="margin-top: 4px;">AL.json 已生成并保存至离线缓冲区</div>
+            </div>
+            <div style="font-size: 12px; color: #999; margin-top: 10px; text-align: left; line-height: 1.6;">
+                确认后将去重后的别名数据合并写入 Gitee parts-rb 仓库的 part_aliases.csv，
+                已有相同数据会自动略过。
+            </div>
+            <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;">
+                <button class="btn-save" id="al-write-start" style="padding: 8px 24px;">开始写入Gitee</button>
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
+            </div>
+        </div>
+    `;
+    overlay.querySelector('#al-write-start').onclick = () => doWriteAliasMappingToGitee(overlay, stats);
+}
+
+// 执行：将 AL.json 数据合并写入 Gitee part_aliases.csv（跳过已有），完成后提示执行"更新RB"
+async function doWriteAliasMappingToGitee(overlay, stats) {
+    const progressDiv = overlay.querySelector('#al-progress');
+    const resultDiv = overlay.querySelector('#al-result');
+    progressDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    const fill = overlay.querySelector('#al-progress-fill');
+    const textEl = overlay.querySelector('#al-progress-text');
+    const detailEl = overlay.querySelector('#al-progress-detail');
+    fill.style.width = '0%';
+    const updateProgress = (percent, text, detail) => {
+        fill.style.width = Math.round(percent * 100) + '%';
+        if (text) textEl.textContent = text;
+        if (detail) detailEl.textContent = detail;
+    };
+
+    try {
+        updateProgress(0.1, '读取 Gitee part_aliases.csv...', 'parts-rb 仓库');
+        const res = await mergeAliasesToPartAliasesCSV(stats.alDedup, 'BL匹配');
+
+        updateProgress(1, '写入完成！', '');
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+            <div style="padding: 15px; margin-top: 10px;">
+                <div style="font-size: 16px; margin-bottom: 10px;">✓ 已写入 Gitee</div>
+                <div style="font-size: 12px; color: #666; text-align: left; line-height: 1.8;">
+                    <div>新增别名：${res.added} 条</div>
+                    <div>跳过已有：${res.skipped} 条</div>
+                    <div>part_aliases.csv 当前共 ${res.total} 条</div>
+                </div>
+                <div style="font-size: 13px; color: #9C27B0; margin: 12px 0; font-weight: bold;">请点击"更新RB"，将新别名导入本地离线数据库生效</div>
+                <button class="btn-save" style="margin-top: 10px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
+        `;
+    } catch (error) {
+        console.error('写入 Gitee part_aliases.csv 失败:', error);
+        updateProgress(1, '写入失败', error.message);
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+            <div style="padding: 15px; margin-top: 10px; color: #f44336;">
+                <div style="font-size: 16px; margin-bottom: 10px;">✗ 写入 Gitee 失败</div>
+                <div style="font-size: 12px; margin: 10px 0; word-break: break-all;">${error.message}</div>
+                <div style="font-size: 12px; color: #666; margin-top: 6px;">AL.json 已保存在离线缓冲区，可稍后重试。</div>
+                <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
+        `;
+    }
+}
+
 // 更新 RB 数据库（从 Parts-RB 读取 CSV，更新离线数据库）
 async function updateRB() {
     if (!confirm('确定要从 Parts-RB 读取最新的 CSV 数据吗？\n这将更新本地 RB 数据库。')) {

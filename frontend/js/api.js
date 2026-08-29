@@ -308,6 +308,94 @@ async function updatePartAliasesCSV(aliasesMap, token) {
     return lines.length - 1; // 返回别名条数
 }
 
+// 将别名数据（AL.json 生成的 { ITEMID, part_num } 列表）合并写入 Gitee parts-rb 仓库的 part_aliases.csv
+// 保留已有记录原样，仅追加新别名（格式：alias_part_num,rb_part_num,remark）；
+// 已有相同 alias 键的数据略过（不覆盖既有映射，含值不同者），避免破坏已有别名。
+// 返回 { added, skipped, total }
+async function mergeAliasesToPartAliasesCSV(aliasPairs, remark = 'BL匹配') {
+    const t = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!t) throw new Error('缺少 Gitee Token，无法写入别名CSV');
+
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/part_aliases.csv`;
+
+    // 1) 读取现有文件（获取 sha 与已有数据行）
+    let sha = null;
+    let existingLines = [];
+    const checkResp = await fetch(`${apiUrl}?ref=main`, {
+        headers: { 'Authorization': `token ${t}` }
+    });
+    if (checkResp.ok) {
+        const existing = await checkResp.json();
+        if (existing && existing.content) {
+            sha = existing.sha;
+            const binaryString = atob(existing.content);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+            existingLines = new TextDecoder('utf-8').decode(bytes).split(/\r?\n/);
+        }
+    }
+
+    // 2) 保留表头与已有行，记录已存在的别名键
+    const outLines = [];
+    const existingAlias = new Set();
+    let hasHeader = false;
+    for (let i = 0; i < existingLines.length; i++) {
+        const line = String(existingLines[i]).trim();
+        if (!line) continue;
+        if (!hasHeader && line.toLowerCase().startsWith('alias_part_num')) {
+            outLines.push(line);
+            hasHeader = true;
+            continue;
+        }
+        const f = parseRBCSVLine(line);
+        if (f.length >= 2 && f[0].trim()) {
+            existingAlias.add(String(f[0]).trim());
+            outLines.push(line);
+        } else {
+            outLines.push(line);
+        }
+    }
+    if (!hasHeader) outLines.push('alias_part_num,rb_part_num,remark');
+
+    // 3) 追加新别名（已有键略过，避免重复/覆盖）
+    let added = 0, skipped = 0;
+    const batchAdded = new Set();
+    for (const pair of aliasPairs || []) {
+        const a = String(pair.ITEMID == null ? pair.alias_part_num : pair.ITEMID).trim();
+        const r = String(pair.part_num == null ? pair.rb_part_num : pair.part_num).trim();
+        if (!a || !r || a === r) continue;
+        if (existingAlias.has(a) || batchAdded.has(a)) {
+            skipped++;
+            continue;
+        }
+        outLines.push(`${a},${r},${remark}`);
+        batchAdded.add(a);
+        added++;
+    }
+
+    const csvText = outLines.join('\n') + '\n';
+
+    // 4) 写回 Gitee（存在 PUT 更新 / 不存在 POST 创建，幂等）
+    const base64Data = btoa(unescape(encodeURIComponent(csvText)));
+    const body = {
+        message: `feat: 追加零件别名映射 part_aliases.csv (+${added}) [skip ci]`,
+        content: base64Data,
+        branch: 'main'
+    };
+    if (sha) body.sha = sha;
+
+    await giteeRequestWithRetry(() => fetch(apiUrl, {
+        method: sha ? 'PUT' : 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `token ${t}`
+        },
+        body: JSON.stringify(body)
+    }));
+
+    return { added, skipped, total: outLines.length - 1 };
+}
+
 // 将本地 inventory_parts.csv 去重后分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
 // 分片命名 inventory_parts_1.csv、inventory_parts_2.csv ...（序号从1开始，每片都带表头）
 // 上传完成后写入清单 inventory_parts_shards.json，前端读取逻辑按清单合并
