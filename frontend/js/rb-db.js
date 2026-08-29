@@ -1,5 +1,5 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 3;
+const RB_DB_VERSION = 4;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -10,7 +10,9 @@ const RB_STORES = {
     PARTS: 'rb_parts',
     WEIGHTS: 'rb_weights',
     // BL-parts：Bricklink 目录表（方法一「BG型号+颜色名→CODENAME」的桥接表）
-    BL_PARTS: 'rb_bl_parts'
+    BL_PARTS: 'rb_bl_parts',
+    // 零件别名映射表（来自 Gitee part_aliases.csv，别名→RB标准型号）
+    PART_ALIASES: 'rb_part_aliases'
 };
 
 const RB_STORE_KEYS = {
@@ -21,7 +23,8 @@ const RB_STORE_KEYS = {
     'rb_inventory_parts': 'inventory_parts',
     'rb_part_relationships': 'part_relationships',
     'rb_weights': 'weights',
-    'rb_bl_parts': 'bl_parts'
+    'rb_bl_parts': 'bl_parts',
+    'rb_part_aliases': 'part_aliases'
 };
 
 let rbDbInstance = null;
@@ -67,6 +70,10 @@ function openRBDatabase() {
             // 仅作查询桥接，无需主键唯一（CODENAME 存在重复），用自增主键避免导入冲突
             if (!db.objectStoreNames.contains(RB_STORES.BL_PARTS)) {
                 db.createObjectStore(RB_STORES.BL_PARTS, { autoIncrement: true });
+            }
+            // 零件别名映射表：keyPath 为别名型号（alias_part_num），值列 rb_part_num
+            if (!db.objectStoreNames.contains(RB_STORES.PART_ALIASES)) {
+                db.createObjectStore(RB_STORES.PART_ALIASES, { keyPath: 'alias_part_num' });
             }
         };
 
@@ -183,7 +190,8 @@ async function getRBStats() {
             'rb_inventory_parts': RB_STORES.INVENTORY_PARTS,
             'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
             'rb_weights': RB_STORES.WEIGHTS,
-            'rb_bl_parts': RB_STORES.BL_PARTS
+            'rb_bl_parts': RB_STORES.BL_PARTS,
+            'rb_part_aliases': RB_STORES.PART_ALIASES
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -334,7 +342,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
-        'bl_parts': RB_STORES.BL_PARTS
+        'bl_parts': RB_STORES.BL_PARTS,
+        'part_aliases': RB_STORES.PART_ALIASES
     };
     
     const results = {};
@@ -381,7 +390,8 @@ async function exportRBDatabaseToJSON() {
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
-        'bl_parts': RB_STORES.BL_PARTS
+        'bl_parts': RB_STORES.BL_PARTS,
+        'part_aliases': RB_STORES.PART_ALIASES
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {

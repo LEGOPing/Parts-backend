@@ -264,6 +264,50 @@ async function uploadRBShardToGitee(fileName, csvText, token) {
     }));
 }
 
+// 将零件别名映射表（{ alias_part_num: rb_part_num }）全量写回 Gitee parts-rb 仓库的 part_aliases.csv
+// 文件不存在则用 POST 创建，存在则用 PUT 更新（携带 sha，幂等）。
+async function updatePartAliasesCSV(aliasesMap, token) {
+    const t = token || localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!t) throw new Error('缺少 Gitee Token，无法写回别名CSV');
+
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/part_aliases.csv`;
+    // 组装 CSV（header：alias_part_num,rb_part_num,remark）
+    const lines = ['alias_part_num,rb_part_num,remark'];
+    for (const [alias, rb] of Object.entries(aliasesMap || {})) {
+        if (alias && rb) {
+            lines.push(`${String(alias).trim()},${String(rb).trim()},BL重配自动更新`);
+        }
+    }
+    const csvText = lines.join('\n') + '\n';
+    const base64Data = btoa(unescape(encodeURIComponent(csvText)));
+
+    // 1) 读取现有文件以获取 sha
+    const checkResp = await fetch(`${apiUrl}?ref=main`, {
+        headers: { 'Authorization': `token ${t}` }
+    });
+    const existing = checkResp.ok ? await checkResp.json() : null;
+
+    // 2) 推送更新
+    const body = {
+        message: 'feat: 更新零件别名映射 part_aliases.csv [skip ci]',
+        content: base64Data,
+        branch: 'main'
+    };
+    if (existing && existing.sha) {
+        body.sha = existing.sha;
+    }
+
+    await giteeRequestWithRetry(() => fetch(apiUrl, {
+        method: existing ? 'PUT' : 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `token ${t}`
+        },
+        body: JSON.stringify(body)
+    }));
+    return lines.length - 1; // 返回别名条数
+}
+
 // 将本地 inventory_parts.csv 去重后分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
 // 分片命名 inventory_parts_1.csv、inventory_parts_2.csv ...（序号从1开始，每片都带表头）
 // 上传完成后写入清单 inventory_parts_shards.json，前端读取逻辑按清单合并
