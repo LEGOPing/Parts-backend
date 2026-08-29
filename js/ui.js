@@ -1298,6 +1298,17 @@ function updateSearchResultQuantity(partId, quantity) {
     qtyEl.classList.add(cls);
 }
 
+function updateSearchResultStatus(partId, isNew) {
+    const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+    if (!card) return;
+    const statusEl = card.querySelector('.src-status');
+    if (!statusEl) return;
+    const text = isNew ? '新' : '旧';
+    statusEl.textContent = text;
+    statusEl.title = isNew ? '新品' : '旧品';
+    statusEl.className = 'src-status ' + (isNew ? 'new' : 'used');
+}
+
 function showAddPartSheet() {
     if (!selectedBox) {
         alert('请先选择一个盒子');
@@ -4841,6 +4852,28 @@ async function showPartDetail(part) {
     delBtn.addEventListener('touchstart', startDelLongPress, { passive: false });
     delBtn.addEventListener('touchend', cancelDelLongPress);
 
+    // 状态栏长按1秒：变更零件新旧状态
+    const statusEl = sheet.querySelector('.pd-status');
+    let statusTimer = null;
+    const startStatusLongPress = (e) => {
+        e.preventDefault();
+        statusTimer = setTimeout(() => {
+            changePartStatus(part);
+        }, 1000);
+    };
+    const cancelStatusLongPress = () => {
+        if (statusTimer) {
+            clearTimeout(statusTimer);
+            statusTimer = null;
+        }
+    };
+    statusEl.addEventListener('mousedown', startStatusLongPress);
+    statusEl.addEventListener('mouseup', cancelStatusLongPress);
+    statusEl.addEventListener('mouseleave', cancelStatusLongPress);
+    statusEl.addEventListener('touchstart', startStatusLongPress, { passive: false });
+    statusEl.addEventListener('touchend', cancelStatusLongPress);
+    statusEl.addEventListener('touchmove', cancelStatusLongPress);
+
     // 图片左滑显示变更按钮
     const imageSwipe = sheet.querySelector('#pd-image-swipe');
     const imageContent = imageSwipe.querySelector('.pd-image-content');
@@ -4891,6 +4924,64 @@ async function showPartDetail(part) {
     mergeBtn.addEventListener('click', () => {
         showMergePartSelector(part);
     });
+}
+
+// 长按状态栏弹窗：变更零件新旧状态（纠正添加零件时的失误）
+function changePartStatus(part) {
+    const isNew = Boolean(part.is_new);
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'max-width:320px;padding:20px;text-align:center;';
+    box.innerHTML = `
+        <div style="margin-bottom:16px;font-size:16px;font-weight:bold;">变更零件状态</div>
+        <div style="margin-bottom:20px;font-size:14px;color:#888;">${part.part_num}（当前：${isNew ? '新' : '旧'}）</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <button id="status-set-new" style="padding:12px;border:none;border-radius:8px;background:#4CAF50;color:#fff;font-size:14px;cursor:pointer;">设为新品</button>
+            <button id="status-set-used" style="padding:12px;border:none;border-radius:8px;background:#ff9800;color:#fff;font-size:14px;cursor:pointer;">设为旧品</button>
+            <button id="status-cancel" style="padding:10px;border:none;border-radius:8px;background:#666;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+        </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    const doSet = (val) => {
+        overlay.remove();
+        applyPartStatus(part, val);
+    };
+    box.querySelector('#status-set-new').onclick = () => doSet(true);
+    box.querySelector('#status-set-used').onclick = () => doSet(false);
+    box.querySelector('#status-cancel').onclick = () => overlay.remove();
+}
+
+// 应用状态变更：更新数据库 + 详情状态栏 + 列表/搜索显示
+async function applyPartStatus(part, isNew) {
+    if (Boolean(part.is_new) === Boolean(isNew)) return;
+    const success = await updatePart(part.id, { is_new: isNew });
+    if (!success) {
+        alert('保存失败');
+        return;
+    }
+    part.is_new = isNew;
+    // 更新详情页状态栏
+    const sheet = document.querySelector('.part-detail-modal');
+    if (sheet) {
+        const statusEl = sheet.querySelector('.pd-status');
+        if (statusEl) {
+            statusEl.textContent = isNew ? '新' : '旧';
+            statusEl.className = 'pd-status ' + (isNew ? 'pd-status-new' : 'pd-status-used');
+        }
+    }
+    // 更新搜索结果卡片
+    updateSearchResultStatus(part.id, isNew);
+    // 刷新当前盒子零件列表
+    if (selectedBox) {
+        await loadParts(selectedBox.id);
+    }
+    showToast(isNew ? '已设为新品' : '已设为旧品');
 }
 
 // 图片变更入口（根据是否有离线缓存图片选择不同操作）
