@@ -102,8 +102,6 @@ body {
     white-space: nowrap;
 }
 
-
-
 .bb-area {
     background-color: var(--primary-color);
     padding: 0 4px;
@@ -1147,6 +1145,43 @@ body {
     color: #fff;
 }
 
+/* 搜索页识别按钮：与选色按钮风格一致，深绿色 */
+.btn-recognize-search {
+    height: 18px;
+    padding: 0 8px;
+    border: 1px solid #1b7a3d;
+    border-radius: 3px;
+    background: #fff;
+    color: #1b7a3d;
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.btn-recognize-search:active {
+    background: #1b7a3d;
+    color: #fff;
+}
+
+/* 添加零件页 BL 匹配按钮：与搜索页识别按钮风格一致 */
+.btn-bl-match {
+    height: 18px;
+    padding: 0 8px;
+    border: 1px solid #1b7a3d;
+    border-radius: 3px;
+    background: #fff;
+    color: #1b7a3d;
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+    margin-left: 4px;
+}
+
+.btn-bl-match:active {
+    background: #1b7a3d;
+    color: #fff;
+}
+
 .filter-group input, .filter-group select {
     width: 100%;
     padding: 8px;
@@ -1502,6 +1537,12 @@ body {
     box-sizing: border-box;
 }
 
+/* 拍照识别弹窗 body 限制高度，避免内容溢出屏幕 */
+.add-part-modal .modal-body {
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
 /* 添加零件-标题栏（取消左 + 标题中 + 保存右） */
 .add-part-modal .modal-header {
     display: grid;
@@ -1565,6 +1606,15 @@ body {
 
 .add-part-modal .btn-color-pick.color-white {
     color: #000 !important;
+}
+
+/* 颜色数量提示：可能有N种颜色 */
+.color-count-hint {
+    font-size: 10px;
+    color: #999;
+    margin-top: 2px;
+    padding-left: 90px;
+    min-height: 16px;
 }
 
 .form-section {
@@ -1751,6 +1801,10 @@ body {
     min-height: 14px;
     line-height: 14px;
 }
+/* 搜索页数据来源提示：覆盖大左间距，适应搜索筛选布局 */
+.search-filters .data-source-hint {
+    margin: 2px 0 0 0;
+}
 
 /* 状态按钮 */
 .status-group {
@@ -1883,127 +1937,30 @@ body {
     align-items: center;
 }
 
-/* 图片预览区：Gitee / RB 双列 + 编辑（宽比 4:4:2） */
-.part-img-preview {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-    align-items: stretch;
-}
-
-.part-img-col {
-    flex: 4;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    cursor: pointer;
-    min-width: 0;
-}
-
-.part-img-edit-col {
-    flex: 2;
-    justify-content: center;
-    align-items: center;
-    cursor: default;
-}
-
-.part-img-label {
-    font-size: 12px;
-    color: #666;
-    text-align: center;
-}
-
-.part-img-box {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
+/* 添加零件页 - 零件图片预览行 */
+.part-image-preview {
+    width: 100px;
+    height: 100px;
     border-radius: 6px;
     overflow: hidden;
+    background: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid #e8e8e8;
 }
 
-.part-img-box img {
-    width: 100%;
-    height: 100%;
+.part-image-preview img {
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
 }
 
-.part-img-empty {
+.part-image-preview .no-image {
     font-size: 12px;
-    color: #999;
+    color: #bbb;
     text-align: center;
-    padding: 0 4px;
-}
-
-/* 右上角圆形勾选 */
-.part-img-check {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.9);
-    border: 2px solid #ccc;
-    box-sizing: border-box;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    color: #fff;
-    line-height: 1;
-}
-
-.part-img-check.active {
-    display: flex;
-    background: #27ae60;
-    border-color: #27ae60;
-}
-
-.part-img-check.active::after {
-    content: '✓';
-}
-
-.btn-preview-edit {
-    background: #3498db;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 20px;
-    font-size: 13px;
-    cursor: pointer;
-}
-
-/* 零件信息预览 */
-.part-info-preview {
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    padding: 12px;
-    margin-top: 10px;
-}
-
-.part-preview-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 0;
-}
-
-.preview-label {
-    font-size: 12px;
-    color: #666;
-    min-width: 60px;
-}
-
-.preview-value {
-    font-size: 14px;
-    color: #333;
-    font-weight: 500;
+    padding: 8px;
 }
 
 /* 零件行布局调整 */
@@ -2017,6 +1974,864 @@ body {
 
 .part-number-row .btn-secondary {
     flex-shrink: 0;
+}
+
+/* 拍照识别按钮 */
+.add-part-modal .btn-recognize {
+    background: #8e44ad;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 36px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    transition: background-color 0.3s;
+}
+
+.add-part-modal .btn-recognize:hover {
+    background: #732d91;
+}
+
+/* 识别结果区域 */
+.recognize-result {
+    margin-top: 12px;
+}
+
+.recognize-thumb {
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.recognize-status {
+    font-size: 13px;
+    color: #666;
+    padding: 10px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    border: 1px dashed #d0d0d0;
+    text-align: center;
+}
+
+.recognize-header {
+    font-size: 14px;
+    color: #34495e;
+    margin-bottom: 8px;
+}
+
+/* 最接近颜色标题 */
+.recognize-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* 图片提取主色的小色块 */
+.dominant-swatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid #bbb;
+    flex-shrink: 0;
+}
+
+/* 颜色卡片行：5个卡片等分，顶部对齐，不超出页面 */
+.recognize-colors-row {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    align-items: flex-start;
+}
+
+.recognize-color-chip {
+    flex: 1;
+    min-width: 0;
+    max-width: 72px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.recognize-color-chip .chip-swatch {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+}
+
+.recognize-color-chip:hover .chip-swatch {
+    transform: scale(1.05);
+}
+
+.recognize-color-chip .chip-name {
+    display: block;
+    font-size: 10px;
+    color: #333;
+    margin-top: 4px;
+    line-height: 1.35;
+    word-break: break-all;
+    overflow-wrap: break-word;
+}
+
+.recognize-color-chip.selected .chip-swatch {
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px #3498db, 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* ==================== 零件别名提示 ==================== */
+.alias-hint {
+    font-size: 12px;
+    color: #e67e22;
+    background: #fef9e7;
+    border: 1px solid #f9e79f;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+}
+
+/* ==================== BG颜色识别提示 ==================== */
+.recognize-color-note {
+    font-size: 11px;
+    color: #8e44ad;
+    background: #f4ecf7;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-bottom: 6px;
+}
+
+/* ==================== 同名零件选择器 ==================== */
+.same-name-parts-picker {
+    margin-top: 12px;
+    padding: 10px;
+    background: #f0f4ff;
+    border: 1px solid #d0d8f0;
+    border-radius: 8px;
+}
+
+.snp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 8px;
+}
+
+.snp-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.snp-hint {
+    font-size: 8px;
+    color: #7f8c8d;
+    white-space: nowrap;
+}
+
+.snp-cards-row {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.same-name-part-card {
+    flex: 0 0 auto;
+    width: 100px;
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    cursor: pointer;
+    padding: 6px;
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+    user-select: none;
+}
+
+.same-name-part-card:hover {
+    border-color: #3498db;
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.2);
+}
+
+.same-name-part-card.selected {
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px #3498db, 0 2px 8px rgba(52, 152, 219, 0.3);
+    background: #ebf5fb;
+}
+
+.snp-image {
+    width: 80px;
+    height: 60px;
+    margin: 0 auto 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 4px;
+    background: #f8f8f8;
+}
+
+.snp-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.snp-no-img {
+    font-size: 10px;
+    color: #999;
+    padding: 20px 0;
+}
+
+.snp-info {
+    text-align: center;
+}
+
+.snp-part-num {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.snp-part-name {
+    font-size: 10px;
+    color: #7f8c8d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.snp-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: #3498db;
+    color: #fff;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.snp-footer {
+    margin-top: 8px;
+    text-align: center;
+}
+
+.snp-current-tip {
+    font-size: 11px;
+    color: #7f8c8d;
+}
+
+/* ==================== 别名输入提示（添加零件页） ==================== */
+.alias-input-hint {
+    font-size: 11px;
+    color: #7f8c8d;
+    margin-top: 2px;
+    font-style: italic;
+}
+
+/* ==================== 兑底匹配：方法二候选选择面板 ==================== */
+.fallback-picker-modal {
+    max-width: 520px;
+}
+.fallback-picker-modal .modal-body {
+    max-height: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.fallback-query-info {
+    font-size: 13px;
+    color: #555;
+    background: #f8f9fa;
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
+    padding: 8px 12px;
+    line-height: 1.6;
+}
+.fallback-query-info b {
+    color: #2c3e50;
+}
+.fallback-part-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
+    background: #fafbfc;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.fallback-part-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    flex-shrink: 0;
+}
+.fallback-part-card:hover {
+    border-color: #3498db;
+    box-shadow: 0 1px 4px rgba(52, 152, 219, 0.2);
+}
+.fallback-card-left {
+    flex-shrink: 0;
+}
+.fallback-card-img {
+    width: 64px;
+    height: 64px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #f2f2f2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.fallback-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.fallback-card-right {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.fallback-card-num {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+/* 名称：固定 3 行高度，内容超长时可垂直滚动 */
+.fallback-card-name {
+    font-size: 13px;
+    color: #555;
+    line-height: 1.4;
+    height: 46px; /* ≈ 3 行 */
+    overflow-y: auto;
+    word-break: break-word;
+}
+.fallback-card-color {
+    font-size: 12px;
+    color: #7f8c8d;
+}
+.fallback-empty {
+    padding: 24px;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+}
+.fallback-tip {
+    font-size: 12px;
+    color: #999;
+    text-align: center;
+}
+
+/* ==================== RB零件信息卡片（搜索别名参考） ==================== */
+.rb-part-info-card {
+    margin-top: 12px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.rb-part-info-header {
+    background: #e9ecef;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.rb-part-info-body {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    align-items: flex-start;
+}
+
+.rb-part-info-img {
+    flex: 0 0 80px;
+    width: 80px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #eee;
+}
+
+.rb-part-info-img img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.rb-part-info-details {
+    flex: 1;
+}
+
+.rb-part-info-num {
+    font-size: 14px;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.rb-part-info-name {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.rb-part-info-footer {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #adb5bd;
+    background: #f1f3f5;
+    border-top: 1px solid #dee2e6;
+}
+
+/* ==================== 灰卡白平衡校准 ==================== */
+.gray-card-section {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.gray-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.gray-card-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #495057;
+}
+
+/* 开关（toggle） */
+.gray-card-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.gray-card-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 22px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.gray-card-toggle input:checked + .toggle-slider {
+    background-color: #4CAF50;
+}
+
+.gray-card-toggle input:checked + .toggle-slider:before {
+    transform: translateX(18px);
+}
+
+.gray-card-toggle input:disabled + .toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.gray-card-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gray-card-status-text {
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.gray-card-status-text.calibrated {
+    color: #155724;
+    background: #d4edda;
+}
+
+.gray-card-status-text.uncalibrated {
+    color: #856404;
+    background: #fff3cd;
+}
+
+.gray-card-status-text.disabled {
+    color: #6c757d;
+    background: #e2e3e5;
+}
+
+.gray-card-status-text.calibrating {
+    color: #004085;
+    background: #cce5ff;
+}
+
+.gray-card-status-text.error {
+    color: #721c24;
+    background: #f8d7da;
+}
+
+.btn-gray-card {
+    background: #6c5ce7;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s;
+}
+
+.btn-gray-card:hover {
+    background: #5a4bd1;
+}
+
+.btn-gray-card-reset {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s;
+}
+
+.btn-gray-card-reset:hover {
+    background: #c0392b;
+}
+
+.gray-card-instruction {
+    font-size: 11px;
+    color: #6c757d;
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: #fff;
+    border-radius: 4px;
+    border: 1px dashed #dee2e6;
+    line-height: 1.4;
+}
+
+/* ==================== 拍照识别-区域二：两列布局 ==================== */
+.recognize-area2 {
+    height: 92px;
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    overflow: hidden;
+}
+
+.area2-left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 8px 10px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.area2-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.area2-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #495057;
+    white-space: nowrap;
+}
+
+.area2-scroll-wrap {
+    overflow: hidden;
+    white-space: nowrap;
+    margin: 2px 0;
+}
+
+.area2-scroll-text {
+    display: inline-block;
+    font-size: 11px;
+    color: #6c757d;
+    animation: scroll-text 10s linear infinite;
+    padding-left: 100%;
+}
+
+@keyframes scroll-text {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+
+.area2-actions {
+    display: flex;
+    justify-content: center;
+    gap: 92px;
+    align-items: center;
+}
+
+/* 右侧：绿色圆形拍照按钮 */
+.area2-right {
+    width: 92px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f0f0f0;
+}
+
+.recognize-circle-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: #4CAF50;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+}
+
+.recognize-circle-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 14px rgba(76, 175, 80, 0.5);
+}
+
+.recognize-circle-btn:active {
+    transform: scale(0.95);
+}
+
+/* ==================== 拍照识别-区域三：识别结果预览 ==================== */
+.recognize-preview-section {
+    margin-top: 8px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.preview-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    text-align: left;
+}
+
+.preview-part-card {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.preview-part-image {
+    width: 92px;
+    height: 92px;
+    flex-shrink: 0;
+    background: #fff;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-part-image .recognize-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.preview-part-image .no-image {
+    font-size: 11px;
+    color: #999;
+    text-align: center;
+}
+
+.preview-part-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.preview-detail-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.preview-detail-label {
+    color: #666;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.preview-detail-value {
+    color: #2c3e50;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 名称显示 2 行，超长可垂直滚动 */
+#recognize-part-name-display {
+    white-space: normal;
+    overflow-y: auto;
+    max-height: 2.8em;
+    line-height: 1.4;
+    text-overflow: unset;
+}
+
+/* ==================== 拍照识别-区域四：颜色预选 ==================== */
+.color-preselection {
+    margin-top: 8px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.color-preselect-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.color-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+    border: 2px solid transparent;
+    background: #fff;
+}
+
+.color-row:hover {
+    background: #f0f4ff;
+    border-color: #d0d8f0;
+}
+
+.color-row.selected {
+    background: #ebf5fb;
+    border-color: #3498db;
+}
+
+.color-row-swatch {
+    display: block;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    flex-shrink: 0;
+}
+
+.color-row-id {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+    min-width: 50px;
+}
+
+.color-row-name {
+    font-size: 13px;
+    color: #2c3e50;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 @media (max-width: 767px) {
@@ -2221,18 +3036,6 @@ body {
     flex-shrink: 0;
 }
 
-.pd-img-del-btn {
-    border: none;
-    border-radius: 6px;
-    padding: 8px 10px;
-    background: #f44336;
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-    white-space: nowrap;
-    line-height: 1;
-}
-
 .pd-img-change-btn {
     border: none;
     border-radius: 6px;
@@ -2283,6 +3086,14 @@ body {
     font-weight: 600;
 }
 
+/* 别名映射型号后的 RB 标准型号（绿色括号） */
+.pd-alias-rb-num {
+    color: #4CAF50;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 2px;
+}
+
 /* 圆形新旧图标 */
 .pd-status {
     width: 28px;
@@ -2295,6 +3106,11 @@ body {
     font-size: 13px;
     font-weight: 600;
     line-height: 1;
+    /* 长按变更状态：禁止选中与系统菜单 */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
 }
 
 .pd-status-new {

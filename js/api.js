@@ -145,6 +145,280 @@ async function fetchRBFile(fileName) {
     }
 }
 
+// 分片文件命名常量（与 push_inventory_parts_to_gitee.py 保持一致）
+const INVENTORY_SHARD_BASE = 'inventory_parts_';
+const INVENTORY_SHARD_SUFFIX = '.csv';
+const INVENTORY_SHARDS_MANIFEST = 'inventory_parts_shards.json';
+
+async function fetchRBShardsManifest() {
+    try {
+        const text = await fetchRBFile(INVENTORY_SHARDS_MANIFEST);
+        if (!text) return null;
+        const manifest = JSON.parse(text);
+        if (!manifest || !Array.isArray(manifest.files) || manifest.files.length === 0) {
+            return null;
+        }
+        return manifest;
+    } catch (error) {
+        console.error(`加载库存分片清单失败: ${INVENTORY_SHARDS_MANIFEST}`, error);
+        return null;
+    }
+}
+
+// 依次下载库存分片并合并（每个分片都带表头，仅保留第一个分片的表头）
+// 若分片清单不存在（尚未分片上传），回退读取旧单文件 inventory_parts.csv，避免更新RB失败
+async function fetchRBInventoryParts() {
+    const manifest = await fetchRBShardsManifest();
+    if (!manifest) {
+        return await fetchRBFile('inventory_parts.csv');
+    }
+
+    const shardTexts = [];
+    for (const fileName of manifest.files) {
+        const text = await fetchRBFile(fileName);
+        if (text === null || text === undefined) {
+            console.error(`下载库存分片失败: ${fileName}`);
+            return null;
+        }
+        shardTexts.push(text);
+    }
+
+    if (shardTexts.length === 0) {
+        return null;
+    }
+
+    // 保留第一个分片的表头，其余分片去掉表头行后拼接。
+    // 分片文件本身不含结尾换行，直接拼接会导致边界行粘连，因此分片间用换行衔接
+    const mergedLines = [];
+    for (let i = 0; i < shardTexts.length; i++) {
+        let text = shardTexts[i].replace(/\r?\n$/, '');
+        if (i === 0) {
+            mergedLines.push(text);
+        } else {
+            const newlineIdx = text.indexOf('\n');
+            mergedLines.push(newlineIdx === -1 ? '' : text.slice(newlineIdx + 1));
+        }
+    }
+    return mergedLines.join('\n') + '\n';
+}
+
+// Gitee API 请求重试封装：处理写操作限流（HTTP 429）与连接重置（HTTP 000/网络异常）
+// 429 响应为 HTML 且无 Retry-After 头，实测采用指数退避重试；400/401/404 等确定性错误不重试
+async function giteeRequestWithRetry(fetchFn, { maxRetries = 5, onRetry = null } = {}) {
+    let delay = 1000;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await fetchFn();
+            if (response.ok) {
+                return response;
+            }
+            if (response.status !== 429) {
+                throw new Error(`HTTP ${response.status}: ${await response.text().catch(() => '')}`);
+            }
+            if (attempt >= maxRetries) {
+                throw new Error(`HTTP 429 (限流) 重试${maxRetries}次后仍失败`);
+            }
+            if (onRetry) onRetry(attempt + 1, delay);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay = Math.min(delay * 2, 60000);
+        } catch (e) {
+            const isNetworkError = e instanceof TypeError || !e.status;
+            if (isNetworkError && attempt < maxRetries) {
+                if (onRetry) onRetry(attempt + 1, delay);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay = Math.min(delay * 2, 60000);
+                continue;
+            }
+            throw e;
+        }
+    }
+    throw new Error('Gitee请求重试次数用尽');
+}
+
+// 上传单个分片到 Gitee parts-rb 仓库（POST 创建 / PUT 更新，幂等）
+async function uploadRBShardToGitee(fileName, csvText, token) {
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/${fileName}`;
+    const base64Data = btoa(unescape(encodeURIComponent(csvText)));
+
+    const checkResp = await fetch(`${apiUrl}?ref=main`, {
+        headers: { 'Authorization': `token ${token}` }
+    });
+    const existing = checkResp.ok ? await checkResp.json() : null;
+
+    const body = {
+        message: `feat: 更新RB库存分片 ${fileName} [skip ci]`,
+        content: base64Data,
+        branch: 'main'
+    };
+    if (existing && existing.sha) {
+        body.sha = existing.sha;
+    }
+
+    return giteeRequestWithRetry(() => fetch(apiUrl, {
+        method: existing ? 'PUT' : 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `token ${token}`
+        },
+        body: JSON.stringify(body)
+    }));
+}
+
+// 将零件别名映射表（{ alias_part_num: rb_part_num }）全量写回 Gitee parts-rb 仓库的 part_aliases.csv
+// 文件不存在则用 POST 创建，存在则用 PUT 更新（携带 sha，幂等）。
+async function updatePartAliasesCSV(aliasesMap, token) {
+    const t = token || localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!t) throw new Error('缺少 Gitee Token，无法写回别名CSV');
+
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/part_aliases.csv`;
+    // 组装 CSV（header：alias_part_num,rb_part_num,remark）
+    const lines = ['alias_part_num,rb_part_num,remark'];
+    for (const [alias, rb] of Object.entries(aliasesMap || {})) {
+        if (alias && rb) {
+            lines.push(`${String(alias).trim()},${String(rb).trim()},BL重配自动更新`);
+        }
+    }
+    const csvText = lines.join('\n') + '\n';
+    const base64Data = btoa(unescape(encodeURIComponent(csvText)));
+
+    // 1) 读取现有文件以获取 sha
+    const checkResp = await fetch(`${apiUrl}?ref=main`, {
+        headers: { 'Authorization': `token ${t}` }
+    });
+    const existing = checkResp.ok ? await checkResp.json() : null;
+
+    // 2) 推送更新
+    const body = {
+        message: 'feat: 更新零件别名映射 part_aliases.csv [skip ci]',
+        content: base64Data,
+        branch: 'main'
+    };
+    if (existing && existing.sha) {
+        body.sha = existing.sha;
+    }
+
+    await giteeRequestWithRetry(() => fetch(apiUrl, {
+        method: existing ? 'PUT' : 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `token ${t}`
+        },
+        body: JSON.stringify(body)
+    }));
+    return lines.length - 1; // 返回别名条数
+}
+
+// 将本地 inventory_parts.csv 去重后分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
+// 分片命名 inventory_parts_1.csv、inventory_parts_2.csv ...（序号从1开始，每片都带表头）
+// 上传完成后写入清单 inventory_parts_shards.json，前端读取逻辑按清单合并
+async function uploadRBInventoryShards(file, { onProgress = null } = {}) {
+    const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!token) {
+        throw new Error('缺少 Gitee Token，无法上传分片');
+    }
+
+    const MAX_SHARD_BYTES = 4 * 1024 * 1024;
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/);
+    const headerLine = lines[0];
+    const rawLines = lines.slice(1).filter(line => line.trim() !== '');
+
+    // 去重：仅移除完全重复的行，确保数据完整。
+    // 关键列存在时按 (part_num, color_id, img_url) 去重——同一 part+color 的不同图片
+    // （img_url 不同）全部保留（前端按 part+color 查询图片依赖多图），只剔除
+    // "同零件同颜色同图片"在不同 inventory 中重复出现的行（当前用途无需 inventory_id/quantity）。
+    // 若表头缺少关键列，退化为按整行去重，保证不会误删任何不同记录。
+    const headerFields = parseRBCSVLine(headerLine);
+    const keyIdx = {
+        part: headerFields.indexOf('part_num'),
+        color: headerFields.indexOf('color_id'),
+        img: headerFields.indexOf('img_url')
+    };
+    const hasKeyCols = keyIdx.part >= 0 && keyIdx.color >= 0;
+    const seen = new Set();
+    const dataLines = [];
+    for (const line of rawLines) {
+        let key;
+        if (hasKeyCols) {
+            const f = parseRBCSVLine(line);
+            const part = keyIdx.part < f.length ? f[keyIdx.part] : '';
+            const color = keyIdx.color < f.length ? f[keyIdx.color] : '';
+            const img = (keyIdx.img >= 0 && keyIdx.img < f.length) ? f[keyIdx.img] : '';
+            key = part + '\u0000' + color + '\u0000' + img;
+        } else {
+            key = line;
+        }
+        if (!seen.has(key)) {
+            seen.add(key);
+            dataLines.push(line);
+        }
+    }
+
+    const shards = [];
+    let current = [headerLine];
+    let currentSize = new Blob([headerLine + '\n']).size;
+    for (const line of dataLines) {
+        const lineSize = new Blob([line + '\n']).size;
+        if (currentSize + lineSize >= MAX_SHARD_BYTES && current.length > 1) {
+            shards.push(current.join('\n'));
+            current = [headerLine];
+            currentSize = new Blob([headerLine + '\n']).size;
+        }
+        current.push(line);
+        currentSize += lineSize;
+    }
+    if (current.length > 1) {
+        shards.push(current.join('\n'));
+    }
+
+    if (shards.length === 0) {
+        throw new Error('文件为空或仅含表头');
+    }
+
+    const manifest = {
+        count: shards.length,
+        files: shards.map((_, i) => `${INVENTORY_SHARD_BASE}${i + 1}${INVENTORY_SHARD_SUFFIX}`),
+        rows: dataLines.length,
+        source_rows: rawLines.length,
+        generated_at: new Date().toISOString()
+    };
+
+    for (let i = 0; i < shards.length; i++) {
+        const fileName = manifest.files[i];
+        const onRetry = (retryNum, waitMs) => {
+            if (onProgress) onProgress({
+                phase: 'retry',
+                shardIndex: i,
+                shardTotal: shards.length,
+                retryNum,
+                waitMs,
+                message: `分片 ${i + 1}/${shards.length} 触发限流，${Math.round(waitMs / 1000)}秒后第 ${retryNum} 次重试...`
+            });
+        };
+        if (onProgress) onProgress({
+            phase: 'upload',
+            shardIndex: i,
+            shardTotal: shards.length,
+            message: `上传分片 ${i + 1}/${shards.length} (${fileName})...`
+        });
+        await uploadRBShardToGitee(fileName, shards[i], token);
+        // 分片间间隔，避免连续写触发 Gitee 限流
+        if (i < shards.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2500));
+        }
+    }
+
+    if (onProgress) onProgress({
+        phase: 'manifest',
+        shardTotal: shards.length,
+        message: '上传分片清单...'
+    });
+    await uploadRBShardToGitee(INVENTORY_SHARDS_MANIFEST, JSON.stringify(manifest), token);
+
+    return { count: shards.length, rows: dataLines.length, source_rows: rawLines.length, files: manifest.files };
+}
+
 function parseRBCSVLine(line) {
     const result = [];
     let currentField = '';
@@ -212,8 +486,11 @@ const RB_SCHEMAS = {
     part_relationships: {
         string: ['rel_type', 'child_part_num', 'parent_part_num']
     },
+// BL-parts：Bricklink 目录桥接表。CODENAME 实为数字（对应 elements.element_id 数字主键），
+    // 故转 numeric 便于 getByKey 直接匹配；ITEMID/COLOR 为文本（ITEMID 可能含字母，如 "14pb10"）。
     bl_parts: {
-        string: ['itemtype', 'itemid', 'color', 'codename']
+        numeric: ['CODENAME'],
+        string: ['ITEMTYPE', 'ITEMID', 'COLOR']
     }
 };
 
@@ -740,6 +1017,7 @@ async function updateRBDatabaseOnCloud(jsonData, sha, token = '') {
 }
 
 // 将单个零件重量记录添加到 Gitee 的 weights.json 文件中。
+// 如果文件已存在，追加/更新该零件条目；如果文件不存在，创建新文件。
 // 返回 { success: true } 或 { success: false, error }
 async function addWeightToGiteeJSON(partNum, weight) {
     const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
@@ -762,6 +1040,7 @@ async function addWeightToGiteeJSON(partNum, weight) {
         if (checkResp.ok) {
             const existing = await checkResp.json();
             sha = existing.sha;
+            // 解码现有内容
             const decoded = decodeURIComponent(escape(atob(existing.content)));
             try {
                 weights = JSON.parse(decoded);
@@ -787,18 +1066,14 @@ async function addWeightToGiteeJSON(partNum, weight) {
             body.sha = sha;
         }
 
-        const response = await fetch(apiUrl, {
+        await giteeRequestWithRetry(() => fetch(apiUrl, {
             method: sha ? 'PUT' : 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `token ${token}`
             },
             body: JSON.stringify(body)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        }
+        }));
 
         return { success: true };
     } catch (e) {

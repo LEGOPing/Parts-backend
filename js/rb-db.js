@@ -1,5 +1,5 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 3;
+const RB_DB_VERSION = 4;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -9,7 +9,10 @@ const RB_STORES = {
     PART_RELATIONSHIPS: 'rb_part_relationships',
     PARTS: 'rb_parts',
     WEIGHTS: 'rb_weights',
-    BL_PARTS: 'rb_bl_parts'
+    // BL-parts：Bricklink 目录表（方法一「BG型号+颜色名→CODENAME」的桥接表）
+    BL_PARTS: 'rb_bl_parts',
+    // 零件别名映射表（来自 Gitee part_aliases.csv，别名→RB标准型号）
+    PART_ALIASES: 'rb_part_aliases'
 };
 
 const RB_STORE_KEYS = {
@@ -20,7 +23,8 @@ const RB_STORE_KEYS = {
     'rb_inventory_parts': 'inventory_parts',
     'rb_part_relationships': 'part_relationships',
     'rb_weights': 'weights',
-    'rb_bl_parts': 'bl_parts'
+    'rb_bl_parts': 'bl_parts',
+    'rb_part_aliases': 'part_aliases'
 };
 
 let rbDbInstance = null;
@@ -62,8 +66,14 @@ function openRBDatabase() {
             if (!db.objectStoreNames.contains(RB_STORES.WEIGHTS)) {
                 db.createObjectStore(RB_STORES.WEIGHTS, { keyPath: 'part_num' });
             }
+            // BL-parts：Bricklink 目录桥接表（方法一「BG型号+颜色名→CODENAME」）
+            // 仅作查询桥接，无需主键唯一（CODENAME 存在重复），用自增主键避免导入冲突
             if (!db.objectStoreNames.contains(RB_STORES.BL_PARTS)) {
                 db.createObjectStore(RB_STORES.BL_PARTS, { autoIncrement: true });
+            }
+            // 零件别名映射表：keyPath 为别名型号（alias_part_num），值列 rb_part_num
+            if (!db.objectStoreNames.contains(RB_STORES.PART_ALIASES)) {
+                db.createObjectStore(RB_STORES.PART_ALIASES, { keyPath: 'alias_part_num' });
             }
         };
 
@@ -180,7 +190,8 @@ async function getRBStats() {
             'rb_inventory_parts': RB_STORES.INVENTORY_PARTS,
             'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
             'rb_weights': RB_STORES.WEIGHTS,
-            'rb_bl_parts': RB_STORES.BL_PARTS
+            'rb_bl_parts': RB_STORES.BL_PARTS,
+            'rb_part_aliases': RB_STORES.PART_ALIASES
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -331,7 +342,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
-        'bl_parts': RB_STORES.BL_PARTS
+        'bl_parts': RB_STORES.BL_PARTS,
+        'part_aliases': RB_STORES.PART_ALIASES
     };
     
     const results = {};
@@ -378,7 +390,8 @@ async function exportRBDatabaseToJSON() {
         'inventory_parts': RB_STORES.INVENTORY_PARTS,
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
-        'bl_parts': RB_STORES.BL_PARTS
+        'bl_parts': RB_STORES.BL_PARTS,
+        'part_aliases': RB_STORES.PART_ALIASES
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
@@ -642,21 +655,52 @@ async function getPartColorCount(partNum) {
 }
 
 // ===== 零件图片缓存机制 =====
-const PART_IMAGE_CACHE_NAME = 'part-images-cache-v1';
+// v2: 修复 data URL 被存为字符串导致 Service Worker 返回后浏览器无法解析为 JPEG 二进制的问题
+const PART_IMAGE_CACHE_NAME = 'part-images-cache-v2';
 
 // 构造 Gitee Parts-img 仓库中的零件图片地址
 function buildPartsImgUrl(partNum, colorId) {
     return `${GITEE_IMG_URL}parts/${partNum}_${colorId}.jpg`;
 }
 
+// 将 data URL 转换为 Blob（修复 Service Worker 缓存优先策略下，data URL 字符串被当作图片二进制返回导致加载失败的问题）
+function dataURLToBlob(dataUrl) {
+    const parts = dataUrl.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const bytes = atob(parts[1]);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+        arr[i] = bytes.charCodeAt(i);
+    }
+    return new Blob([arr], { type: mime || 'image/jpeg' });
+}
+
 // 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
+// 注意：data URL 必须转为 Blob 再存储，否则 Service Worker 缓存优先策略下，
+// 浏览器会把 data URL 字符串当作图片二进制返回，导致 onerror 加载失败
 async function savePartImageToOfflineCache(partNum, colorId, imageData) {
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
-        const response = imageData instanceof Response
-            ? imageData
-            : new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
-        await cache.put(buildPartsImgUrl(partNum, colorId), response);
+        let response;
+        if (imageData instanceof Response) {
+            response = imageData;
+        } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
+            const blob = dataURLToBlob(imageData);
+            response = new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
+        } else {
+            response = new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+        }
+        const url = buildPartsImgUrl(partNum, colorId);
+        await cache.put(url, response);
+        // 清理旧 v1 缓存中的同 key 条目（避免 Service Worker 缓存优先时取到 v1 中的 data URL 字符串）
+        try {
+            const oldCache = await caches.open('part-images-cache-v1');
+            const oldEntry = await oldCache.match(url);
+            if (oldEntry) {
+                await oldCache.delete(url);
+                console.log('已清理旧 v1 缓存条目:', url);
+            }
+        } catch (_) { /* 忽略 */ }
         return true;
     } catch (error) {
         console.error('保存零件图片到离线缓存失败:', error);
@@ -688,11 +732,15 @@ async function deletePartImageFromOfflineCache(partNum, colorId) {
 // 检查 Gitee Parts-img 仓库是否存在该零件图片
 // 用 API 端点检查：raw URL 302→raw.giteeusercontent.com 无 CORS 头会被浏览器拦截；
 // API 端点返回 Access-Control-Allow-Origin:*，文件存在返回 JSON 对象，不存在返回空数组 []
+// 注意：必须携带 Token 避免 Gitee API 未认证限流（429）
 async function checkPartsImgOnGitee(partNum, colorId) {
     try {
         const filePath = `parts/${partNum}_${colorId}.jpg`;
         const apiUrl = `${GITEE_IMG_API_URL}/${filePath}?ref=${GITEE_IMG_BRANCH}`;
-        const response = await fetch(apiUrl, { cache: 'no-store' });
+        const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('gitee_token') : null)
+            || (typeof DEFAULT_GITEE_TOKEN !== 'undefined' ? DEFAULT_GITEE_TOKEN : null);
+        const headers = token ? { 'Authorization': `token ${token}` } : {};
+        const response = await fetch(apiUrl, { cache: 'no-store', headers });
         if (!response.ok) return false;
         const data = await response.json();
         return Array.isArray(data) ? data.length > 0 : !!data;
@@ -701,12 +749,13 @@ async function checkPartsImgOnGitee(partNum, colorId) {
     }
 }
 
-// 从 RB 数据库查询零件图片URL：通过型号和颜色精确匹配 inventory_parts 表
+// 从 RB 数据库查询零件图片URL：通过型号和颜色匹配 inventory_parts 表
 // 同一 part+color 可能有多条记录（不同 inventory 或不同 element），返回去重后的 img_url 列表，供弹窗卡片让用户选择
-// 无匹配或 img_url 为空（暂时失效）时按暂无图片处理，返回空列表
+// 若 inventory_parts 无匹配（该 part+color 组合未出现在任何 inventory 中），回退到 elements 表按 element_id 构造 URL
+// 注：查询前会解析零件别名（如 4073 → 6141），确保使用 RB 标准型号查询图片
 async function getRBPartImageUrls(partNum, colorId) {
     try {
-        // 解析别名：如果 partNum 是别名（如 4073），用 RB 标准型号（如 6141）查询
+        // 解析别名：如果 partNum 是别名，用 RB 标准型号查询
         const resolvedNum = typeof resolvePartAlias === 'function'
             ? await resolvePartAlias(partNum) : partNum;
         const normPart = String(resolvedNum).trim().toLowerCase();
@@ -742,84 +791,64 @@ async function getRBPartImageUrls(partNum, colorId) {
 }
 
 // 取第一条作为默认图片URL（零件卡片/详情图展示用）
-// confirmOnMultiple=true 时，若 inventory_parts 精确匹配到多个不同URL，弹窗让用户确认选择
-async function getRBPartImageUrl(partNum, colorId, confirmOnMultiple) {
+async function getRBPartImageUrl(partNum, colorId) {
     const urls = await getRBPartImageUrls(partNum, colorId);
-    if (!urls.length) return null;
-    if (confirmOnMultiple && urls.length > 1) {
-        return await confirmChooseRBImageUrl(partNum, colorId, urls);
-    }
-    return urls[0];
+    return urls.length ? urls[0] : null;
 }
 
-// 匹配到多个RB图片URL时，弹窗让用户确认选择（返回用户选中的URL）
-function confirmChooseRBImageUrl(partNum, colorId, urls) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay active';
-        const sheet = document.createElement('div');
-        sheet.className = 'modal-content';
-        sheet.style.maxWidth = '350px';
-        sheet.innerHTML = `
-            <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <span class="modal-title" style="font-size:16px;font-weight:600;">选择图片</span>
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove();resolve(null)" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">取消</button>
-            </div>
-            <div class="modal-body">
-                <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}　匹配到 ${urls.length} 条图片，请选择：</div>
-                ${urls.map(u => `
-                <div onclick="this.closest('.modal-overlay').remove();resolve('${u.replace(/'/g, "\\'")}')" style="word-break:break-all;background:#FFF8E1;border:1px solid #FFE082;border-radius:6px;padding:8px;font-size:12px;color:#795548;margin-bottom:6px;cursor:pointer;">${u}</div>`).join('')}
-            </div>
-        `;
-        overlay.appendChild(sheet);
-        document.body.appendChild(overlay);
-    });
-}
-
-// 根据 part_num 和 color_id 查询图片URL（二级读取：① Gitee Parts-img → ② RB数据库）
-// confirmOnMultiple=true 时，RB数据库匹配到多个不同URL会弹窗让用户确认
-// 离线缓存仅用于离线存储，不参与 URL 解析，避免自动缓存的 RB 图片误返回 Gitee URL
+// 根据 part_num 和 color_id 查询图片URL（三级读取：① Gitee Parts-img → ② 离线缓存 → ③ RB数据库）
 // 注：Gitee 用原始型号查询（缓存图片以原始型号命名，如 4073_colorId.jpg）；
 //     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
-async function getPartImageUrl(partNum, colorId, confirmOnMultiple) {
-    // ① Gitee Parts-img 仓库（人工添加的图片优先，用原始型号查询）
+async function getPartImageUrl(partNum, colorId) {
+    // ① 先用原始型号检查 Gitee Parts-img（可能已有离线缓存图片）
     if (await checkPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ② 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
+    // ② 检查离线缓存（用户自定义上传的图片在上传前已存入离线缓存；
+    //    即使 Gitee API 限流或上传因网络问题仅存了离线缓存，也能显示）
+    const cached = await getPartImageFromOfflineCache(partNum, colorId);
+    if (cached) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ③ 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
     const resolvedNum = typeof resolvePartAlias === 'function'
         ? await resolvePartAlias(partNum) : partNum;
-    return await getRBPartImageUrl(resolvedNum, colorId, confirmOnMultiple);
+    return await getRBPartImageUrl(resolvedNum, colorId);
 }
 
 // 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
-// 将 inventory_parts 中所有 part_num+color_id 精确匹配记录的 img_url 置 null
+// 将 inventory_parts 中匹配记录（优先 part_num+color_id 精确匹配，否则 part_num 匹配）的 img_url 置 null
 async function clearPartImageUrlInRB(partNum, colorId) {
     try {
         const db = await openRBDatabase();
-        // 解析别名，与读取(getPartImageUrl)使用同一规范零件号
-        const resolvedNum = typeof resolvePartAlias === 'function'
-            ? await resolvePartAlias(partNum) : partNum;
-        const normPart = String(resolvedNum).trim().toLowerCase();
+        const normPart = String(partNum).trim().toLowerCase();
         const normColor = String(colorId).trim().toLowerCase();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
             const store = transaction.objectStore(RB_STORES.INVENTORY_PARTS);
             const cursorRequest = store.openCursor();
             let updated = false;
+            let exactMatch = null;
+            let fallbackMatch = null;
 
             cursorRequest.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (!cursor) {
+                    // 优先清除精确匹配（part_num + color_id），否则清除 part_num 匹配
+                    const target = exactMatch || fallbackMatch;
+                    if (target && target.record.img_url) {
+                        target.cursor.update({ ...target.record, img_url: null });
+                        updated = true;
+                    }
                     resolve(updated);
                     return;
                 }
                 const record = cursor.value;
-                if (String(record.part_num).trim().toLowerCase() === normPart &&
-                    String(record.color_id).trim().toLowerCase() === normColor) {
-                    if (record.img_url) {
-                        cursor.update({ ...record, img_url: null });
-                        updated = true;
+                if (String(record.part_num).trim().toLowerCase() === normPart) {
+                    if (String(record.color_id).trim().toLowerCase() === normColor) {
+                        if (!exactMatch) exactMatch = { record, cursor };
+                    } else if (!fallbackMatch) {
+                        fallbackMatch = { record, cursor };
                     }
                 }
                 cursor.continue();
@@ -829,44 +858,6 @@ async function clearPartImageUrlInRB(partNum, colorId) {
     } catch (error) {
         console.error('清除RB数据库零件图片URL失败:', error);
         return false;
-    }
-}
-
-// 直接更新 RB 数据库中该零件（part_num+color_id 精确匹配）的所有 img_url 记录
-// 用于"图片URL变更"功能：不下载图片，直接把 inventory_parts 的 img_url 改写为用户输入的URL
-async function updateRBPartImageUrl(partNum, colorId, newUrl) {
-    try {
-        const db = await openRBDatabase();
-        // 解析别名，与读取(getPartImageUrl)使用同一规范零件号，避免以别名写入、以规范号读取导致错位
-        const resolvedNum = typeof resolvePartAlias === 'function'
-            ? await resolvePartAlias(partNum) : partNum;
-        const normPart = String(resolvedNum).trim().toLowerCase();
-        const normColor = String(colorId).trim().toLowerCase();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(RB_STORES.INVENTORY_PARTS, 'readwrite');
-            const store = transaction.objectStore(RB_STORES.INVENTORY_PARTS);
-            const cursorRequest = store.openCursor();
-            let updated = 0;
-
-            cursorRequest.onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (!cursor) {
-                    resolve(updated);
-                    return;
-                }
-                const record = cursor.value;
-                if (String(record.part_num).trim().toLowerCase() === normPart &&
-                    String(record.color_id).trim().toLowerCase() === normColor) {
-                    cursor.update({ ...record, img_url: newUrl });
-                    updated++;
-                }
-                cursor.continue();
-            };
-            cursorRequest.onerror = (event) => reject(event.target.error);
-        });
-    } catch (error) {
-        console.error('更新RB数据库零件图片URL失败:', error);
-        return 0;
     }
 }
 

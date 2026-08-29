@@ -829,7 +829,7 @@ async function loadParts(boxId) {
     
     document.getElementById('part-count').textContent = parts.length;
     
-    parts.forEach(async (part) => {
+    for (const part of parts) {
         const card = document.createElement('div');
         card.className = 'part-card';
         card.dataset.id = part.id;
@@ -864,7 +864,7 @@ async function loadParts(boxId) {
         });
         
         list.appendChild(card);
-    });
+    }
 }
 
 // ===== 零件转盒 =====
@@ -1298,6 +1298,17 @@ function updateSearchResultQuantity(partId, quantity) {
     qtyEl.classList.add(cls);
 }
 
+function updateSearchResultStatus(partId, isNew) {
+    const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+    if (!card) return;
+    const statusEl = card.querySelector('.src-status');
+    if (!statusEl) return;
+    const text = isNew ? '新' : '旧';
+    statusEl.textContent = text;
+    statusEl.title = isNew ? '新品' : '旧品';
+    statusEl.className = 'src-status ' + (isNew ? 'new' : 'used');
+}
+
 function showAddPartSheet() {
     if (!selectedBox) {
         alert('请先选择一个盒子');
@@ -1322,10 +1333,11 @@ function showAddPartSheet() {
                 <div class="form-row part-number-row">
                     <label class="form-label">零件型号：</label>
                     <div class="part-number-input-wrapper">
-                        <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" oninput="updatePartImagePreview()" />
+                        <input type="text" id="new-part-num" class="form-input" placeholder="请输入零件型号" autocomplete="off" />
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
+                    <button type="button" class="btn-recognize" onclick="showRecognizeModal()">识别</button>
                 </div>
                 <div class="data-source-hint" id="data-source-hint"></div>
             </div>
@@ -1339,9 +1351,10 @@ function showAddPartSheet() {
                 </div>
                 <div class="form-row">
                     <label class="form-label">零件颜色：</label>
-                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value); updatePartImagePreview()" />
+                    <input type="text" id="new-part-color" class="form-input" placeholder="请输入颜色ID" oninput="updateColorButtonColor(this.value)" />
                     <button id="color-pick-btn" class="btn-color-pick" onclick="showColorPicker()">选择颜色</button>
                 </div>
+                <div class="color-count-hint" id="color-count-hint"></div>
             </div>
             <div class="form-section">
                 <div class="quantity-weight-row">
@@ -1359,28 +1372,15 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
-            <div class="part-img-preview" id="part-img-preview" style="display: none;">
-                <div class="part-img-col" onclick="selectPartPreviewImage('gitee')">
-                    <div class="part-img-label">Gitee</div>
-                    <div class="part-img-box">
-                        <img id="preview-gitee-img" alt="Gitee图" />
-                        <span class="part-img-empty" id="preview-gitee-empty" style="display: none;">无图片</span>
-                        <div class="part-img-check" id="preview-gitee-check"></div>
+            <div class="form-section">
+                <div class="form-row">
+                    <label class="form-label">零件图片：</label>
+                    <div class="part-image-preview" id="add-part-image-preview">
+                        <div class="no-image">暂无图片</div>
                     </div>
-                </div>
-                <div class="part-img-col" onclick="selectPartPreviewImage('rb')">
-                    <div class="part-img-label">RB</div>
-                    <div class="part-img-box">
-                        <img id="preview-rb-img" alt="RB图" />
-                        <span class="part-img-empty" id="preview-rb-empty" style="display: none;">无图片</span>
-                        <div class="part-img-check" id="preview-rb-check"></div>
-                    </div>
-                </div>
-                <div class="part-img-col part-img-edit-col">
-                    <button type="button" class="btn-preview-edit" onclick="showAddPartImageEditor()">编辑</button>
                 </div>
             </div>
-            <div class="part-info-preview" id="part-info-preview" style="display: none;"></div>
+            <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
     
@@ -1393,6 +1393,192 @@ function showAddPartSheet() {
     initAddPartSuggestions();
 }
 
+// ==================== 拍照识别弹窗（独立于添加零件表单）====================
+
+// 拍照识别结果暂存
+let recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+// 标记本次识别是否由「兑底匹配（方法一/方法二）」确定了零件颜色，
+// 用于防止后续 BG 默认颜色覆盖该方法选定的颜色。
+let recognizeFallbackSetColor = false;
+
+// 打开拍照识别弹窗
+function showRecognizeModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'recognize-modal-overlay';
+    
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content add-part-modal';
+    
+    const isCalibrated = isGrayCardCalibrated();
+    
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <button class="btn-cancel" onclick="closeRecognizeModal(true)">取消</button>
+            <span class="modal-title">拍照识别</span>
+            <button class="btn-save" id="recognize-confirm-btn" style="opacity:0.4;pointer-events:none;" onclick="confirmRecognizeResult()">确认</button>
+        </div>
+        <div class="modal-body">
+            <!-- 区域二：拍照识别按钮 + 灰卡白平衡校准 -->
+            <div class="recognize-area2">
+                <div class="area2-left">
+                    <div class="area2-header">
+                        <span class="area2-label">灰板白平衡校准</span>
+                        <span class="gray-card-status-text ${isCalibrated ? 'calibrated' : 'uncalibrated'}" id="gray-card-status-text">
+                            ${isCalibrated ? '✓ 已校准' : '未校准'}
+                        </span>
+                    </div>
+                    <div class="area2-scroll-wrap" id="gray-card-instruction">
+                        <div class="area2-scroll-text">
+                            ${isCalibrated
+                                ? '灰卡白平衡已校准，点击"校准"可重新校准'
+                                : '将 18% 灰卡放在零件拍摄位置，点击"校准"拍照'}
+                        </div>
+                    </div>
+                    <div class="area2-actions">
+                        <button type="button" class="btn-gray-card-reset" onclick="resetGrayCardCalibrationUI()" ${isCalibrated ? '' : 'style="display:none"'} id="gray-card-clear-btn">清除</button>
+                        <button type="button" class="btn-gray-card" onclick="calibrateGrayCard()">校准</button>
+                    </div>
+                </div>
+                <div class="area2-right">
+                    <button type="button" class="recognize-circle-btn" onclick="recognizePartFromPhoto()" title="拍照识别零件">
+                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                            <circle cx="12" cy="13" r="4"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 区域三：识别结果预览区（始终显示，识别后填充内容） -->
+            <div class="recognize-preview-section" id="recognize-preview-section">
+                <div class="preview-section-title">BG识别结果预览</div>
+                <div class="preview-part-card" id="preview-part-card">
+                    <div class="preview-part-image" id="preview-part-image">
+                        <div class="no-image">暂无图片</div>
+                    </div>
+                    <div class="preview-part-details">
+                        <div class="preview-detail-row">
+                            <span class="preview-detail-label">型号：</span>
+                            <span class="preview-detail-value" id="recognize-part-num-display"></span>
+                        </div>
+                        <div class="preview-detail-row">
+                            <span class="preview-detail-label">名称：</span>
+                            <span class="preview-detail-value" id="recognize-part-name-display"></span>
+                        </div>
+                        <div class="preview-detail-row">
+                            <span class="preview-detail-label">颜色：</span>
+                            <span class="preview-detail-value" id="recognize-color-display"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 区域四：颜色预选区（始终显示，识别后填充内容） -->
+            <div class="color-preselection" id="color-preselection">
+                <div class="preview-section-title">颜色预选</div>
+                <div class="color-preselect-list" id="color-preselect-list">
+                    <div style="padding:12px;text-align:center;color:#999;font-size:13px;">拍照识别后将显示推荐颜色</div>
+                </div>
+            </div>
+            
+            <!-- 隐藏的识别结果区域（用于动态渲染） -->
+            <div class="recognize-result" id="recognize-result" style="display:none;"></div>
+        </div>
+    `;
+    
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+    
+    // 隐藏相机输入
+    const cameraInput = document.createElement('input');
+    cameraInput.type = 'file';
+    cameraInput.id = 'recognize-camera-input';
+    cameraInput.accept = 'image/*';
+    cameraInput.style.display = 'none';
+    cameraInput.addEventListener('change', () => processRecognitionFile(cameraInput));
+    document.body.appendChild(cameraInput);
+    
+    // 灰卡校准专用文件输入（隐藏）
+    const grayCardInput = document.createElement('input');
+    grayCardInput.type = 'file';
+    grayCardInput.id = 'gray-card-camera-input';
+    grayCardInput.accept = 'image/*';
+    grayCardInput.capture = 'environment';
+    grayCardInput.style.display = 'none';
+    grayCardInput.addEventListener('change', () => processGrayCardFile(grayCardInput));
+    document.body.appendChild(grayCardInput);
+    
+    // 重置识别结果
+    recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+}
+
+// 关闭识别弹窗
+function closeRecognizeModal(cancel) {
+    // 清理相机输入
+    const input = document.getElementById('recognize-camera-input');
+    if (input) input.remove();
+    const grayInput = document.getElementById('gray-card-camera-input');
+    if (grayInput) grayInput.remove();
+    
+    const overlay = document.getElementById('recognize-modal-overlay');
+    if (overlay) overlay.remove();
+    
+    if (cancel) {
+        // 取消则不保留任何结果
+        recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    }
+}
+
+// 确认识别结果，填入添加零件表单
+function confirmRecognizeResult() {
+    const data = recognizeResultData;
+    if (!data.partNum) return;
+    
+    const numInput = document.getElementById('new-part-num');
+    const nameInput = document.getElementById('new-part-name');
+    const colorInput = document.getElementById('new-part-color');
+    
+    if (numInput) numInput.value = data.partNum;
+    if (nameInput) nameInput.value = data.partName;
+    if (colorInput) {
+        colorInput.value = data.colorId;
+        updateColorButtonColor(data.colorId);
+    }
+    
+    closeRecognizeModal(false);
+    
+    // 触发颜色输入事件以更新零件图片预览
+    if (colorInput) {
+        colorInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+
+// 更新识别弹窗预览区域，启用/禁用确认按钮
+function updateRecognizePreview() {
+    const data = recognizeResultData;
+    const numDisplay = document.getElementById('recognize-part-num-display');
+    const nameDisplay = document.getElementById('recognize-part-name-display');
+    const colorDisplay = document.getElementById('recognize-color-display');
+    const previewSection = document.getElementById('recognize-preview-section');
+    const confirmBtn = document.getElementById('recognize-confirm-btn');
+    
+    if (numDisplay) numDisplay.textContent = data.partNum || '-';
+    if (nameDisplay) nameDisplay.textContent = data.partName || '-';
+    if (colorDisplay) {
+        colorDisplay.textContent = data.colorName ? `${data.colorName} (ID: ${data.colorId})` : (data.colorId ? `ID: ${data.colorId}` : '-');
+    }
+    
+    // 有识别结果时显示预览区域并启用确认按钮
+    if (data.partNum) {
+        if (previewSection) previewSection.style.display = 'block';
+        if (confirmBtn) {
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.pointerEvents = 'auto';
+        }
+    }
+}
+
 // 初始化添加零件的联想功能
 function initAddPartSuggestions() {
     const partNumInput = document.getElementById('new-part-num');
@@ -1400,7 +1586,6 @@ function initAddPartSuggestions() {
     const partNumSuggestions = document.getElementById('part-number-suggestions');
     const partNameSuggestions = document.getElementById('part-name-suggestions');
     const partNameHint = document.getElementById('part-name-hint');
-    const partInfoPreview = document.getElementById('part-info-preview');
     
     let partNumTimer = null;
     let partNameTimer = null;
@@ -1432,15 +1617,33 @@ function initAddPartSuggestions() {
         
         const suggestions = await searchPartsByNumber(query, 30);
         
+        // 如果直接搜索无结果，尝试通过别名查找
+        let aliasSuggestions = [];
         if (suggestions.length === 0) {
+            const resolvedNum = await resolvePartAlias(query.trim());
+            if (resolvedNum && resolvedNum !== query.trim()) {
+                aliasSuggestions = await searchPartsByNumber(resolvedNum, 5);
+                // 标记为别名推荐
+                aliasSuggestions = aliasSuggestions.map(s => ({
+                    ...s,
+                    part_num: s.part_num,
+                    name: s.name,
+                    aliasFrom: query.trim()
+                }));
+            }
+        }
+        
+        const allSuggestions = [...suggestions, ...aliasSuggestions];
+        
+        if (allSuggestions.length === 0) {
             hidePartNumSuggestions();
             return;
         }
         
-        partNumSuggestions.innerHTML = suggestions.map(s => `
-            <div class="part-number-suggestion-item" data-part-num="${s.part_num}" data-part-name="${s.name}">
+        partNumSuggestions.innerHTML = allSuggestions.map(s => `
+            <div class="part-number-suggestion-item ${s.aliasFrom ? 'alias-suggestion' : ''}" data-part-num="${s.part_num}" data-part-name="${s.name}" data-alias-from="${s.aliasFrom || ''}">
                 <span class="suggestion-num">${s.part_num}</span>
-                <span class="suggestion-name">${s.name}</span>
+                <span class="suggestion-name">${s.name}${s.aliasFrom ? ` (别名: ${s.aliasFrom})` : ''}</span>
             </div>
         `).join('');
         partNumSuggestions.style.display = 'block';
@@ -1450,13 +1653,25 @@ function initAddPartSuggestions() {
             item.addEventListener('click', () => {
                 const partNum = item.dataset.partNum;
                 const partName = item.dataset.partName;
+                const aliasFrom = item.dataset.aliasFrom;
                 
-                partNumInput.value = partNum;
+                // 如果是别名推荐，填写原始型号，但显示数据来源提示
+                if (aliasFrom) {
+                    partNumInput.value = aliasFrom;
+                    const dsHint = document.getElementById('data-source-hint');
+                    if (dsHint) {
+                        dsHint.textContent = `数据来源：${partNum}`;
+                    }
+                } else {
+                    partNumInput.value = partNum;
+                }
                 hidePartNumSuggestions();
                 
                 if (partName) {
                     partNameInput.value = partName;
-                    partNameHint.textContent = '';
+                    if (!aliasFrom) {
+                        partNameHint.textContent = '';
+                    }
                 }
                 
                 updatePartInfoPreview();
@@ -1614,15 +1829,21 @@ function initAddPartSuggestions() {
         }, 1000);
     }
     
-    // 根据型号更新零件信息预览
+    // 根据型号更新颜色数量提示
     async function updatePartInfoPreview() {
         const partNum = partNumInput.value.trim();
+        const hintEl = document.getElementById('color-count-hint');
+        if (!hintEl) return;
+
         if (!partNum) {
-            partInfoPreview.style.display = 'none';
+            hintEl.textContent = '';
+            updateAddPartImage();
             return;
         }
-        
+
         let effectivePartNum = partNum;
+
+        // 如果在 RB 中找不到，尝试通过别名解析
         let part = await getPartByNum(partNum);
         if (!part) {
             const resolvedNum = await resolvePartAlias(partNum);
@@ -1632,27 +1853,47 @@ function initAddPartSuggestions() {
             }
         }
 
+        // 更新数据来源提示
+        const dsHint = document.getElementById('data-source-hint');
+        if (dsHint) {
+            if (effectivePartNum !== partNum) {
+                dsHint.innerHTML = `数据来源：${effectivePartNum}`;
+            } else if (!part) {
+                // 直接匹配和别名都失败时，显示 BL 匹配按钮
+                dsHint.innerHTML = 'RB未匹配 <button class="btn-bl-match" onclick="triggerBLMatchForManual()">BL</button>';
+            } else {
+                dsHint.textContent = '';
+            }
+        }
+
         if (part) {
             if (!partNameInput.value) {
                 partNameInput.value = part.name || '';
             }
-            
+
             const colorCount = await getPartColorCount(effectivePartNum);
-            partInfoPreview.innerHTML = `
-                <div class="part-preview-item">
-                    <span class="preview-label">型号</span>
-                    <span class="preview-value">${part.part_num}${effectivePartNum !== partNum ? ` <span style="color:#e67e22;font-size:10px;">数据来源：${effectivePartNum}</span>` : ''}</span>
-                </div>
-                <div class="part-preview-item">
-                    <span class="preview-label">名称</span>
-                    <span class="preview-value">${part.name || '-'}</span>
-                </div>
-                ${colorCount > 0 ? `<div class="part-preview-item"><span class="preview-label">可用颜色</span><span class="preview-value">${colorCount} 种</span></div>` : ''}
-            `;
-            partInfoPreview.style.display = 'block';
+            hintEl.textContent = colorCount > 0 ? `可能有${colorCount}种颜色` : '';
         } else {
-            partInfoPreview.style.display = 'none';
+            hintEl.textContent = '';
         }
+        updateAddPartImage();
+    }
+    
+    // 更新添加零件页的图片预览行
+    async function updateAddPartImage() {
+        const partNum = partNumInput.value.trim();
+        const colorId = document.getElementById('new-part-color')?.value.trim() || '';
+        const imagePreview = document.getElementById('add-part-image-preview');
+        if (!imagePreview) return;
+        
+        if (partNum && colorId) {
+            const imgUrl = await getPartImageUrl(partNum, colorId);
+            if (imgUrl) {
+                imagePreview.innerHTML = `<img src="${imgUrl}" alt="${partNum}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+                return;
+            }
+        }
+        imagePreview.innerHTML = '<div class="no-image">暂无图片</div>';
     }
     
     // 零件型号输入事件
@@ -1666,7 +1907,10 @@ function initAddPartSuggestions() {
         if (!value) {
             hidePartNumSuggestions();
             partNameHint.textContent = '';
-            partInfoPreview.style.display = 'none';
+            const dsHint = document.getElementById('data-source-hint');
+            if (dsHint) dsHint.textContent = '';
+            document.getElementById('color-count-hint') && (document.getElementById('color-count-hint').textContent = '');
+            updateAddPartImage();
             return;
         }
         
@@ -1679,6 +1923,7 @@ function initAddPartSuggestions() {
         partNumTimer = setTimeout(async () => {
             await showPartNumSuggestions(value);
             await updatePartInfoPreview();
+            await updateAddPartImage();
         }, 800);
     });
     
@@ -1718,6 +1963,13 @@ function initAddPartSuggestions() {
         }
     });
     
+    // 颜色输入变化时更新预览（切换颜色图片）
+    const colorInput = document.getElementById('new-part-color');
+    colorInput.addEventListener('input', () => {
+        updatePartInfoPreview();
+        updateAddPartImage();
+    });
+    
     // 点击外部关闭联想
     document.getElementById('add-part-overlay').addEventListener('click', (e) => {
         if (!e.target.closest('.part-number-input-wrapper') && 
@@ -1728,241 +1980,1672 @@ function initAddPartSuggestions() {
     });
 }
 
-// ===== 添加零件弹窗：图片预览区（Gitee / RB 双列 + 编辑） =====
+// ==================== 拍照识别零件（Brickognize）====================
+let recognizeUploading = false;
 
-// 根据型号+颜色刷新图片预览；两者非空才显示
-async function updatePartImagePreview() {
-    const partNumEl = document.getElementById('new-part-num');
-    const colorEl = document.getElementById('new-part-color');
-    const container = document.getElementById('part-img-preview');
-    if (!partNumEl || !colorEl || !container) return;
-    const partNum = partNumEl.value.trim();
-    const colorId = colorEl.value.trim();
-    if (!partNum || !colorId) {
-        container.style.display = 'none';
-        return;
-    }
-    container.style.display = 'flex';
-
-    // 型号/颜色变化时重置选择（重新计算默认值）
-    const key = partNum + ':' + colorId;
-    if (window._partImgKey !== key) {
-        window._partImgKey = key;
-        window.newPartImgExplicit = false;
-        window.newPartImageUrl = '';
-    }
-
-    // 左列：Gitee
-    const giteeUrl = buildPartsImgUrl(partNum, colorId);
-    const giteeOk = await checkPartsImgOnGitee(partNum, colorId);
-    const giteeImg = document.getElementById('preview-gitee-img');
-    const giteeEmpty = document.getElementById('preview-gitee-empty');
-    if (giteeOk) {
-        giteeImg.src = giteeUrl;
-        giteeImg.style.display = 'block';
-        giteeEmpty.style.display = 'none';
-    } else {
-        giteeImg.removeAttribute('src');
-        giteeImg.style.display = 'none';
-        giteeEmpty.style.display = 'block';
-    }
-
-    // 中列：RB
-    const rbUrl = await getRBPartImageUrl(partNum, colorId);
-    const rbImg = document.getElementById('preview-rb-img');
-    const rbEmpty = document.getElementById('preview-rb-empty');
-    if (rbUrl) {
-        rbImg.src = rbUrl;
-        rbImg.style.display = 'block';
-        rbEmpty.style.display = 'none';
-    } else {
-        rbImg.removeAttribute('src');
-        rbImg.style.display = 'none';
-        rbEmpty.style.display = 'block';
-    }
-
-    // 未手动选择时计算默认值：已有零件→Gitee，全新零件→RB
-    if (!window.newPartImgExplicit) {
-        let isExisting = false;
-        try {
-            const boxParts = selectedBox ? await getParts(selectedBox.id) : [];
-            isExisting = boxParts.some(p => p.part_num === partNum);
-        } catch (e) {}
-        if (isExisting) {
-            window.newPartImageUrl = giteeOk ? giteeUrl : (rbUrl || '');
-        } else {
-            window.newPartImageUrl = rbUrl ? rbUrl : (giteeOk ? giteeUrl : '');
-        }
-    }
-    renderPartPreviewChecks();
+// 触发相机/相册选择
+function recognizePartFromPhoto() {
+    if (recognizeUploading) { alert('正在识别中，请稍候...'); return; }
+    const input = document.getElementById('recognize-camera-input');
+    if (!input) return;
+    input.value = ''; // 允许重复选择同一张图片
+    input.click();
 }
 
-// 刷新两个图片列右上角的勾选状态
-function renderPartPreviewChecks() {
-    const giteeCheck = document.getElementById('preview-gitee-check');
-    const rbCheck = document.getElementById('preview-rb-check');
-    if (!giteeCheck || !rbCheck) return;
-    const giteeUrl = document.getElementById('preview-gitee-img').getAttribute('src') || '';
-    const rbUrl = document.getElementById('preview-rb-img').getAttribute('src') || '';
-    giteeCheck.classList.toggle('active', !!giteeUrl && window.newPartImageUrl === giteeUrl);
-    rbCheck.classList.toggle('active', !!rbUrl && window.newPartImageUrl === rbUrl);
+// 重置识别 UI（第二次拍摄时清除之前的结果，但保持区域可见）
+function resetRecognizeUI() {
+    recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    recognizeFallbackSetColor = false;
+    
+    // 保持区域三（预览区）可见，清除内容
+    const previewImg = document.getElementById('preview-part-image');
+    if (previewImg) previewImg.innerHTML = '<div class="no-image">暂无图片</div>';
+    
+    // 清除预览文字
+    const numDisplay = document.getElementById('recognize-part-num-display');
+    const nameDisplay = document.getElementById('recognize-part-name-display');
+    const colorDisplay = document.getElementById('recognize-color-display');
+    if (numDisplay) numDisplay.textContent = '';
+    if (nameDisplay) nameDisplay.textContent = '';
+    if (colorDisplay) colorDisplay.textContent = '';
+    
+    // 保持区域四（颜色预选）可见，显示占位文字
+    const colorList = document.getElementById('color-preselect-list');
+    if (colorList) colorList.innerHTML = '<div style="padding:12px;text-align:center;color:#999;font-size:13px;">拍照识别后将显示推荐颜色</div>';
+    
+    // 禁用确认按钮
+    const confirmBtn = document.getElementById('recognize-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.style.opacity = '0.4';
+        confirmBtn.style.pointerEvents = 'none';
+    }
+    
+    // 清除别名提示和同名零件选择器
+    const aliasHint = document.querySelector('.alias-hint');
+    if (aliasHint) aliasHint.remove();
+    const sameNamePicker = document.getElementById('same-name-parts-picker');
+    if (sameNamePicker) sameNamePicker.remove();
 }
 
-// 用户点击图片确认选择，所选图片URL作为该零件的URL
-function selectPartPreviewImage(source) {
-    const giteeImg = document.getElementById('preview-gitee-img');
-    const rbImg = document.getElementById('preview-rb-img');
-    const giteeUrl = giteeImg ? giteeImg.getAttribute('src') : '';
-    const rbUrl = rbImg ? rbImg.getAttribute('src') : '';
-    if (source === 'gitee' && giteeUrl) {
-        window.newPartImageUrl = giteeUrl;
-        window.newPartImgExplicit = true;
-    } else if (source === 'rb' && rbUrl) {
-        window.newPartImageUrl = rbUrl;
-        window.newPartImgExplicit = true;
-    }
-    renderPartPreviewChecks();
-}
-
-// 编辑图片URL弹窗（添加 / 更改 / 删除）
-function showAddPartImageEditor() {
-    const partNumEl = document.getElementById('new-part-num');
-    const colorEl = document.getElementById('new-part-color');
-    const partNum = partNumEl ? partNumEl.value.trim() : '';
-    const colorId = colorEl ? colorEl.value.trim() : '';
-    if (!partNum || !colorId) {
-        showToast('请先填写零件型号和颜色');
+// 处理识别文件上传
+async function processRecognitionFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+        setRecognizeStatus('请选择图片文件');
         return;
     }
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-    overlay.id = 'add-part-img-editor-overlay';
-    const sheet = document.createElement('div');
-    sheet.className = 'modal-content add-part-modal';
-    sheet.innerHTML = `
-        <div class="modal-header">
-            <span class="modal-title">编辑图片URL</span>
-            <button class="btn-cancel" onclick="closeAddPartImageEditor()">返回</button>
-        </div>
-        <div class="modal-body">
-            <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}</div>
-            <div class="form-row" style="align-items:flex-start;">
-                <label class="form-label">图片URL：</label>
-                <input type="text" id="edit-img-url-input" class="form-input" placeholder="https://..." value="${window.newPartImageUrl || ''}" autocomplete="off" />
-            </div>
-            <div id="edit-img-status" style="margin-top:8px;font-size:13px;color:#666;"></div>
-            <div style="display:flex;gap:10px;margin-top:14px;">
-                <button class="btn-save" style="flex:1;" onclick="saveEditedPartImage()">添加/更改</button>
-                <button class="btn-save" style="flex:1;background-color:#e74c3c;" onclick="deleteEditedPartImage()">删除</button>
-            </div>
-        </div>
-    `;
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-}
-
-// 关闭编辑弹窗并刷新预览区
-function closeAddPartImageEditor() {
-    const overlay = document.getElementById('add-part-img-editor-overlay');
-    if (overlay) overlay.remove();
-    updatePartImagePreview();
-}
-
-// 添加/更改：将输入URL保存为该零件图片（rebrickable→RB数据库；其他→离线缓存+Gitee）
-async function saveEditedPartImage() {
-    const urlInput = document.getElementById('edit-img-url-input');
-    const statusEl = document.getElementById('edit-img-status');
-    const url = urlInput ? urlInput.value.trim() : '';
-    if (!url) {
-        statusEl.textContent = '请输入图片URL';
-        statusEl.style.color = '#f44336';
-        return;
-    }
-    if (!/^https?:\/\//i.test(url)) {
-        statusEl.textContent = '请输入以 http:// 或 https:// 开头的有效URL';
-        statusEl.style.color = '#f44336';
-        return;
-    }
-    const partNum = document.getElementById('new-part-num').value.trim();
-    const colorId = document.getElementById('new-part-color').value.trim();
-    statusEl.textContent = '⏳ 正在处理...';
-    statusEl.style.color = '#2196F3';
-
-    // rebrickable CDN 图片（含CORS限制无法fetch下载）→ 直接更新 RB 数据库 img_url
-    if (/cdn\.rebrickable\.com\//i.test(url)) {
-        const updated = await updateRBPartImageUrl(partNum, colorId, url);
-        statusEl.textContent = updated > 0 ? '✓ 已更新RB数据库图片URL' : '✗ 数据库无匹配记录，未能更新';
-        statusEl.style.color = updated > 0 ? '#4CAF50' : '#f44336';
-        if (updated > 0) {
-            window.newPartImageUrl = url;
-            window.newPartImgExplicit = true;
-            renderPartPreviewChecks();
-        }
-        updatePartImagePreview();
-        return;
-    }
+    if (recognizeUploading) return;
+    recognizeUploading = true;
+    
+    // 重置之前的识别结果
+    resetRecognizeUI();
+    
+    setRecognizeStatus('正在处理图片...');
 
     try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('图片下载失败');
-        const blob = await response.blob();
-        const imageBase64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-        // ① 保存到浏览器离线缓存 ② 上传到 Gitee Parts-img
-        await savePartImageToOfflineCache(partNum, colorId, imageBase64);
-        const uploadResult = await uploadPartImageToGitee(partNum, colorId, imageBase64);
-        window.newPartImageUrl = buildPartsImgUrl(partNum, colorId);
-        window.newPartImgExplicit = true;
-        renderPartPreviewChecks();
-        statusEl.textContent = uploadResult.success
-            ? '✓ 图片已保存'
-            : '✓ 已存入离线缓存（Gitee上传失败: ' + uploadResult.error + '）';
-        statusEl.style.color = uploadResult.success ? '#4CAF50' : '#FF9800';
-        updatePartImagePreview();
+        // 压缩图片（缩小尺寸、转 JPEG），避免API因文件太大或格式不支持返回422
+        const compressed = await compressImage(file, 1024);
+        if (!compressed) { setRecognizeStatus('图片处理失败'); return; }
+
+        // 裁剪到零件最小包围框（去除多余背景，提升识别精度和颜色分析准确度）
+        const cropped = await cropToPart(compressed);
+
+        // 本地预览裁剪后的图片（放入 Area 3 预览卡片）
+        const previewUrl = URL.createObjectURL(cropped);
+        const previewImgContainer = document.getElementById('preview-part-image');
+        if (previewImgContainer) {
+            previewImgContainer.innerHTML = `<img class="recognize-thumb" src="${previewUrl}" alt="预览图片" />`;
+        }
+
+        setRecognizeStatus('正在上传识别中，请稍候...');
+        const candidate = await uploadToBrickognize(cropped);
+        URL.revokeObjectURL(previewUrl);
+        if (!candidate) { setRecognizeStatus('未识别到零件，请重试'); return; }
+
+        // 填入零件信息（支持别名解析与兑底匹配），获取有效的RB零件型号
+        const effectivePartNum = await fillRecognizedPart(candidate.id, candidate.name, candidate.colorName);
+
+        // 颜色处理：优先使用 BG 返回的颜色，其次通过图片分析计算
+        let bgColorId = candidate.colorId;
+        let bgColorName = candidate.colorName;
+
+        // 计算裁剪后的图片中最接近的 RB 颜色（同时作为备选，背景已去除，颜色分析更准确）
+        const result = await computeClosestRBColors(cropped, effectivePartNum || candidate.id);
+
+        // 确保 BG 颜色始终在颜色列表中（不在最近5个中就将其加入）
+        if (bgColorId !== null && bgColorId !== undefined) {
+            const bgInColors = result.colors.findIndex(c => c.id === Number(bgColorId));
+            if (bgInColors === -1) {
+                const allColors = await getAllColors();
+                const bgColor = allColors.find(c => c.id === Number(bgColorId));
+                if (bgColor) {
+                    result.colors.unshift({
+                        id: bgColor.id,
+                        name: bgColor.name,
+                        hex: bgColor.rgb
+                    });
+                }
+            }
+        }
+        renderRecognizeColors(result.colors, result.dominantHex, bgColorId, bgColorName);
+
+        // 识别完成后隐藏状态区域，显示预览和颜色预选
+        const statusBox = document.getElementById('recognize-result');
+        if (statusBox) statusBox.style.display = 'none';
+
+        // 如果 BG 返回了颜色，自动选中（存入暂存数据）
+        // 注意：若兑底匹配已确定更精确的颜色（recognizeFallbackSetColor），则优先保留该颜色
+        if (!recognizeFallbackSetColor && bgColorId !== null && bgColorId !== undefined) {
+            recognizeResultData.colorId = String(bgColorId);
+            recognizeResultData.colorName = bgColorName || '';
+            updateRecognizePreview();
+        }
+
+        // 同名零件消歧：如果名称不为空，查询 RB 数据库中所有同名零件
+        const partName = recognizeResultData.partName;
+        if (partName && effectivePartNum) {
+            await showSameNamePartsPicker(partName, effectivePartNum);
+        }
+    } catch (err) {
+        console.error('Brickognize识别失败:', err);
+        setRecognizeStatus('识别失败：' + (err && err.message ? err.message : '网络错误，请检查网络'));
+    } finally {
+        recognizeUploading = false;
+    }
+}
+
+// 压缩图片：缩放到最长边不超过 maxSize，输出 JPEG
+async function compressImage(file, maxSize) {
+    const img = await fileToImage(file);
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (w <= 0 || h <= 0) return null;
+    // 等比例缩放
+    if (w > maxSize || h > maxSize) {
+        const ratio = Math.min(maxSize / w, maxSize / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    return new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+            if (!blob) { resolve(null); return; }
+            resolve(new File([blob], 'recognize.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+    });
+}
+
+// 裁剪图片到零件的最小包围框（去除多余背景）
+// 返回裁剪后的 File，如果无法裁剪则返回原图
+async function cropToPart(file) {
+    const img = await fileToImage(file);
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (nw < 50 || nh < 50) return file;
+
+    // 缩小到 256px 分析
+    const scale = Math.min(256 / nw, 256 / nh, 1);
+    const aw = Math.round(nw * scale), ah = Math.round(nh * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = aw;
+    canvas.height = ah;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, aw, ah);
+    let data;
+    try { data = ctx.getImageData(0, 0, aw, ah).data; } catch (e) { return file; }
+
+    // 从四个角采样背景色（取各角 10% 区域）
+    const cornerSize = 0.10;
+    let bgSamples = [];
+    const corners = [
+        [0, 0], [aw - Math.round(aw * cornerSize), 0],
+        [0, ah - Math.round(ah * cornerSize)], [aw - Math.round(aw * cornerSize), ah - Math.round(ah * cornerSize)]
+    ];
+    for (const [cx, cy] of corners) {
+        const cw = Math.round(aw * cornerSize), ch = Math.round(ah * cornerSize);
+        for (let y = cy; y < cy + ch && y < ah; y++) {
+            for (let x = cx; x < cx + cw && x < aw; x++) {
+                const i = (y * aw + x) * 4;
+                bgSamples.push([data[i], data[i + 1], data[i + 2]]);
+            }
+        }
+    }
+    if (bgSamples.length < 50) return file;
+
+    // 计算背景平均色
+    let sumR = 0, sumG = 0, sumB = 0;
+    for (const p of bgSamples) { sumR += p[0]; sumG += p[1]; sumB += p[2]; }
+    const bgR = sumR / bgSamples.length, bgG = sumG / bgSamples.length, bgB = sumB / bgSamples.length;
+    const bgBright = (bgR + bgG + bgB) / 3;
+    // 降低阈值，更敏感地检测前景（零件）像素，尤其对小零件和颜色接近背景的零件
+    let threshold = Math.max(12, Math.min(30, Math.round(bgBright / 15)));
+    let threshold2 = threshold * threshold;
+
+    // 扫描前景像素，找最小包围框（最多尝试两次，第二次降低阈值）
+    let minX = aw, minY = ah, maxX = 0, maxY = 0;
+    let fgCount = 0;
+    let retried = false;
+    for (let pass = 0; pass < 2; pass++) {
+        minX = aw; minY = ah; maxX = 0; maxY = 0; fgCount = 0;
+        // 步长 2（隔行扫描加速）
+        for (let y = 0; y < ah; y += 2) {
+            for (let x = 0; x < aw; x += 2) {
+                const i = (y * aw + x) * 4;
+                const dr = data[i] - bgR, dg = data[i + 1] - bgG, db = data[i + 2] - bgB;
+                if (dr * dr + dg * dg + db * db > threshold2) {
+                    fgCount++;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        const totalPixels = (aw / 2) * (ah / 2);
+        // 前景足够多，直接跳出（降低要求，0.5% 即可）
+        if (fgCount >= totalPixels * 0.005) break;
+        // 第一次前景太少，降低阈值重试
+        if (pass === 0) {
+            retried = true;
+            threshold = Math.max(8, Math.round(threshold * 0.6));
+            threshold2 = threshold * threshold;
+        }
+    }
+
+    // 如果两次扫描后仍无前景，用中心裁剪法（假设零件在画面中央）
+    const totalPixels = (aw / 2) * (ah / 2);
+    if (fgCount < totalPixels * 0.005) {
+        // 中心裁剪：取画面较短边的 80% 作为正方形（尽可能多包含零件）
+        const centerSize = Math.min(aw, ah) * 0.8;
+        minX = Math.round((aw - centerSize) / 2);
+        minY = Math.round((ah - centerSize) / 2);
+        maxX = Math.round(minX + centerSize);
+        maxY = Math.round(minY + centerSize);
+    }
+
+    // 裁剪为正方形：以零件中心为中心，边长取较长边（仅留少量边距）
+    const pad = 0.04; // 减小边距，让零件占容器约 92% 尺寸
+    // 在原图坐标系中计算零件包围框
+    let partCX = (minX + maxX) / 2 / scale;
+    let partCY = (minY + maxY) / 2 / scale;
+    let partW = (maxX - minX) / scale;
+    let partH = (maxY - minY) / scale;
+    // 正方形边长 = 较长边 + 两侧边距
+    let side = Math.max(partW, partH) * (1 + pad * 2);
+    // 居中裁剪
+    let cropX = Math.round(partCX - side / 2);
+    let cropY = Math.round(partCY - side / 2);
+    let cropSize = Math.round(side);
+    // 超出边界保护：正方形不能超过图片范围
+    if (cropSize > nw || cropSize > nh) {
+        // 裁剪尺寸超过图片——缩小到图片较短边
+        cropSize = Math.min(nw, nh);
+        cropX = Math.round(partCX - cropSize / 2);
+        cropY = Math.round(partCY - cropSize / 2);
+    }
+    // 平移保证在图片内
+    cropX = Math.max(0, Math.min(cropX, nw - cropSize));
+    cropY = Math.max(0, Math.min(cropY, nh - cropSize));
+    if (cropSize < 30) return file;
+
+    // 执行正方形裁剪
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = cropSize;
+    cropCanvas.height = cropSize;
+    const cropCtx = cropCanvas.getContext('2d');
+    if (!cropCtx) return file;
+    cropCtx.drawImage(img, cropX, cropY, cropSize, cropSize, 0, 0, cropSize, cropSize);
+    return new Promise((resolve) => {
+        cropCanvas.toBlob((blob) => {
+            if (!blob) { resolve(file); return; }
+            resolve(new File([blob], 'recognize_cropped.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+    });
+}
+
+// 调用 Brickognize 识别零件型号和颜色
+// 启用颜色预测（predict_color=true），返回结果包含：
+// - id: 零件型号
+// - name: 零件名称
+// - colorName: 识别到的颜色名称（如 "Red"）
+// - colorId: 匹配到的 RB 颜色 ID（通过颜色名称匹配）
+async function uploadToBrickognize(file) {
+    const formData = new FormData();
+    formData.append('query_image', file);
+    const url = 'https://api.brickognize.com/predict/parts/?predict_color=true&top_k_items=3&min_similarity_items=0';
+    const resp = await fetch(url, { method: 'POST', body: formData });
+    if (!resp.ok) {
+        // 尝试读取错误详情
+        let detail = 'HTTP ' + resp.status;
+        try { const errBody = await resp.json(); if (errBody.detail) detail += ' ' + JSON.stringify(errBody.detail); } catch (e) { /* 忽略 */ }
+        throw new Error(detail);
+    }
+    const data = await resp.json();
+    const items = (data && data.items) || [];
+    if (!items.length) return null;
+
+    // 优先返回零件(part)候选，其次取得分最高的候选
+    const cand = items.find(i => i.type === 'part') || items[0];
+
+    // 解析颜色信息：Brickognize 返回的颜色名称
+    let colorName = '';
+    let colorId = null;
+    if (data.predicted_color) {
+        colorName = String(data.predicted_color).trim();
+    } else if (cand.color) {
+        colorName = String(cand.color).trim();
+    }
+
+    // 尝试将颜色名称匹配到 RB 颜色 ID
+    if (colorName) {
+        try {
+            const matchedColor = await matchColorNameToId(colorName);
+            if (matchedColor) {
+                colorId = matchedColor.id;
+                colorName = matchedColor.name;
+            }
+        } catch (e) {
+            console.warn('颜色名称匹配失败:', e.message);
+        }
+    }
+
+    return {
+        id: String(cand.id),
+        name: cand.name || '',
+        colorName: colorName,
+        colorId: colorId
+    };
+}
+
+// —— 以下为「兑底匹配」辅助函数（场景 A/B 均匹配不到 RB 型号时使用）——
+// 场景 A：BG 型号能直接匹配 rb_parts 的 part_num
+// 场景 B：BG 型号通过别名表（resolvePartAlias）映射到 RB 标准型号
+// 当 A/B 都失败时依次尝试：
+//   方法一：BG型号 + 颜色名 在 RB 数据中等价匹配（BL 匹配的近似实现，返回标准 part_num + color_id）
+//   方法二：按 BG 名称精确度排序提供至多 10 个候选零件，由用户人工选择
+
+// 名称相似度评分（用于方法二候选排序与过滤）
+function _nameSimilarityScore(query, candidate) {
+    const q = String(query || '').toLowerCase().trim();
+    const c = String(candidate || '').toLowerCase().trim();
+    if (!c || !q) return -1;
+    if (c === q) return 100;                        // 完全一致
+    if (c.startsWith(q)) return 80;                 // 名称以关键词开头
+    if (q.startsWith(c)) return 70;                 // 关键词以名称为开头
+    const qWords = q.split(/\s+/).filter(Boolean);
+    const cWords = c.split(/\s+/).filter(Boolean);
+    if (!qWords.length || !cWords.length) return 0;
+    let hit = 0;
+    for (const w of qWords) {
+        if (cWords.some(cw => cw.includes(w) || w.includes(cw))) hit++;
+    }
+    let score = (hit / qWords.length) * 60;         // 分词命中比例
+    if (c.includes(q)) score += 5;                  // 整体包含加分
+    return score;
+}
+
+// 方法一：BG型号 + 颜色名 → BL-parts(ITEMID+COLOR) → CODENAME → elements(element_id) → RB型号 + 颜色ID
+// 严格遵循需求方流程：
+//   1) 在 BL-parts 表中按 (ITEMID, COLOR) 匹配 BG 返回的 (型号, 颜色名)，得到 CODENAME
+//   2) 用 CODENAME 匹配 rb_elements 表的 element_id，得到 RB 型号(part_num) 与 颜色ID(color_id)
+// 任一步匹配不到则返回 null（交给方法二）。
+async function matchRBByColorFallback(bgPartNum, bgColorName) {
+    if (!bgPartNum) return null;
+    const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, '');
+    const normItem = norm(bgPartNum);
+    if (!normItem) return null;
+    const normColor = bgColorName ? norm(bgColorName) : null;
+
+    // —— 第 1 步：BL-parts：(ITEMID + COLOR) → CODENAME ——
+    let blParts;
+    try {
+        blParts = await getAll(RB_STORES.BL_PARTS);
     } catch (e) {
-        statusEl.textContent = '✗ 保存失败：' + e.message;
-        statusEl.style.color = '#f44336';
+        blParts = []; // 旧库未升级或未导入该表
+    }
+    if (!blParts.length) return null; // 无 BL-parts 数据 → 方法二
+
+    // 先按 ITEMID 收窄，再在颜色维度上精确匹配
+    const itemRows = blParts.filter(r => norm(r.ITEMID) === normItem);
+    if (!itemRows.length) return null;
+
+    let hit = normColor
+        ? (itemRows.find(r => norm(r.COLOR) === normColor) || null)
+        : itemRows[0]; // BG 未提供颜色名时，取该型号唯一/首条映射
+    if (!hit || hit.CODENAME == null || hit.CODENAME === '') return null;
+
+    // —— 第 2 步：elements：element_id == CODENAME → RB 型号 + 颜色ID ——
+    // CODENAME 在数据源中为数字字符串（对应 element_id 数字主键），导入时会转 numeric；
+    // 这里再做一次安全转换，兼容号码边界/前导零等 edge case
+    const rawCode = String(hit.CODENAME).trim();
+    const numCode = Number(rawCode);
+    const elKey = (!isNaN(numCode) && rawCode !== '') ? numCode : rawCode;
+
+    let el;
+    try {
+        el = await getByKey(RB_STORES.ELEMENTS, elKey);
+    } catch (e) {
+        el = null;
+    }
+    if (!el) return null;
+
+    return { rbPartNum: el.part_num, colorId: el.color_id };
+}
+
+// 方法二：按 BG 名称模糊搜索候选（精确→模糊排序，至多 10 个，并为每个候选绑定颜色）
+async function buildFallbackCandidates(bgName, bgColorName) {
+    const allParts = await getAll(RB_STORES.PARTS);
+    if (!allParts || !allParts.length) return [];
+
+    // 优先确定 BG 颜色对应的 RB color_id（用于候选优选及兜底展示）
+    let bgColorId = null;
+    if (bgColorName) {
+        const c = await matchColorNameToId(bgColorName);
+        if (c) bgColorId = c.id;
+    }
+
+    const scored = allParts
+        .filter(p => p.name && p.name.trim())
+        .map(p => ({ p, score: _nameSimilarityScore(bgName, p.name) }))
+        .filter(x => x.score > 0)
+        .sort((a, b) => (b.score - a.score) || (a.p.name.length - b.p.name.length))
+        .slice(0, 10);
+
+    const out = [];
+    for (const { p } of scored) {
+        let colorId = null;
+        let colorName = '';
+        const colors = await getPartColors(p.part_num); // [{ color_id }]
+        if (bgColorId !== null && colors.some(c => String(c.color_id) === String(bgColorId))) {
+            colorId = bgColorId;                        // 优先使用 BG 颜色
+        } else if (colors.length) {
+            colorId = colors[0].color_id;               // 否则取该零件第一个颜色
+        }
+        if (colorId !== null) {
+            const cl = await getColorById(colorId);
+            if (cl) colorName = cl.name;
+        }
+        out.push({ part_num: p.part_num, name: p.name, score: Math.round(p.score), colorId, colorName });
+    }
+    return out;
+}
+
+// 保存别名映射（写 RB 离线数据库 + Gitee part_aliases.csv + localStorage）
+async function savePartAlias(aliasPartNum, rbPartNum) {
+    if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
+    try {
+        const result = await persistPartAlias(aliasPartNum, rbPartNum);
+        console.log(`[别名]已保存: ${aliasPartNum} → ${rbPartNum}`, result);
+    } catch (e) {
+        console.warn('[别名]保存失败:', e.message);
     }
 }
 
-// 删除：删离线缓存 + 删Gitee + 清除RB img_url
-async function deleteEditedPartImage() {
-    if (!confirm('确定删除该零件的图片吗？')) return;
-    const statusEl = document.getElementById('edit-img-status');
-    if (!statusEl) return;
-    const partNum = document.getElementById('new-part-num').value.trim();
-    const colorId = document.getElementById('new-part-color').value.trim();
-    statusEl.textContent = '⏳ 正在删除...';
-    statusEl.style.color = '#2196F3';
-    await deletePartImageFromOfflineCache(partNum, colorId);
-    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
-    await clearPartImageUrlInRB(partNum, colorId);
-    statusEl.textContent = '✓ 图片已删除';
-    statusEl.style.color = '#4CAF50';
-    window.newPartImageUrl = '';
-    window.newPartImgExplicit = false;
-    updatePartImagePreview();
-    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
-        showToast('图片已删除，但云端(Gitee)删除失败');
+// 确保别名映射已持久化到线上（Gitee CSV + RB离线库）
+// persistPartAlias 内部做合并写回，同一映射再次保存直接覆盖，幂等无需去重判断
+async function ensureAliasPersisted(aliasPartNum, rbPartNum) {
+    if (!aliasPartNum || !rbPartNum || aliasPartNum === rbPartNum) return;
+    await savePartAlias(aliasPartNum, rbPartNum);
+}
+
+// 展示成功兑底提示（复用 alias-hint 样式）
+function showFallbackSuccessHint(partNum, rbPartNum, methodLabel) {
+    const box = document.getElementById('recognize-preview-section');
+    if (!box) return;
+    const hint = document.createElement('div');
+    hint.className = 'alias-hint';
+    hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）未直接匹配RB型号，已通过 <b>${methodLabel}</b> 匹配到 <b>${rbPartNum}</b>。保存时将建立别名 ${partNum} → ${rbPartNum}。`;
+    box.insertBefore(hint, box.firstChild);
+}
+
+// ==================== 手动添加零件时的 BL 匹配（添加零件表单）====================
+// 当直接匹配和别名都失败时，用户点击"BL"按钮触发此函数
+// 复用兑底匹配的方法一（自动）和方法二（人工选择）
+
+// 刷新添加零件表单的预览（名称、颜色提示、图片、数据来源）
+async function _refreshAddPartPreview(originalPartNum, effectivePartNum, forceName = false) {
+    const partNameInput = document.getElementById('new-part-name');
+    const hintEl = document.getElementById('color-count-hint');
+    const dsHint = document.getElementById('data-source-hint');
+    const imagePreview = document.getElementById('add-part-image-preview');
+    const colorId = document.getElementById('new-part-color')?.value.trim() || '';
+
+    if (dsHint && originalPartNum !== effectivePartNum) {
+        dsHint.innerHTML = `数据来源：${effectivePartNum}`;
+    }
+
+    // 查找 RB 名称（forceName=true 时始终覆盖为匹配到的 RB 名称）
+    if (partNameInput && (forceName || !partNameInput.value)) {
+        try {
+            const rbPart = await getPartByNum(effectivePartNum);
+            if (rbPart && rbPart.name) partNameInput.value = rbPart.name;
+        } catch (e) { /* 忽略 */ }
+    }
+
+    // 颜色数量提示
+    if (hintEl) {
+        try {
+            const colorCount = await getPartColorCount(effectivePartNum);
+            hintEl.textContent = colorCount > 0 ? `可能有${colorCount}种颜色` : '';
+        } catch (e) {
+            hintEl.textContent = '';
+        }
+    }
+
+    // 更新图片
+    if (imagePreview && effectivePartNum && colorId) {
+        try {
+            const imgUrl = await getPartImageUrl(effectivePartNum, colorId);
+            if (imgUrl) {
+                imagePreview.innerHTML = `<img src="${imgUrl}" alt="${effectivePartNum}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+                return;
+            }
+        } catch (e) { /* 忽略 */ }
+    }
+    if (imagePreview) {
+        imagePreview.innerHTML = '<div class="no-image">暂无图片</div>';
     }
 }
 
-// 保存零件时，若用户选择了图片URL，将其写入RB数据库作为该零件的生效URL
-async function persistSelectedPartImage(partNum, colorId) {
-    if (window.newPartImageUrl) {
-        try { await updateRBPartImageUrl(partNum, colorId, window.newPartImageUrl); } catch (e) {}
+async function triggerBLMatchForManual() {
+    const partNumInput = document.getElementById('new-part-num');
+    const partNameInput = document.getElementById('new-part-name');
+    const colorInput = document.getElementById('new-part-color');
+    const dsHint = document.getElementById('data-source-hint');
+
+    const partNum = partNumInput.value.trim();
+    const colorId = colorInput.value.trim();
+    const partName = partNameInput.value.trim();
+
+    if (!partNum) return;
+
+    // 禁用按钮，防止重复点击
+    if (dsHint) {
+        dsHint.innerHTML = 'RB未匹配 <button class="btn-bl-match" disabled style="opacity:0.5">匹配中...</button>';
     }
+
+    // 如果有颜色ID，获取颜色名称（方法一需要颜色名）
+    let colorName = '';
+    if (colorId) {
+        try {
+            const color = await getColorById(parseInt(colorId));
+            if (color) colorName = color.name;
+        } catch (e) { /* 忽略 */ }
+    }
+
+    // 方法一：BL-parts 自动匹配（型号 + 颜色名 → RB 型号）
+    const m1 = await matchRBByColorFallback(partNum, colorName);
+    if (m1 && m1.rbPartNum) {
+        // 匹配成功：不改变型号输入框（保持用户输入），只更新颜色/名称/提示/图片
+        if (m1.colorId !== null) {
+            colorInput.value = String(m1.colorId);
+        }
+        // 刷新名称（强制填入RB名称）/颜色提示/图片
+        await _refreshAddPartPreview(partNum, m1.rbPartNum, true);
+        // 保存别名（下次直接匹配）
+        await savePartAlias(partNum, m1.rbPartNum);
+        showToast(`BL匹配成功: ${partNum} → ${m1.rbPartNum}`, 2000);
+        return;
+    }
+
+    // 方法二：按名称模糊搜索候选，由用户人工选择
+    const candidates = await buildFallbackCandidates(partName || partNum, colorName);
+    if (candidates.length > 0) {
+        const picked = await showFallbackCandidatePicker(candidates, {
+            partNum: partNum,
+            name: partName,
+            colorName: colorName
+        });
+        if (picked && picked.part_num) {
+            // 匹配成功：不改变型号输入框（保持用户输入），只更新颜色/名称/提示/图片
+            if (picked.colorId != null) {
+                colorInput.value = String(picked.colorId);
+            }
+            await _refreshAddPartPreview(partNum, picked.part_num, true);
+            await savePartAlias(partNum, picked.part_num);
+            showToast(`BL匹配成功: ${partNum} → ${picked.part_num}`, 2000);
+            return;
+        }
+    } else {
+        showToast('BL匹配失败：未找到候选零件', 2000);
+    }
+
+    // 匹配失败，恢复 BL 按钮
+    if (dsHint) {
+        dsHint.innerHTML = 'RB未匹配 <button class="btn-bl-match" onclick="triggerBLMatchForManual()">BL</button>';
+    }
+}
+
+// 方法二：候选选择面板（左图 + 右文；每行一个卡片；列表与名称垂直滚动）
+function showFallbackCandidatePicker(candidates, bgInfo) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.id = 'fallback-picker-overlay';
+
+        const sheet = document.createElement('div');
+        sheet.className = 'modal-content add-part-modal fallback-picker-modal';
+
+        const cardsHtml = candidates.map(c =>
+            `<div class="fallback-part-card" data-part-num="${c.part_num}" data-color-id="${c.colorId != null ? c.colorId : ''}">
+                <div class="fallback-card-left">
+                    <div class="fallback-card-img" data-img-for="${c.part_num}-${c.colorId}"><div class="no-image">无图</div></div>
+                </div>
+                <div class="fallback-card-right">
+                    <div class="fallback-card-num">${c.part_num}</div>
+                    <div class="fallback-card-name">${c.name || '-'}</div>
+                    <div class="fallback-card-color">${c.colorId != null ? `颜色：${c.colorName || c.colorId}` : ''}</div>
+                </div>
+            </div>`
+        ).join('');
+
+        sheet.innerHTML = `
+            <div class="modal-header">
+                <span class="modal-title">未匹配到RB零件，请选择</span>
+                <button class="btn-cancel" id="fallback-cancel-btn">取消</button>
+            </div>
+            <div class="modal-body">
+                <div class="fallback-query-info">BG识别：<b>${bgInfo.partNum || ''}</b>${bgInfo.name ? ' · ' + bgInfo.name : ''}${bgInfo.colorName ? ' · ' + bgInfo.colorName : ''}</div>
+                <div class="fallback-part-list">
+                    ${cardsHtml || '<div class="fallback-empty">无候选零件</div>'}
+                </div>
+                <div class="fallback-tip">点击匹配的零件完成选择；如无匹配请点「取消」</div>
+            </div>
+        `;
+
+        // 异步加载每个候选的图片
+        candidates.forEach(c => {
+            getPartImageUrl(c.part_num, c.colorId).then(url => {
+                const el = sheet.querySelector(`[data-img-for="${c.part_num}-${c.colorId}"]`);
+                if (el && url) el.innerHTML = `<img src="${url}" alt="${c.part_num}" loading="lazy" />`;
+            }).catch(() => {});
+        });
+
+        sheet.querySelectorAll('.fallback-part-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const sel = {
+                    part_num: card.dataset.partNum,
+                    colorId: card.dataset.colorId !== '' ? Number(card.dataset.colorId) : null
+                };
+                overlay.remove();
+                resolve(sel);
+            });
+        });
+
+        const cancelBtn = sheet.querySelector('#fallback-cancel-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(null);
+        });
+
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+    });
+}
+
+// ==================== 模型匹配主函数（含兑底逻辑）====================
+// 将识别到的型号/名称填入表单，支持别名解析与兑底匹配
+// 优先级：场景A 直接匹配 → 场景B 别名解析 → 方法一 自动匹配 → 方法二 人工选择
+// 输入框始终显示原始 BG 识别型号（如 4073），别名仅用于内部查询 RB 数据
+// 返回解析后的有效 RB 零件型号（可能和输入不同）
+async function fillRecognizedPart(partNum, fallbackName, bgColorName) {
+    // 0. 重置兑底颜色标志
+    recognizeFallbackSetColor = false;
+
+    // 1. 存储识别型号到暂存数据
+    recognizeResultData.partNum = partNum;
+
+    // 2. 尝试直接查询 RB 数据库（场景 A）
+    let rbPart = null;
+    let effectivePartNum = partNum;
+    let usedAlias = false;
+    let fallbackMethod = null; // 'm1' 自动 | 'm2' 人工
+
+    try {
+        rbPart = await getPartByNum(partNum);
+    } catch (e) { /* 忽略 */ }
+
+    // 3. 如果在 RB 中找不到，尝试通过别名表解析（场景 B）
+    if (!rbPart) {
+        const resolvedNum = await resolvePartAlias(partNum);
+        if (resolvedNum && resolvedNum !== partNum) {
+            effectivePartNum = resolvedNum;
+            usedAlias = true;
+            try {
+                rbPart = await getPartByNum(resolvedNum);
+            } catch (e) { /* 忽略 */ }
+            console.log(`零件别名解析: ${partNum} → ${resolvedNum}`);
+        }
+    }
+
+    // 3.5 兑底匹配：场景 A/B 均失败
+    if (!rbPart) {
+        // —— 方法一：BG型号 + 颜色名 自动匹配 RB ——
+        const m1 = await matchRBByColorFallback(partNum, bgColorName);
+        if (m1 && m1.rbPartNum) {
+            effectivePartNum = m1.rbPartNum;
+            usedAlias = true;
+            fallbackMethod = 'm1';
+            try { rbPart = await getPartByNum(effectivePartNum); } catch (e) { /* 忽略 */ }
+            await savePartAlias(partNum, effectivePartNum); // 建立并保存别名
+            if (m1.colorId !== null) {
+                recognizeResultData.colorId = String(m1.colorId);
+                const cl = await getColorById(m1.colorId);
+                if (cl) recognizeResultData.colorName = cl.name;
+                recognizeFallbackSetColor = true;
+            }
+            showFallbackSuccessHint(partNum, effectivePartNum, '自动匹配（方法一）');
+            console.log(`[兑底]方法一自动匹配: ${partNum} → ${effectivePartNum}`);
+        } else {
+            // —— 方法二：人工选择候选 ——
+            const bgInfoName = recognizeResultData.partName || fallbackName;
+            const candidates = await buildFallbackCandidates(bgInfoName, bgColorName);
+            const picked = candidates.length
+                ? await showFallbackCandidatePicker(candidates, {
+                      partNum: partNum,
+                      name: bgInfoName,
+                      colorName: (recognizeResultData.colorName || bgColorName || '')
+                  })
+                : null;
+
+            if (picked && picked.part_num) {
+                effectivePartNum = picked.part_num;
+                usedAlias = true;
+                fallbackMethod = 'm2';
+                try { rbPart = await getPartByNum(effectivePartNum); } catch (e) { /* 忽略 */ }
+                await savePartAlias(partNum, effectivePartNum); // 建立并保存别名
+                if (picked.colorId != null) {
+                    recognizeResultData.colorId = String(picked.colorId);
+                    const cl = await getColorById(picked.colorId);
+                    if (cl) recognizeResultData.colorName = cl.name;
+                    recognizeFallbackSetColor = true;
+                }
+                showFallbackSuccessHint(partNum, effectivePartNum, '人工选择（方法二）');
+                console.log(`[兑底]方法二人工选择: ${partNum} → ${effectivePartNum}`);
+            } else {
+                // 人工选择取消 / 无候选 → 提示失败信息
+                setRecognizeStatus(`⚠️ 未匹配到该零件的RB型号（BG型号 ${partNum}）。请重新拍摄识别或手动输入`);
+                console.warn(`[兑底]方法二取消或失败: ${partNum}`);
+            }
+        }
+    }
+
+    // 4. 名称优先取 RB 数据库，其次用识别结果返回的名称
+    let name = fallbackName || '';
+    if (rbPart && rbPart.name) {
+        name = rbPart.name;
+    } else {
+        try {
+            const p = await getPartByNum(partNum);
+            if (p && p.name) name = p.name;
+        } catch (e) { /* 忽略 */ }
+    }
+    recognizeResultData.partName = name;
+
+    // 5. 如果使用了别名（场景 B 或兑底方法一/二），在识别结果区域显示提示
+    if (usedAlias && !fallbackMethod) {
+        const box = document.getElementById('recognize-preview-section');
+        if (box) {
+            const hint = document.createElement('div');
+            hint.className = 'alias-hint';
+            hint.innerHTML = `ℹ️ 该零件（<b>${partNum}</b>）的RB数据（图片/名称/颜色）来源于 <b>${effectivePartNum}</b>，保存时型号保持为 ${partNum}`;
+            box.insertBefore(hint, box.firstChild);
+        }
+    }
+
+    // 6. 更新识别弹窗预览区域
+    updateRecognizePreview();
+
+    return effectivePartNum;
+}
+
+// 设置识别结果区域的临时状态文本
+function setRecognizeStatus(msg) {
+    const box = document.getElementById('recognize-result');
+    if (!box) return;
+    const partNum = recognizeResultData.partNum;
+    box.innerHTML = `<div class="recognize-status">${msg}${partNum ? '<br/>已识别型号：<b>' + partNum + '</b>' : ''}</div>`;
+    // 显示状态区域（加载中状态可见，完成时会被预览区替代）
+    box.style.display = 'block';
+}
+
+// 计算图片中零件最接近的5种颜色，按亮度等级匹配（深/较深/正常/较浅/浅）
+// 若已知零件型号，只匹配该零件可能有的颜色，大幅提升准确度
+// 图片已裁剪到零件包围框，背景已大幅去除，颜色分析更准确
+async function computeClosestRBColors(file, partNum) {
+    try {
+        const img = await fileToImage(file);
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+        // 判断是否为裁剪后的图片（任一边小于 200px，说明经过裁剪，背景很少）
+        const isCropped = nw < 200 || nh < 200;
+
+        // 白平衡校正：优先使用灰卡校准，其次自动估计背景白平衡
+        // 裁剪后的图片边缘可能已是零件，不适合用边缘估计背景白平衡，直接使用灰卡校准或跳过
+        let wbInfo;
+        if (isGrayCardCalibrationActive() && isGrayCardCalibrated()) {
+            const gains = getGrayCardGains();
+            if (gains) {
+                wbInfo = { factors: [gains.r, gains.g, gains.b], bgColor: null };
+            } else {
+                wbInfo = isCropped ? null : estimateIlluminant(img);
+            }
+        } else {
+            wbInfo = isCropped ? null : estimateIlluminant(img);
+        }
+        const dominant = getDominantColor(img, wbInfo);
+        if (!dominant) return { colors: [], dominantHex: '' };
+        const dominantHex = rgbToHex(dominant);
+
+        // 若已知零件型号，只取该零件可能有的颜色，否则取全部颜色
+        let rbColors = [];
+        if (partNum) {
+            let partElements = await getPartColors(partNum);
+            // 如果直接查询无结果，尝试通过别名解析
+            if (!partElements || partElements.length === 0) {
+                const resolvedNum = await resolvePartAlias(partNum);
+                if (resolvedNum && resolvedNum !== partNum) {
+                    partElements = await getPartColors(resolvedNum);
+                }
+            }
+            const colorIds = new Set(partElements.map(e => String(e.color_id)));
+            if (colorIds.size > 0) {
+                const allColors = await getAllColors();
+                rbColors = allColors.filter(c => colorIds.has(String(c.id)));
+            }
+        }
+        if (rbColors.length === 0) {
+            rbColors = await getAllColors();
+        }
+        const entries = rbColors.map(c => {
+            const rgb = parseHexColor(c.rgb);
+            return rgb ? { id: c.id, name: c.name || ('颜色' + c.id), rgb, lab: rgbToLab(rgb) } : null;
+        }).filter(Boolean);
+
+        // 计算主色 Lab
+        const dominantLab = rgbToLab(dominant);
+
+        // 5 个曝光等级：-0.7EV, -0.3EV, 0EV, +0.3EV, +0.7EV
+        // EV → 亮度乘数：2^(EV)
+        const evLevels = [-0.7, -0.3, 0, 0.3, 0.7];
+        const levels = evLevels.map(ev => ({
+            fn: c => c.map(v => Math.round(Math.max(0, Math.min(255, v * Math.pow(2, ev)))))
+        }));
+
+        const usedIds = new Set();
+        const results = [];
+        for (const { fn } of levels) {
+            const adjusted = fn(dominant);
+            const adjustedLab = rgbToLab(adjusted);
+            // 找当前亮度下最接近且尚未推荐的 RB 颜色
+            const sorted = entries
+                .filter(e => !usedIds.has(e.id))
+                .sort((a, b) => deltaE76(adjustedLab, a.lab) - deltaE76(adjustedLab, b.lab));
+            if (sorted.length) {
+                const match = sorted[0];
+                usedIds.add(match.id);
+                results.push({ id: match.id, name: match.name, hex: rgbToHex(match.rgb) });
+            }
+        }
+        // 若不足 6 个，补足（用 dominantLab 匹配剩余，确保有足够推荐颜色）
+        if (results.length < 6) {
+            entries.filter(e => !usedIds.has(e.id))
+                .sort((a, b) => deltaE76(dominantLab, a.lab) - deltaE76(dominantLab, b.lab))
+                .slice(0, 6 - results.length)
+                .forEach(r => { usedIds.add(r.id); results.push({ id: r.id, name: r.name, hex: rgbToHex(r.rgb) }); });
+        }
+        return { colors: results, dominantHex };
+    } catch (e) {
+        console.error('计算最接近颜色失败:', e);
+        return { colors: [], dominantHex: '' };
+    }
+}
+
+// 渲染颜色预选区（7行格式）
+// 第1行：标题"颜色预选"
+// 第2行：BG 返回的颜色（色块 + 颜色ID + BG颜色名称），默认选中
+// 第3-7行：5个计算的推荐颜色（色块 + 颜色ID + 颜色名称）
+// 第2-7行共6行是待选颜色，默认第2行
+function renderRecognizeColors(colors, dominantHex, bgColorId, bgColorName) {
+    const listEl = document.getElementById('color-preselect-list');
+    const preselectSection = document.getElementById('color-preselection');
+    if (!listEl || !preselectSection) return;
+
+    // 确定默认选中索引：优先 BG 颜色（第1行，index=0），其次第一个
+    let defaultSelectedIdx = 0;
+    let bgColorIndex = -1;
+    if (bgColorId !== null && bgColorId !== undefined) {
+        bgColorIndex = colors.findIndex(c => c.id === Number(bgColorId));
+        if (bgColorIndex >= 0) defaultSelectedIdx = 0;
+    }
+
+    // 分离 BG 颜色（第1行）和推荐颜色（第2-6行）
+    let bgColor = null;
+    const recommended = [];
+    colors.forEach((c, idx) => {
+        const isBg = bgColorId !== null && bgColorId !== undefined && c.id === Number(bgColorId);
+        if (isBg) {
+            bgColor = c;
+        } else {
+            recommended.push(c);
+        }
+    });
+
+    // 如果 BG 颜色不在 colors 中但 bgColorName 存在，用 note 提示
+    let bgColorNoteHtml = '';
+    if (bgColorName && bgColorId === null) {
+        bgColorNoteHtml = `<div class="recognize-color-note">BG识别颜色：${bgColorName}（未匹配到RB颜色ID）</div>`;
+    }
+    // 如果 BG 颜色不在列表中但有 bgColorId，尝试显示
+    if (!bgColor && bgColorId !== null && bgColorId !== undefined && bgColorName) {
+        bgColor = { id: Number(bgColorId), name: bgColorName, hex: dominantHex || '#ccc' };
+    }
+
+    // 构建行列表
+    let rowsHtml = '';
+
+    // 第1行：BG 颜色
+    if (bgColor) {
+        rowsHtml += `
+            <div class="color-row selected" data-color-id="${bgColor.id}" data-color-name="${bgColor.name}">
+                <span class="color-row-swatch" style="background:${bgColor.hex}"></span>
+                <span class="color-row-id">ID: ${bgColor.id}</span>
+                <span class="color-row-name">${bgColor.name}</span>
+            </div>`;
+    }
+
+    // 第2-6行：推荐颜色（最多5个）
+    recommended.slice(0, 5).forEach((c) => {
+        rowsHtml += `
+            <div class="color-row" data-color-id="${c.id}" data-color-name="${c.name}">
+                <span class="color-row-swatch" style="background:${c.hex}"></span>
+                <span class="color-row-id">ID: ${c.id}</span>
+                <span class="color-row-name">${c.name}</span>
+            </div>`;
+    });
+
+    // 如果没有任何颜色数据，保持占位文字
+    if (!rowsHtml) {
+        listEl.innerHTML = '<div style="padding:12px;text-align:center;color:#999;font-size:13px;">拍照识别后将显示推荐颜色</div>';
+        return;
+    }
+
+    // 写入颜色行
+    listEl.innerHTML = bgColorNoteHtml + rowsHtml;
+
+    // 绑定点击事件
+    const rows = listEl.querySelectorAll('.color-row');
+    rows.forEach((row) => {
+        row.addEventListener('click', () => {
+            recognizeResultData.colorId = row.dataset.colorId;
+            recognizeResultData.colorName = row.dataset.colorName;
+            updateRecognizePreview();
+            rows.forEach(r => r.classList.remove('selected'));
+            row.classList.add('selected');
+        });
+    });
+
+    // 默认选中 BG 颜色行（第1行）
+    const firstRow = listEl.querySelector('.color-row');
+    if (firstRow) {
+        firstRow.classList.add('selected');
+        recognizeResultData.colorId = firstRow.dataset.colorId;
+        recognizeResultData.colorName = firstRow.dataset.colorName;
+        updateRecognizePreview();
+    }
+}
+
+// ==================== 同名零件消歧 ====================
+// 某些零件虽然型号不同（如 3063b 和 85080），但外表相同或相似，名称也一样。
+// 拍照识别时，两个型号都有可能被识别到。此功能在 BG 识别后，
+// 按名称在 RB 数据库中匹配所有同名零件，展示零件卡片供用户选择确认。
+
+// 显示同名零件选择器
+async function showSameNamePartsPicker(partName, currentPartNum) {
+    if (!partName || !currentPartNum) return;
+
+    // 从 RB 数据库搜索同名零件
+    const sameNameParts = await searchPartsByNameInRB(partName);
+    if (!sameNameParts || sameNameParts.length <= 1) return; // 没有同名零件，无需选择
+
+    // 排除当前已选型号
+    const otherParts = sameNameParts.filter(p => p.part_num !== currentPartNum);
+    if (otherParts.length === 0) return;
+
+    // 检查是否已经显示过同名零件选择器（避免重复）
+    const existingPicker = document.getElementById('same-name-parts-picker');
+    if (existingPicker) return;
+
+    // 创建选择器UI
+    const box = document.getElementById('recognize-preview-section');
+    if (!box) return;
+
+    const pickerDiv = document.createElement('div');
+    pickerDiv.id = 'same-name-parts-picker';
+    pickerDiv.className = 'same-name-parts-picker';
+
+    // 获取所有同名零件的图片
+    let cardsHtml = '';
+    for (const part of sameNameParts) {
+        const imgUrl = await getPartImageUrl(part.part_num, 0); // 用 color_id=0 获取通用图片
+        const isCurrent = part.part_num === currentPartNum;
+        cardsHtml += `
+            <div class="same-name-part-card ${isCurrent ? 'selected' : ''}" data-part-num="${part.part_num}" data-part-name="${part.name}">
+                <div class="snp-image">
+                    ${imgUrl ? `<img src="${imgUrl}" alt="${part.part_num}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'snp-no-img\\'>无图</div>'">` : '<div class="snp-no-img">无图</div>'}
+                </div>
+                <div class="snp-info">
+                    <div class="snp-part-num">${part.part_num}</div>
+                    <div class="snp-part-name">${part.name}</div>
+                </div>
+                ${isCurrent ? '<div class="snp-badge">当前</div>' : ''}
+            </div>`;
+    }
+
+    // 如果所有卡片都一样（只有当前型号过滤了），就不显示选择器
+    if (otherParts.length === 0) {
+        pickerDiv.innerHTML = `
+            <div class="snp-header">
+                <span class="snp-title">📋 同名零件</span>
+                <span class="snp-hint">${sameNameParts.length} 个零件共享此名称</span>
+            </div>
+            <div class="snp-cards-row">
+                ${cardsHtml}
+            </div>
+            <div class="snp-footer">
+                <span class="snp-current-tip">已选择: <b>${currentPartNum}</b></span>
+            </div>
+        `;
+    } else {
+        pickerDiv.innerHTML = `
+            <div class="snp-header">
+                <span class="snp-title">📋 同名零件确认</span>
+                <span class="snp-hint">检测到 ${sameNameParts.length} 个零件共享此名称，请确认型号</span>
+            </div>
+            <div class="snp-cards-row">
+                ${cardsHtml}
+            </div>
+        `;
+    }
+
+    // 绑定点击事件
+    setTimeout(() => {
+        pickerDiv.querySelectorAll('.same-name-part-card').forEach(card => {
+            card.addEventListener('click', () => {
+                // 取消其他选中
+                pickerDiv.querySelectorAll('.same-name-part-card').forEach(c => {
+                    c.classList.remove('selected');
+                    const badge = c.querySelector('.snp-badge');
+                    if (badge) badge.remove();
+                });
+                card.classList.add('selected');
+
+                const partNum = card.dataset.partNum;
+                const partName = card.dataset.partName;
+
+                // 更新暂存数据
+                recognizeResultData.partNum = partNum;
+                recognizeResultData.partName = partName;
+                updateRecognizePreview();
+
+                // 添加"当前"标记
+                const badge = document.createElement('div');
+                badge.className = 'snp-badge';
+                badge.textContent = '当前';
+                card.appendChild(badge);
+
+                console.log(`用户选择同名零件: ${partNum}`);
+            });
+        });
+    }, 0);
+
+    box.appendChild(pickerDiv);
+}
+
+// 在 RB 数据库中按名称搜索零件（精确匹配和模糊匹配）
+async function searchPartsByNameInRB(partName) {
+    if (!partName) return [];
+    try {
+        const db = await openRBDatabase();
+        const allParts = await getAll(RB_STORES.PARTS);
+        const cleanName = partName.trim().toLowerCase();
+
+        // 1. 精确匹配（名称完全相同，不区分大小写）
+        let results = allParts.filter(p =>
+            p.name && p.name.toLowerCase().trim() === cleanName
+        );
+
+        // 2. 如果精确匹配结果太少，尝试包含匹配（名称中包含关键词）
+        if (results.length <= 1) {
+            const broader = allParts.filter(p => {
+                if (!p.name) return false;
+                const pn = p.name.toLowerCase().trim();
+                return pn.includes(cleanName) || cleanName.includes(pn);
+            });
+            if (broader.length > results.length) {
+                results = broader;
+            }
+        }
+
+        return results;
+    } catch (error) {
+        console.error('搜索同名零件失败:', error);
+        return [];
+    }
+}
+
+// 文件转 Image 对象
+function fileToImage(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
+        img.src = url;
+    });
+}
+
+// 从图片边缘区域估计白平衡校正因子和背景色
+function estimateIlluminant(img) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (w < 100 || h < 100) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    let data;
+    try { data = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
+
+    // 采样外 15% 边框区域的像素（背景）
+    // 放宽范围到 150~252，以适应非纯白背景
+    const border = 0.15;
+    const samples = [];
+    let fallbackSamples = [];
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const inBorder = x < w * border || x > w * (1 - border) ||
+                            y < h * border || y > h * (1 - border);
+            if (!inBorder) continue;
+            const i = (y * w + x) * 4;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const bright = r + g + b;
+            // 取接近白色但未过曝的像素（各通道 150~252）
+            if (r > 150 && g > 150 && b > 150 && r < 252 && g < 252 && b < 252) {
+                samples.push([r, g, b]);
+            }
+            // 降级采样：所有较亮的边缘像素（用于深色背景场景）
+            if (bright > 400) {
+                fallbackSamples.push([r, g, b]);
+            }
+        }
+    }
+    // 如果纯白像素不足，使用降级采样
+    const useSamples = samples.length >= 50 ? samples : (fallbackSamples.length >= 50 ? fallbackSamples : samples);
+    if (useSamples.length < 50) return null;
+
+    let avgR = 0, avgG = 0, avgB = 0;
+    for (const p of useSamples) { avgR += p[0]; avgG += p[1]; avgB += p[2]; }
+    avgR /= useSamples.length; avgG /= useSamples.length; avgB /= useSamples.length;
+
+    // 计算校正因子：使平均色变为中性灰，限制在 0.7~1.3
+    const gray = (avgR + avgG + avgB) / 3;
+    const factors = [
+        Math.max(0.7, Math.min(1.3, gray / avgR)),
+        Math.max(0.7, Math.min(1.3, gray / avgG)),
+        Math.max(0.7, Math.min(1.3, gray / avgB))
+    ];
+    // 校正后的背景色（用于后续排除背景像素）
+    const bgCorrected = [
+        Math.round(Math.max(0, Math.min(255, avgR * factors[0]))),
+        Math.round(Math.max(0, Math.min(255, avgG * factors[1]))),
+        Math.round(Math.max(0, Math.min(255, avgB * factors[2])))
+    ];
+    return { factors, bgColor: bgCorrected };
+}
+
+function applyWB(pixel, factors) {
+    return [
+        Math.round(Math.max(0, Math.min(255, pixel[0] * factors[0]))),
+        Math.round(Math.max(0, Math.min(255, pixel[1] * factors[1]))),
+        Math.round(Math.max(0, Math.min(255, pixel[2] * factors[2])))
+    ];
+}
+
+// 提取图片主色：先去除背景，再对零件区域做颜色分桶
+// 采用"抠图"思路：从边缘采样背景色 → 排除背景像素 → 只保留零件像素
+function getDominantColor(img, wbInfo) {
+    const wbFactors = wbInfo ? wbInfo.factors : null;
+    const bgColor = wbInfo ? wbInfo.bgColor : null;
+    // 没有背景色信息时（如裁剪后的图片），直接使用中心区域法，跳过边缘背景采样
+    const noBackground = !wbInfo || (!wbInfo.bgColor && !wbInfo.factors);
+
+    // 缩小到 128x128 分析，兼顾性能与精度
+    const W = 128, H = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, W, H);
+    let data;
+    try { data = ctx.getImageData(0, 0, W, H).data; } catch (e) { return null; }
+
+    // 1. 确定背景色
+    // 优先使用 estimateIlluminant 提供的背景色，否则从边缘采样
+    let bgR, bgG, bgB;
+    if (bgColor) {
+        bgR = bgColor[0]; bgG = bgColor[1]; bgB = bgColor[2];
+    } else if (!noBackground) {
+        // 从边缘 15% 区域采样背景色
+        const border = 0.15;
+        let sumR = 0, sumG = 0, sumB = 0, cnt = 0;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const inBorder = x < W * border || x > W * (1 - border) ||
+                                y < H * border || y > H * (1 - border);
+                if (!inBorder) continue;
+                const i = (y * W + x) * 4;
+                sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2];
+                cnt++;
+            }
+        }
+        if (cnt === 0) return null;
+        bgR = sumR / cnt; bgG = sumG / cnt; bgB = sumB / cnt;
+    }
+
+    // 2. 提取前景像素（与背景色差异明显的像素）
+    // 动态阈值：根据背景色亮度调整，背景越亮阈值越高
+    const partPixels = [];
+    let useFallback = noBackground; // 无背景信息时，直接走回退路径
+
+    if (!noBackground) {
+        const bgBrightness = (bgR + bgG + bgB) / 3;
+        const bgThreshold = Math.max(25, Math.min(50, Math.round(bgBrightness / 10)));
+        const bgThreshold2 = bgThreshold * bgThreshold;
+        const border = 0.12; // 分析时去掉边缘 12%（避免边缘残留背景）
+
+        for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
+            for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
+                const i = (y * W + x) * 4;
+                let r = data[i], g = data[i + 1], b = data[i + 2];
+                // 应用白平衡校正
+                if (wbFactors) {
+                    const c = applyWB([r, g, b], wbFactors);
+                    r = c[0]; g = c[1]; b = c[2];
+                }
+                // 计算与背景色的色差平方
+                const dr = r - bgR, dg = g - bgG, db = b - bgB;
+                if (dr * dr + dg * dg + db * db > bgThreshold2) {
+                    partPixels.push([r, g, b]);
+                }
+            }
+        }
+
+        // 如果前景像素太少，降低阈值重试
+        if (partPixels.length < 80) {
+            const lowerThreshold = Math.max(18, Math.round(bgThreshold * 0.7));
+            const lowerThreshold2 = lowerThreshold * lowerThreshold;
+            for (let y = Math.round(border * H); y < H - Math.round(border * H); y++) {
+                for (let x = Math.round(border * W); x < W - Math.round(border * W); x++) {
+                    const i = (y * W + x) * 4;
+                    let r = data[i], g = data[i + 1], b = data[i + 2];
+                    if (wbFactors) {
+                        const c = applyWB([r, g, b], wbFactors);
+                        r = c[0]; g = c[1]; b = c[2];
+                    }
+                    const dr = r - bgR, dg = g - bgG, db = b - bgB;
+                    if (dr * dr + dg * dg + db * db > lowerThreshold2) {
+                        partPixels.push([r, g, b]);
+                    }
+                }
+            }
+        }
+
+        // 如果还是太少，回退到中心区域法
+        if (partPixels.length < 50) {
+            useFallback = true;
+        }
+    }
+
+    // 3. 颜色分桶，找最大桶
+    const buckets = new Map();
+
+    if (!useFallback) {
+        for (const [r, g, b] of partPixels) {
+            // 只跳过极暗的孤立噪点（亮度 < 24，即 8+8+8）
+            if (r + g + b < 24) continue;
+            const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+            let bk = buckets.get(key);
+            if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
+            bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+        }
+    }
+
+    // 回退路径：中心区域（扩大至 50%）+ 自动排除边缘残留背景
+    if (useFallback || buckets.size === 0) {
+        const cropRatio = 0.50; // 从 35% 扩大到 50%，保证包含更多零件像素
+        const cw = Math.round(img.naturalWidth * cropRatio);
+        const ch = Math.round(img.naturalHeight * cropRatio);
+        const ox = Math.round((img.naturalWidth - cw) / 2);
+        const oy = Math.round((img.naturalHeight - ch) / 2);
+        const canvas2 = document.createElement('canvas');
+        canvas2.width = 64;
+        canvas2.height = 64;
+        const ctx2 = canvas2.getContext('2d');
+        if (!ctx2) return null;
+        ctx2.drawImage(img, ox, oy, cw, ch, 0, 0, 64, 64);
+        let data2;
+        try { data2 = ctx2.getImageData(0, 0, 64, 64).data; } catch (e) { return null; }
+
+        // 如果无背景色信息（如裁剪后的图片），从中心区域边缘采样残留背景色
+        let edgeBgR = null, edgeBgG = null, edgeBgB = null;
+        if (!bgColor) {
+            let eSumR = 0, eSumG = 0, eSumB = 0, eCnt = 0;
+            const edge = 8; // 边缘 8px（64px 的 12.5%）
+            for (let y = 0; y < 64; y++) {
+                for (let x = 0; x < 64; x++) {
+                    if (x >= edge && x < 64 - edge && y >= edge && y < 64 - edge) continue;
+                    const i = (y * 64 + x) * 4;
+                    eSumR += data2[i]; eSumG += data2[i+1]; eSumB += data2[i+2];
+                    eCnt++;
+                }
+            }
+            if (eCnt > 0) {
+                edgeBgR = eSumR / eCnt;
+                edgeBgG = eSumG / eCnt;
+                edgeBgB = eSumB / eCnt;
+            }
+        }
+
+        for (let i = 0; i < data2.length; i += 4) {
+            let r = data2[i], g = data2[i + 1], b = data2[i + 2];
+            if (wbFactors) {
+                const c = applyWB([r, g, b], wbFactors);
+                r = c[0]; g = c[1]; b = c[2];
+            }
+            // 只跳过极暗的孤立噪点
+            if (r + g + b < 24) continue;
+            // 如果已知背景色，排除与背景接近的像素
+            if (bgColor) {
+                const dr = r - bgColor[0], dg = g - bgColor[1], db = b - bgColor[2];
+                if (dr * dr + dg * dg + db * db < bgThreshold2) continue;
+            }
+            // 如果从边缘采样了残留背景色，排除接近的像素（针对裁剪后仍残留背景的情况）
+            if (edgeBgR !== null) {
+                const dr = r - edgeBgR, dg = g - edgeBgG, db = b - edgeBgB;
+                if (dr * dr + dg * dg + db * db < 400) continue; // 阈值 20^2
+            }
+            const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+            let bk = buckets.get(key);
+            if (!bk) { bk = { cnt: 0, rs: 0, gs: 0, bs: 0 }; buckets.set(key, bk); }
+            bk.cnt++; bk.rs += r; bk.gs += g; bk.bs += b;
+        }
+    }
+
+    let best = null;
+    buckets.forEach(bk => { if (!best || bk.cnt > best.cnt) best = bk; });
+    if (!best) return null;
+    return [Math.round(best.rs / best.cnt), Math.round(best.gs / best.cnt), Math.round(best.bs / best.cnt)];
+}
+
+// 解析 RB 颜色 rgb 字符串为 [r,g,b]，兼容带/不带 # 前缀
+function parseHexColor(rgb) {
+    if (!rgb) return null;
+    let s = String(rgb).replace('#', '').trim();
+    if (s.length === 3) s = s.split('').map(ch => ch + ch).join('');
+    if (s.length !== 6) return null;
+    const r = parseInt(s.substr(0, 2), 16), g = parseInt(s.substr(2, 2), 16), b = parseInt(s.substr(4, 2), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+    return [r, g, b];
+}
+
+// RGB 数组转 #rrggbb
+function rgbToHex(rgb) {
+    return '#' + rgb.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+}
+
+// sRGB → CIELAB（D65 标准照明体），用于人眼感知更均匀的色差计算
+function rgbToLab(rgb) {
+    let r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+    // sRGB gamma 解码
+    r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+    g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+    b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+    // Linear RGB → XYZ (D65)
+    const x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375;
+    const y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750;
+    const z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041;
+    // XYZ → Lab (D65)
+    const xn = 0.95047, yn = 1.0, zn = 1.08883;
+    const fx = x / xn > 0.008856 ? Math.pow(x / xn, 1/3) : 7.787 * (x / xn) + 16/116;
+    const fy = y / yn > 0.008856 ? Math.pow(y / yn, 1/3) : 7.787 * (y / yn) + 16/116;
+    const fz = z / zn > 0.008856 ? Math.pow(z / zn, 1/3) : 7.787 * (z / zn) + 16/116;
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+// CIE76 Delta E：Lab 空间欧氏距离，比 RGB 距离更接近人眼感知
+function deltaE76(a, b) {
+    const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+    return Math.sqrt(dl * dl + da * da + db * db);
+}
+
+// ==================== 搜索页拍照识别 ====================
+let searchRecognizeInput = null;
+
+function recognizePartFromSearch() {
+    // 确保隐藏文件输入存在
+    if (!searchRecognizeInput) {
+        searchRecognizeInput = document.createElement('input');
+        searchRecognizeInput.type = 'file';
+        searchRecognizeInput.accept = 'image/*';
+        searchRecognizeInput.style.display = 'none';
+        searchRecognizeInput.addEventListener('change', async () => {
+            const file = searchRecognizeInput.files && searchRecognizeInput.files[0];
+            if (!file) return;
+            searchRecognizeInput.value = '';
+
+            try {
+                const compressed = await compressImage(file, 1024);
+                if (!compressed) { alert('图片处理失败'); return; }
+                const candidate = await uploadToBrickognize(compressed);
+                if (!candidate) { alert('未识别到零件，请重试'); return; }
+
+                // 别名解析：如果型号在 RB 中找不到，尝试通过别名映射查找
+                const resolvedNum = await resolvePartAlias(candidate.id);
+
+                // 始终显示原始 BG 识别型号（如 4073）
+                document.getElementById('search-part-num').value = candidate.id;
+
+                // 名称：优先从 RB 数据库获取，别名解析后使用别名对应的 RB 数据
+                let name = candidate.name || '';
+                if (resolvedNum !== candidate.id) {
+                    try {
+                        const rbPart = await getPartByNum(resolvedNum);
+                        if (rbPart && rbPart.name) {
+                            name = rbPart.name;
+                        }
+                    } catch(e) {}
+                }
+                document.getElementById('search-part-name').value = name;
+
+                // 如果 BG 返回了颜色，自动填入颜色ID
+                if (candidate.colorId !== null && candidate.colorId !== undefined) {
+                    document.getElementById('search-color-id').value = candidate.colorId;
+                    updateColorPickButton(candidate.colorId);
+                }
+
+                // 在型号输入框下方显示数据来源提示（始终显示）
+                const dsHint = document.getElementById('search-data-source-hint');
+                if (dsHint) {
+                    dsHint.textContent = `数据来源：${resolvedNum}`;
+                }
+
+                // 执行搜索
+                handleAdvancedSearch();
+            } catch (err) {
+                console.error('搜索识别失败:', err);
+                alert('识别失败：' + (err && err.message ? err.message : '网络错误'));
+            }
+        });
+        document.body.appendChild(searchRecognizeInput);
+    }
+    searchRecognizeInput.click();
 }
 
 function togglePartNewStatus(isNew) {
     window.newPartIsNew = isNew;
     document.getElementById('status-new').classList.toggle('active', isNew);
     document.getElementById('status-used').classList.toggle('active', !isNew);
+}
+
+// ==================== 灰卡白平衡校准 ====================
+
+// 打开相机拍照进行灰卡校准
+function calibrateGrayCard() {
+    const input = document.getElementById('gray-card-camera-input');
+    if (!input) return;
+    input.value = ''; // 允许重复选择
+    input.click();
+}
+
+// 处理灰卡校准照片
+async function processGrayCardFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+        alert('请选择图片文件');
+        return;
+    }
+
+    const statusTextEl = document.getElementById('gray-card-status-text');
+    const instructionEl = document.getElementById('gray-card-instruction');
+    if (statusTextEl) {
+        statusTextEl.textContent = '正在分析灰卡...';
+        statusTextEl.className = 'gray-card-status-text calibrating';
+    }
+
+    try {
+        // 压缩图片
+        const compressed = await compressImage(file, 1024);
+        if (!compressed) { alert('图片处理失败'); return; }
+
+        // 加载图片到 Canvas 进行分析
+        const img = await fileToImage(compressed);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { alert('无法处理图片'); return; }
+        ctx.drawImage(img, 0, 0);
+
+        // 取画面中央 40% 区域作为灰卡分析区域（假设用户将灰卡放在画面中央）
+        const cropRatio = 0.40;
+        const cw = Math.round(img.naturalWidth * cropRatio);
+        const ch = Math.round(img.naturalHeight * cropRatio);
+        const ox = Math.round((img.naturalWidth - cw) / 2);
+        const oy = Math.round((img.naturalHeight - ch) / 2);
+        const pixels = ctx.getImageData(ox, oy, cw, ch);
+
+        // 计算灰卡区域的平均 R/G/B
+        // 排除过暗（<30）和过曝（>245）的像素，以及接近纯色的像素（饱和度太高）
+        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+        for (let i = 0; i < pixels.data.length; i += 4) {
+            const r = pixels.data[i];
+            const g = pixels.data[i + 1];
+            const b = pixels.data[i + 2];
+            const brightness = r + g + b;
+            // 排除过暗/过曝像素
+            if (brightness < 90 || brightness > 735) continue;
+            // 排除高饱和度像素（防止灰卡区域有反光点或杂物）
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            if (max - min > 40) continue;
+            rSum += r; gSum += g; bSum += b;
+            count++;
+        }
+
+        if (count < 100) {
+            if (statusTextEl) {
+                statusTextEl.textContent = '❌ 未检测到灰卡区域，请确保灰卡在画面中央';
+                statusTextEl.className = 'gray-card-status-text error';
+            }
+            if (instructionEl) instructionEl.style.display = 'block';
+            return;
+        }
+
+        const avgR = rSum / count;
+        const avgG = gSum / count;
+        const avgB = bSum / count;
+
+        // 18% 灰卡在 sRGB 中的理论值 ≈ 128（中性灰）
+        // 以 G 通道为基准，使 G 增益 = 1.0，归一化 R 和 B
+        const target = 128;
+        const gainR = target / avgR;
+        const gainG = target / avgG;
+        const gainB = target / avgB;
+
+        // 归一化，保持整体亮度不变
+        const meanGain = (gainR + gainG + gainB) / 3;
+        const gains = {
+            r: gainR / meanGain,
+            g: gainG / meanGain,
+            b: gainB / meanGain
+        };
+
+        // 保存校准结果
+        setGrayCardGains(gains);
+        setGrayCardCalibrationActive(true);
+
+        // 更新 UI
+        if (statusTextEl) {
+            statusTextEl.textContent = `✓ 已校准`;
+            statusTextEl.className = 'gray-card-status-text calibrated';
+        }
+        if (instructionEl) {
+            instructionEl.style.display = 'block';
+            const scrollText = instructionEl.querySelector('.area2-scroll-text');
+            if (scrollText) scrollText.textContent = '灰卡白平衡已校准，点击"校准"可重新校准';
+        }
+        const clearBtn = document.getElementById('gray-card-clear-btn');
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+
+        alert('灰卡白平衡校准完成！后续拍照将自动应用校正。');
+    } catch (err) {
+        console.error('灰卡校准失败:', err);
+        if (statusTextEl) {
+            statusTextEl.textContent = '❌ 校准失败：' + (err.message || '未知错误');
+            statusTextEl.className = 'gray-card-status-text error';
+        }
+    }
+}
+
+// 切换灰卡校准模式开关
+function toggleGrayCardMode(active) {
+    setGrayCardCalibrationActive(active);
+    const statusTextEl = document.getElementById('gray-card-status-text');
+    if (statusTextEl) {
+        statusTextEl.textContent = active ? '✓ 已校准（已启用）' : '✓ 已校准（已禁用）';
+        statusTextEl.className = 'gray-card-status-text ' + (active ? 'calibrated' : 'disabled');
+    }
+}
+
+// 清除灰卡校准（UI 操作）
+function resetGrayCardCalibrationUI() {
+    if (!confirm('确定清除灰卡白平衡校准数据？')) return;
+    resetGrayCardCalibration();
+    const statusTextEl = document.getElementById('gray-card-status-text');
+    const instructionEl = document.getElementById('gray-card-instruction');
+    if (statusTextEl) {
+        statusTextEl.textContent = '未校准';
+        statusTextEl.className = 'gray-card-status-text uncalibrated';
+    }
+    if (instructionEl) {
+        instructionEl.style.display = 'block';
+        const scrollText = instructionEl.querySelector('.area2-scroll-text');
+        if (scrollText) scrollText.textContent = '将 18% 灰卡放在零件拍摄位置，点击"校准"拍照';
+    }
+    const clearBtn = document.getElementById('gray-card-clear-btn');
+    if (clearBtn) clearBtn.style.display = 'none';
+}
+
+// 应用灰卡白平衡增益到像素数据
+function applyGrayCardWB(imageData, gains) {
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        data[i]     = Math.min(255, Math.max(0, Math.round(data[i] * gains.r)));
+        data[i + 1] = Math.min(255, Math.max(0, Math.round(data[i + 1] * gains.g)));
+        data[i + 2] = Math.min(255, Math.max(0, Math.round(data[i + 2] * gains.b)));
+    }
+    return imageData;
+}
+
+// 从图片文件应用灰卡白平衡校正（返回校正后的 JPEG Blob）
+async function applyGrayCardToImage(file) {
+    const img = await fileToImage(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const gains = getGrayCardGains();
+    if (gains) {
+        imageData = applyGrayCardWB(imageData, gains);
+        ctx.putImageData(imageData, 0, 0);
+    }
+    return new Promise(resolve => {
+        canvas.toBlob(blob => {
+            if (!blob) { resolve(null); return; }
+            resolve(new File([blob], 'graycard_corrected.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+    });
 }
 
 async function saveNewPart(button) {
@@ -2096,6 +3779,11 @@ async function saveNewPart(button) {
             const newQty = selectedPart.quantity + newPartData.quantity;
             const success = await updatePart(selectedPart.id, { quantity: newQty });
             if (success) {
+                // 确保别名映射已持久化到线上
+                const originalPartNum = recognizeResultData.partNum;
+                if (originalPartNum && originalPartNum !== partNum) {
+                    await ensureAliasPersisted(originalPartNum, partNum);
+                }
                 confirmOverlay.remove();
                 button.closest('.modal-overlay').remove();
                 if (selectedBox) {
@@ -2109,14 +3797,14 @@ async function saveNewPart(button) {
         // 绑定新增按钮事件
         document.getElementById('dup-new-btn').addEventListener('click', async () => {
             confirmOverlay.remove();
-            // 先保存选中图片，再创建零件
-            await persistSelectedPartImage(newPartData.part_num, newPartData.color_id);
             const newPart = await createPart(newPartData);
             if (newPart) {
+                // 确保别名映射已持久化到线上
+                const originalPartNum = recognizeResultData.partNum;
+                if (originalPartNum && originalPartNum !== partNum) {
+                    await ensureAliasPersisted(originalPartNum, partNum);
+                }
                 button.closest('.modal-overlay').remove();
-                window._partImgKey = '';
-                window.newPartImageUrl = '';
-                window.newPartImgExplicit = false;
                 if (selectedBox) {
                     await loadParts(selectedBox.id);
                 }
@@ -2127,15 +3815,15 @@ async function saveNewPart(button) {
     }
 
     // 无重复，直接创建新零件
-    await persistSelectedPartImage(newPartData.part_num, newPartData.color_id);
     const newPart = await createPart(newPartData);
     
     if (newPart) {
+        // 确保别名映射已持久化到线上
+        const originalPartNum = recognizeResultData.partNum;
+        if (originalPartNum && originalPartNum !== partNum) {
+            await ensureAliasPersisted(originalPartNum, partNum);
+        }
         button.closest('.modal-overlay').remove();
-        // 保存成功后清理全局图片缓存状态，防止污染下一次添加
-        window._partImgKey = '';
-        window.newPartImageUrl = '';
-        window.newPartImgExplicit = false;
         if (selectedBox) {
             await loadParts(selectedBox.id);
         }
@@ -2465,12 +4153,28 @@ function showColorPicker() {
 async function loadColorGrid(partNum) {
     const grid = document.getElementById('color-grid');
 
-    // 从RB数据库查询该零件的所有颜色
-    const partColors = await getPartColors(partNum);
+    // 尝试解析别名：如果 partNum 在 RB 中找不到颜色，尝试用别名查询
+    let effectivePartNum = partNum;
+    let partColors = await getPartColors(partNum);
+    if ((!partColors || partColors.length === 0) && partNum) {
+        const resolvedNum = await resolvePartAlias(partNum);
+        if (resolvedNum && resolvedNum !== partNum) {
+            partColors = await getPartColors(resolvedNum);
+            if (partColors && partColors.length > 0) {
+                effectivePartNum = resolvedNum;
+            }
+        }
+    }
 
     if (!partColors || partColors.length === 0) {
         grid.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; grid-column: 1 / -1;">该零件在RB数据库中未找到颜色记录<br>请直接输入颜色ID</div>';
         return;
+    }
+
+    // 如果使用了别名，更新模态框标题显示
+    if (effectivePartNum !== partNum) {
+        // 别名解析后，颜色数据使用有效型号
+        // 标题保持原样："选择颜色 (partNum)"
     }
 
     // 获取每个颜色的详细信息（从colors表）
@@ -2517,6 +4221,8 @@ async function loadColorGrid(partNum) {
             if (colorInput) {
                 colorInput.value = color.id;
                 updateColorButtonColor(color.id);
+                // 手动触发 input 事件，让预览相关监听器得以执行
+                colorInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
             e.target.closest('.modal-overlay').remove();
         });
@@ -2541,7 +4247,7 @@ async function updateColorButtonColor(colorId) {
     if (!btn) return;
     
     // 转为字符串处理
-    const idStr = String(colorId || '').trim();
+    const idStr = String(colorId ?? '').trim();
     
     // 如果没有颜色ID或颜色ID为空，恢复默认浅灰色
     if (!idStr) {
@@ -2633,7 +4339,14 @@ async function loadSearchColorGrid(partNum) {
 
     // 若有型号，先按零件可用颜色加载
     if (partNum) {
-        const partColors = await getPartColors(partNum);
+        let partColors = await getPartColors(partNum);
+        // 如果直接查询无结果，尝试通过别名解析
+        if (!partColors || partColors.length === 0) {
+            const resolvedNum = await resolvePartAlias(partNum);
+            if (resolvedNum && resolvedNum !== partNum) {
+                partColors = await getPartColors(resolvedNum);
+            }
+        }
         if (partColors && partColors.length > 0) {
             const colorIds = [...new Set(partColors.map(pc => pc.color_id))];
             for (const colorId of colorIds) {
@@ -2686,16 +4399,83 @@ async function loadSearchColorGrid(partNum) {
 }
 
 async function handleAdvancedSearch() {
+    const partNumInput = document.getElementById('search-part-num');
+    const nameInput = document.getElementById('search-part-name');
+    const originalPartNum = partNumInput.value;
     const params = {
-        part_num: document.getElementById('search-part-num').value,
-        name: document.getElementById('search-part-name').value,
+        part_num: originalPartNum,
+        name: nameInput.value,
         color_id: document.getElementById('search-color-id').value,
         is_new: document.getElementById('search-status').value === '' ? undefined : 
                document.getElementById('search-status').value === 'true'
     };
     
-    const parts = await advancedSearchParts(params);
+    let parts = await advancedSearchParts(params);
+    let aliasUsed = false;
+    let resolvedNum = null;
+
+    // 如果按型号搜索没有结果，尝试通过别名解析查找
+    if (params.part_num && parts.length === 0) {
+        resolvedNum = await resolvePartAlias(params.part_num);
+        if (resolvedNum && resolvedNum !== params.part_num) {
+            console.log(`搜索别名解析: ${params.part_num} → ${resolvedNum}`);
+            // 不改变输入框，仅用别名搜索库存
+            const aliasParams = { ...params, part_num: resolvedNum };
+            parts = await advancedSearchParts(aliasParams);
+            aliasUsed = true;
+        }
+    }
+
+    // 渲染搜索结果
     renderSearchResults(parts);
+
+    // 更新数据来源提示
+    const dsHint = document.getElementById('search-data-source-hint');
+    if (dsHint) {
+        dsHint.textContent = aliasUsed && resolvedNum ? `数据来源：${resolvedNum}` : '';
+    }
+
+    // 清除旧提示
+    const oldHint = document.querySelector('.search-alias-hint');
+    if (oldHint) oldHint.remove();
+    const results = document.getElementById('search-results');
+
+    // 如果使用了别名，在搜索结果显示提示
+    if (aliasUsed && results) {
+        const hint = document.createElement('div');
+        hint.className = 'alias-hint search-alias-hint';
+        hint.style.marginBottom = '8px';
+        let msg = `ℹ️ 型号 <b>${originalPartNum}</b> 在RB数据库中对应为 <b>${resolvedNum}</b>，已使用该型号查询库存`;
+        if (parts.length > 0) {
+            msg += `，找到 ${parts.length} 个结果`;
+        }
+        hint.innerHTML = msg;
+        results.prepend(hint);
+    }
+
+    // 如果搜索无结果但使用了别名，显示RB零件信息卡片供参考
+    if (parts.length === 0 && aliasUsed && results && resolvedNum) {
+        try {
+            const rbPart = await getPartByNum(resolvedNum);
+            if (rbPart) {
+                const imgUrl = await getPartImageUrl(rbPart.part_num, 0);
+                const infoCard = document.createElement('div');
+                infoCard.className = 'rb-part-info-card';
+                infoCard.innerHTML = `
+                    <div class="rb-part-info-header">RB数据库零件信息</div>
+                    <div class="rb-part-info-body">
+                        ${imgUrl ? `<div class="rb-part-info-img"><img src="${imgUrl}" alt="${rbPart.part_num}" onerror="this.parentElement.style.display='none'"></div>` : ''}
+                        <div class="rb-part-info-details">
+                            <div class="rb-part-info-num">型号: <b>${rbPart.part_num}</b></div>
+                            <div class="rb-part-info-name">名称: ${rbPart.name || '-'}</div>
+                        </div>
+                    </div>
+                    <div class="rb-part-info-footer">提示: 输入型号 ${originalPartNum} 已通过别名映射到 ${resolvedNum}，但库存中暂无此零件</div>
+                `;
+                results.appendChild(infoCard);
+            }
+        } catch(e) {}
+    }
 }
 
 // 更新选色按钮样式：根据颜色ID设置底色和文字颜色
@@ -2703,7 +4483,7 @@ async function updateColorPickButton(colorId) {
     const btn = document.querySelector('.btn-color-pick');
     if (!btn) return;
 
-    if (!colorId) {
+    if (colorId === null || colorId === undefined || colorId === '') {
         // 恢复默认样式
         btn.style.backgroundColor = '';
         btn.style.color = '';
@@ -2736,6 +4516,8 @@ function resetSearchFilters() {
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
     updateColorPickButton('');
+    const dsHint = document.getElementById('search-data-source-hint');
+    if (dsHint) dsHint.textContent = '';
 }
 
 async function renderSearchResults(parts) {
@@ -2838,7 +4620,6 @@ function clearSearchResults() {
 }
 
 async function showPartDetail(part) {
-    showToast('📦 显示零件详情: ' + part.part_num);  // 确认 toast 可见
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
 
@@ -2854,6 +4635,18 @@ async function showPartDetail(part) {
         }
     } catch (e) {
         console.warn('获取RB零件名称失败:', e);
+    }
+
+    // 检测零件型号是否为别名映射（如 BG 识别型号 4073 → RB 6141）
+    // 若是，在型号后以绿色括号显示映射到的 RB 标准型号
+    let aliasRbNum = '';
+    try {
+        const resolvedNum = await resolvePartAlias(part.part_num);
+        if (resolvedNum && String(resolvedNum).trim() !== String(part.part_num).trim()) {
+            aliasRbNum = resolvedNum;
+        }
+    } catch (e) {
+        console.warn('获取别名映射RB型号失败:', e);
     }
 
     // 从RB数据库获取颜色名称（回退到本地颜色）
@@ -2876,9 +4669,9 @@ async function showPartDetail(part) {
     let imgUrl = null;
     let hasCustomImage = false;
     try {
-        imgUrl = await getPartImageUrl(part.part_num, part.color_id, true);
+        imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
-        // 立即尝试缓存图片（不等待 onload），双重保障
+        // 立即尝试缓存图片（不等待 onload）
         if (imgUrl && !hasCustomImage) {
             tryCachePartImage(part.part_num, part.color_id, imgUrl);
         }
@@ -2924,13 +4717,13 @@ async function showPartDetail(part) {
                 ${imageHtml}
             </div>
             <div class="pd-image-action">
-                <button class="pd-img-del-btn" onclick="deletePartDetailImage('${part.part_num}', ${part.color_id})">删除图片</button>
                 <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
                 <button class="pd-img-url-btn" onclick="showPartImageUrl('${part.part_num}', ${part.color_id})">图片URL</button>
+                <button class="pd-img-url-btn pd-bl-match-btn" onclick="blReconfigurePartById(${part.id})">BL重配</button>
             </div>
         </div>
         <div class="pd-row pd-model-row">
-            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span></span>
+            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span>${aliasRbNum ? `<span class="pd-alias-rb-num">（${aliasRbNum}）</span>` : ''}</span>
             <span class="pd-status ${isNew ? 'pd-status-new' : 'pd-status-used'}">${isNew ? '新' : '旧'}</span>
         </div>
         <div class="pd-row pd-name-row">
@@ -3023,6 +4816,28 @@ async function showPartDetail(part) {
     delBtn.addEventListener('touchstart', startDelLongPress, { passive: false });
     delBtn.addEventListener('touchend', cancelDelLongPress);
 
+    // 状态栏长按1秒：变更零件新旧状态
+    const statusEl = sheet.querySelector('.pd-status');
+    let statusTimer = null;
+    const startStatusLongPress = (e) => {
+        e.preventDefault();
+        statusTimer = setTimeout(() => {
+            changePartStatus(part);
+        }, 1000);
+    };
+    const cancelStatusLongPress = () => {
+        if (statusTimer) {
+            clearTimeout(statusTimer);
+            statusTimer = null;
+        }
+    };
+    statusEl.addEventListener('mousedown', startStatusLongPress);
+    statusEl.addEventListener('mouseup', cancelStatusLongPress);
+    statusEl.addEventListener('mouseleave', cancelStatusLongPress);
+    statusEl.addEventListener('touchstart', startStatusLongPress, { passive: false });
+    statusEl.addEventListener('touchend', cancelStatusLongPress);
+    statusEl.addEventListener('touchmove', cancelStatusLongPress);
+
     // 图片左滑显示变更按钮
     const imageSwipe = sheet.querySelector('#pd-image-swipe');
     const imageContent = imageSwipe.querySelector('.pd-image-content');
@@ -3075,6 +4890,64 @@ async function showPartDetail(part) {
     });
 }
 
+// 长按状态栏弹窗：变更零件新旧状态（纠正添加零件时的失误）
+function changePartStatus(part) {
+    const isNew = Boolean(part.is_new);
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'max-width:320px;padding:20px;text-align:center;';
+    box.innerHTML = `
+        <div style="margin-bottom:16px;font-size:16px;font-weight:bold;">变更零件状态</div>
+        <div style="margin-bottom:20px;font-size:14px;color:#888;">${part.part_num}（当前：${isNew ? '新' : '旧'}）</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <button id="status-set-new" style="padding:12px;border:none;border-radius:8px;background:#4CAF50;color:#fff;font-size:14px;cursor:pointer;">设为新品</button>
+            <button id="status-set-used" style="padding:12px;border:none;border-radius:8px;background:#ff9800;color:#fff;font-size:14px;cursor:pointer;">设为旧品</button>
+            <button id="status-cancel" style="padding:10px;border:none;border-radius:8px;background:#666;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+        </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    const doSet = (val) => {
+        overlay.remove();
+        applyPartStatus(part, val);
+    };
+    box.querySelector('#status-set-new').onclick = () => doSet(true);
+    box.querySelector('#status-set-used').onclick = () => doSet(false);
+    box.querySelector('#status-cancel').onclick = () => overlay.remove();
+}
+
+// 应用状态变更：更新数据库 + 详情状态栏 + 列表/搜索显示
+async function applyPartStatus(part, isNew) {
+    if (Boolean(part.is_new) === Boolean(isNew)) return;
+    const success = await updatePart(part.id, { is_new: isNew });
+    if (!success) {
+        alert('保存失败');
+        return;
+    }
+    part.is_new = isNew;
+    // 更新详情页状态栏
+    const sheet = document.querySelector('.part-detail-modal');
+    if (sheet) {
+        const statusEl = sheet.querySelector('.pd-status');
+        if (statusEl) {
+            statusEl.textContent = isNew ? '新' : '旧';
+            statusEl.className = 'pd-status ' + (isNew ? 'pd-status-new' : 'pd-status-used');
+        }
+    }
+    // 更新搜索结果卡片
+    updateSearchResultStatus(part.id, isNew);
+    // 刷新当前盒子零件列表
+    if (selectedBox) {
+        await loadParts(selectedBox.id);
+    }
+    showToast(isNew ? '已设为新品' : '已设为旧品');
+}
+
 // 图片变更入口（根据是否有离线缓存图片选择不同操作）
 async function changePartImage(partNum, colorId) {
     const hasCustom = !!(await getPartImageFromOfflineCache(partNum, colorId));
@@ -3082,112 +4955,6 @@ async function changePartImage(partNum, colorId) {
         manageCustomImage(partNum, colorId);
     } else {
         addCustomImage(partNum, colorId);
-    }
-}
-
-// 自动缓存零件图片到离线缓存（首次加载时触发）
-// imgElement - 图片加载成功后的 <img> 元素，从 this.src 获取实际加载的图片URL
-async function autoCachePartImage(partNum, colorId, imgElement) {
-    try {
-        const cached = await getPartImageFromOfflineCache(partNum, colorId);
-        if (cached) return;
-        if (!imgElement || !imgElement.src) return;
-        // 优先尝试 CORS 模式获取完整响应
-        // 若服务器不支持 CORS，再回退到 no-cors 模式获取不透明响应
-        let response;
-        try {
-            response = await fetch(imgElement.src);
-        } catch (_) {
-            response = await fetch(imgElement.src, { mode: 'no-cors' });
-        }
-        if (response) {
-            await savePartImageToOfflineCache(partNum, colorId, response);
-            showToast('✅ 图片已缓存到本地');
-        }
-    } catch (e) {
-        // 静默失败，不影响用户使用
-    }
-}
-
-// 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
-async function tryCachePartImage(partNum, colorId, url) {
-    showToast('🔄 缓存中: ' + partNum + '_' + colorId);  // 确认函数被调用
-    try {
-        const cached = await getPartImageFromOfflineCache(partNum, colorId);
-        if (cached) return;
-        // 优先 CORS，失败回退 no-cors
-        let response;
-        try {
-            response = await fetch(url);
-        } catch (_) {
-            response = await fetch(url, { mode: 'no-cors' });
-        }
-        if (response) {
-            console.log('缓存图片响应:', partNum, colorId, 'type=', response.type, 'status=', response.status, 'url=', url);
-            const ok = await savePartImageToOfflineCache(partNum, colorId, response);
-            if (ok) {
-                showToast('✅ 图片已离线缓存');
-            } else {
-                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
-                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
-            }
-        }
-    } catch (e) {
-        console.error('立即缓存失败:', partNum, colorId, url, e);
-        showToast('⚠️ 缓存失败: ' + e.message);
-    }
-}
-
-// 删除零件详情图片（弹窗选择：仅删缓存 / 删Gitee）
-async function deletePartDetailImage(partNum, colorId) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-    const sheet = document.createElement('div');
-    sheet.className = 'modal-content';
-    sheet.style.maxWidth = '320px';
-    sheet.innerHTML = `
-        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span class="modal-title" style="font-size:16px;font-weight:600;">删除图片</span>
-            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">取消</button>
-        </div>
-        <div class="modal-body">
-            <div style="font-size:13px;color:#666;margin-bottom:12px;">型号：${partNum}　颜色ID：${colorId}</div>
-            <button onclick="deleteCacheOnly('${partNum}', ${colorId})" style="width:100%;padding:10px;background:#FF9800;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;margin-bottom:8px;">仅删除本地缓存</button>
-            <div style="font-size:12px;color:#999;margin-bottom:12px;padding-left:4px;">只清除手机上的缓存图片，Gitee 云端图片保留</div>
-            <button onclick="deleteGiteeImage('${partNum}', ${colorId})" style="width:100%;padding:10px;background:#f44336;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;margin-bottom:8px;">删除 Gitee 图片</button>
-            <div style="font-size:12px;color:#999;padding-left:4px;">删除 Gitee 云端图片，同时也会清除本地缓存</div>
-        </div>
-    `;
-    overlay.appendChild(sheet);
-    document.body.appendChild(overlay);
-}
-
-// 仅删除本地缓存
-async function deleteCacheOnly(partNum, colorId) {
-    if (!confirm('确定要删除本地缓存的图片吗？')) return;
-    await deletePartImageFromOfflineCache(partNum, colorId);
-    showToast('本地缓存图片已删除');
-    // 关闭所有弹窗并刷新详情页
-    document.querySelectorAll('.modal-overlay.active').forEach(o => o.remove());
-    await refreshPartDetailWithCustomImage(partNum, colorId);
-}
-
-// 删除 Gitee 图片（同时清除本地缓存和RB数据库记录）
-async function deleteGiteeImage(partNum, colorId) {
-    if (!confirm('确定要删除 Gitee 云端的图片吗？\n（本地缓存也会同时清除）')) return;
-    // 删除本地缓存
-    await deletePartImageFromOfflineCache(partNum, colorId);
-    // 删除 Gitee
-    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url
-    await clearPartImageUrlInRB(partNum, colorId);
-    // 关闭所有弹窗并刷新详情页
-    document.querySelectorAll('.modal-overlay.active').forEach(o => o.remove());
-    await refreshPartDetailWithCustomImage(partNum, colorId);
-    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
-        showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
-    } else {
-        showToast('Gitee 图片已删除');
     }
 }
 
@@ -3248,6 +5015,335 @@ async function showPartImageUrl(partNum, colorId) {
 
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
+}
+
+// ==================== BL重配：重新匹配零件型号到RB（直接RB / BL匹配RB）====================
+// 零件详情页触发。流程：
+//   1) 匹配模型：直接RB匹配 → 别名解析 → BL匹配（matchRBByColorFallback 的 方法一）
+//   2) 弹窗展示匹配结果（型号 / 名称 / 颜色 / 图片+URL），用户确认
+//   3) 更新零件基本信息（仅名称/颜色；原BL型号保持不变，RB 关系写入别名映射）
+//   4) 检查别名映射：无记录则新增保存；有记录则比较，相同返回，不同让用户选择后更新
+
+// 入口：按零件ID查询后执行重配
+async function blReconfigurePartById(partId) {
+    let part;
+    try {
+        part = await getPartById(partId);
+    } catch (e) {
+        part = null;
+    }
+    if (!part) {
+        alert('获取零件信息失败');
+        return;
+    }
+    await reconfigurePartBLMatch(part);
+}
+
+// 匹配型号到 RB：返回 { inputNum, matchedPartNum, method, rbPart, colorId, colorName }
+//   method: 'direct' 直接RB匹配 | 'alias' 别名解析 | 'bl' BL匹配 | null 未命中
+async function matchPartNumToRB(partNum, colorId) {
+    const input = String(partNum == null ? '' : partNum).trim();
+    const out = {
+        inputNum: input,
+        matchedPartNum: null,
+        method: null,
+        rbPart: null,
+        colorId: (colorId != null && colorId !== '') ? colorId : null,
+        colorName: null
+    };
+    if (!input) return out;
+
+    // a) 直接 RB 匹配
+    try {
+        const rbPart = await getPartByNum(input);
+        if (rbPart) {
+            out.matchedPartNum = input;
+            out.rbPart = rbPart;
+            out.method = 'direct';
+            return out;
+        }
+    } catch (e) { /* 忽略 */ }
+
+    // b) 别名解析
+    try {
+        const resolved = await resolvePartAlias(input);
+        if (resolved && String(resolved).trim() !== input) {
+            const rbPart = await getPartByNum(String(resolved).trim());
+            if (rbPart) {
+                out.matchedPartNum = String(resolved).trim();
+                out.rbPart = rbPart;
+                out.method = 'alias';
+                return out;
+            }
+        }
+    } catch (e) { /* 忽略 */ }
+
+    // c) BL 匹配（需要颜色名）
+    let colorName = null;
+    try {
+        if (out.colorId != null) {
+            const c = await getColorById(out.colorId);
+            if (c && c.name) colorName = c.name;
+            if (!colorName) {
+                const ci = await getColorInfo(out.colorId);
+                if (ci && ci.name) colorName = ci.name;
+            }
+        }
+    } catch (e) { /* 忽略 */ }
+    try {
+        const m = await matchRBByColorFallback(input, colorName);
+        if (m && m.rbPartNum) {
+            out.matchedPartNum = String(m.rbPartNum).trim();
+            out.method = 'bl';
+            if (m.colorId != null) {
+                out.colorId = m.colorId;
+                try {
+                    const cl = await getColorById(m.colorId);
+                    if (cl && cl.name) out.colorName = cl.name;
+                } catch (e) { /* 忽略 */ }
+            }
+            try {
+                out.rbPart = await getPartByNum(out.matchedPartNum);
+            } catch (e) {
+                out.rbPart = null;
+            }
+            return out;
+        }
+    } catch (e) { /* 忽略 */ }
+
+    return out;
+}
+
+// 主流程：匹配 → 展示 → 确认 → 更新零件基本信息 + 别名映射
+async function reconfigurePartBLMatch(part) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content';
+    sheet.style.maxWidth = '360px';
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    const render = (html) => { sheet.innerHTML = html; };
+    render(`
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span class="modal-title" style="font-size:16px;font-weight:600;">BL重配</span>
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+        </div>
+        <div class="modal-body" id="bl-rec-body" style="text-align:center;color:#888;padding:20px 0;">正在重新匹配型号…</div>
+    `);
+    const bodyEl = sheet.querySelector('#bl-rec-body');
+
+    // —— 1. 执行匹配 ——
+    const result = await matchPartNumToRB(part.part_num, part.color_id);
+
+    // —— 2. 未命中 ——
+    if (!result.matchedPartNum) {
+        bodyEl.innerHTML = `
+            <div style="color:#e53935;font-size:15px;margin-bottom:8px;">未能匹配到RB型号</div>
+            <div style="font-size:13px;color:#666;">型号：${part.part_num}${part.color_id != null ? ' · 颜色ID：' + part.color_id : ''}</div>
+            <div style="font-size:12px;color:#999;margin-top:8px;">直接RB匹配、别名解析、BL匹配均未命中。</div>
+        `;
+        return;
+    }
+
+    // —— 3. 组装展示信息 ——
+    let name = result.rbPart && result.rbPart.name ? result.rbPart.name : '';
+    let colorName = result.colorName;
+    if (!colorName && result.colorId != null) {
+        try {
+            const cl = await getColorById(result.colorId);
+            if (cl && cl.name) colorName = cl.name;
+        } catch (e) { /* 忽略 */ }
+    }
+    let imgUrl = null;
+    try {
+        imgUrl = await getPartImageUrl(result.matchedPartNum, result.colorId);
+    } catch (e) {
+        imgUrl = null;
+    }
+
+    const methodLabel = result.method === 'direct' ? '直接RB匹配'
+        : result.method === 'alias' ? '别名映射'
+        : result.method === 'bl' ? 'BL匹配' : '';
+    const colorText = colorName
+        ? `${colorName}（ID：${result.colorId}）`
+        : (result.colorId != null ? `ID：${result.colorId}` : '（无）');
+
+    bodyEl.innerHTML = `
+        <div style="display:flex;justify-content:center;align-items:center;gap:16px;margin-bottom:10px;">
+            <div style="text-align:center;">
+                <div style="font-size:11px;color:#999;">原型号</div>
+                <div style="font-size:15px;font-weight:600;">${part.part_num}</div>
+            </div>
+            <div style="font-size:18px;color:#bbb;">→</div>
+            <div style="text-align:center;">
+                <div style="font-size:11px;color:#999;">匹配型号</div>
+                <div style="font-size:15px;font-weight:700;color:#2E7D32;">${result.matchedPartNum}</div>
+            </div>
+        </div>
+        <div style="text-align:center;font-size:12px;color:#1976D2;margin-bottom:10px;">匹配方式：${methodLabel}</div>
+        ${imgUrl ? `<div style="display:flex;justify-content:center;margin-bottom:10px;"><img src="${imgUrl}" alt="${result.matchedPartNum}" style="max-width:120px;max-height:120px;border-radius:6px;background:#f5f5f5;" onerror="this.style.display='none'"/></div>` : ''}
+        ${imgUrl ? `<div style="background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:8px;word-break:break-all;font-size:11px;color:#555;margin-bottom:10px;">图片URL：${imgUrl}</div>` : ''}
+        <div style="text-align:left;font-size:13px;line-height:1.9;">
+            <div><b>名称：</b>${name || '（无）'}</div>
+            <div><b>颜色：</b>${colorText}</div>
+        </div>
+        <div style="font-size:12px;color:#999;margin-top:12px;">原BL型号将保持不变，匹配结果用于修正名称/颜色并写入别名映射</div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+            <button id="bl-rec-cancel" style="flex:1;padding:9px;border:none;border-radius:6px;background:#607D8B;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+            <button id="bl-rec-confirm" style="flex:2;padding:9px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">确认更新</button>
+        </div>
+    `;
+
+    bodyEl.querySelector('#bl-rec-cancel').onclick = () => overlay.remove();
+    bodyEl.querySelector('#bl-rec-confirm').onclick = async () => {
+        const btn = bodyEl.querySelector('#bl-rec-confirm');
+        btn.disabled = true;
+        try {
+            await applyRematchToPart(part, result);
+            // 关闭 BL重配 弹窗
+            overlay.remove();
+            // 刷新零件详情（型号 / 图片等）：读取最新数据后重新打开详情弹窗
+            try {
+                const fresh = await getPartById(part.id);
+                // 先移除旧的零件详情弹窗，避免叠加
+                document.querySelectorAll('.part-detail-modal').forEach(m => {
+                    const ov = m.closest('.modal-overlay');
+                    if (ov) ov.remove();
+                });
+                if (fresh) {
+                    await showPartDetail(fresh);
+                }
+            } catch (e2) {
+                console.warn('BL重配后刷新零件详情失败:', e2);
+            }
+            // 刷新盒子零件列表
+            if (selectedBox) {
+                await loadParts(selectedBox.id);
+            }
+            showToast('BL重配完成');
+        } catch (e) {
+            console.warn('BL重配失败:', e);
+            alert(e.message || '保存失败');
+        }
+    };
+}
+
+// 确认后：更新零件基本信息 + 处理别名映射
+async function applyRematchToPart(part, result) {
+    // 保留原BL型号（不改写 part_num），仅依据匹配结果修正名称/颜色，RB 关系交给别名映射
+    const newPartNum = String(result.matchedPartNum).trim();
+    const updateData = {};
+    if (result.rbPart && result.rbPart.name && result.rbPart.name !== part.name) {
+        updateData.name = result.rbPart.name;
+    }
+    const newColorId = result.colorId != null ? Number(result.colorId) : null;
+    if (newColorId != null && String(newColorId) !== String(part.color_id)) {
+        updateData.color_id = newColorId;
+    }
+    if (Object.keys(updateData).length) {
+        const ok = await updatePart(part.id, updateData);
+        if (!ok) {
+            throw new Error('更新零件基本信息失败');
+        }
+    }
+
+    // —— 别名映射处理（原BL型号 → 匹配到的RB型号）——
+    await handleAliasAfterRematch(String(part.part_num).trim(), newPartNum);
+}
+
+// 别名映射：查记录 → 无则新增 / 有则比较（相同返回 / 不同让用户选择后更新）
+// 数据源统一为 RB 离线数据库别名表；更新时通过 persistPartAlias 同时写回 RB库 + Gitee CSV
+async function handleAliasAfterRematch(aliasNum, rbNum) {
+    if (!aliasNum || !rbNum || aliasNum === rbNum) {
+        console.log('[BL重配] 直接匹配RB，无需别名映射');
+        return true;
+    }
+
+    // 查询现有记录（RB 离线数据库 / 历史 localStorage，代替 Supabase）
+    let existing = null;
+    try {
+        const aliases = await getAllPartAliases();
+        if (aliases && aliases[aliasNum]) {
+            existing = { alias_part_num: aliasNum, rb_part_num: String(aliases[aliasNum]) };
+        }
+    } catch (e) {
+        console.warn('[BL重配]查询别名记录失败:', e.message);
+    }
+
+    // 无记录 → 添加保存
+    if (!existing) {
+        const r = await persistPartAlias(aliasNum, rbNum);
+        console.log(`[BL重配]已新增别名: ${aliasNum} → ${rbNum}`, r);
+        return !!r.ok;
+    }
+
+    // 有记录 → 比较
+    const existingRb = String(existing.rb_part_num).trim();
+    if (existingRb === rbNum) {
+        console.log('[BL重配]别名已有且一致，无需更新');
+        return true; // 相同 → 返回
+    }
+
+    // 不同 → 对比后让用户选择确认，再更新
+    const choice = await showAliasDiffConfirm(aliasNum, existingRb, rbNum);
+    if (choice !== 'update') {
+        console.log('[BL重配]用户保持原别名，未更新');
+        return true;
+    }
+    const r = await persistPartAlias(aliasNum, rbNum);
+    console.log(`[BL重配]已更新别名: ${aliasNum} → ${rbNum}`, r);
+    if (!r.ok) {
+        alert('更新别名映射失败');
+        return false;
+    }
+    return true;
+}
+
+// 别名差异对比弹窗：返回 'update' 或 'keep'
+function showAliasDiffConfirm(aliasNum, oldRb, newRb) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        const sheet = document.createElement('div');
+        sheet.className = 'modal-content';
+        sheet.style.maxWidth = '340px';
+        sheet.innerHTML = `
+            <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span class="modal-title" style="font-size:16px;font-weight:600;">别名映射差异</span>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:13px;color:#666;margin-bottom:10px;">型号 <b>${aliasNum}</b> 已存在别名映射，与新匹配结果不一致：</div>
+                <div style="background:#FFF3E0;border:1px solid #FFE0B2;border-radius:6px;padding:10px;font-size:13px;margin-bottom:6px;">
+                    <div>现有映射：<b>${aliasNum} → ${oldRb}</b></div>
+                </div>
+                <div style="background:#E3F2FD;border:1px solid #BBDEFB;border-radius:6px;padding:10px;font-size:13px;margin-bottom:14px;">
+                    <div>新匹配：<b>${aliasNum} → ${newRb}</b></div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button id="al-diff-keep" style="flex:1;padding:9px;border:none;border-radius:6px;background:#607D8B;color:#fff;font-size:14px;cursor:pointer;">保持现有</button>
+                    <button id="al-diff-update" style="flex:1;padding:9px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">更新为新匹配</button>
+                </div>
+            </div>
+        `;
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                resolve('keep');
+            }
+        });
+        sheet.querySelector('#al-diff-keep').onclick = () => {
+            overlay.remove();
+            resolve('keep');
+        };
+        sheet.querySelector('#al-diff-update').onclick = () => {
+            overlay.remove();
+            resolve('update');
+        };
+    });
 }
 
 async function searchFromDetail(partNum, colorId, partName) {
@@ -3320,27 +5416,10 @@ async function saveImageFromUrl(partNum, colorId) {
         alert('请输入有效的URL（以http://或https://开头）');
         return;
     }
-
-    const statusEl = document.getElementById('custom-img-status');
-    statusEl.textContent = '⏳ 正在处理...';
-    statusEl.style.color = '#2196F3';
-
-    // rebrickable CDN 图片（含 CORS 限制，无法 fetch 下载）→ 直接更新 RB 数据库 img_url
-    if (/cdn\.rebrickable\.com\//i.test(url)) {
-        const updated = await updateRBPartImageUrl(partNum, colorId, url);
-        statusEl.textContent = updated > 0
-            ? `✓ 已更新RB数据库图片URL（${updated}条记录）`
-            : '✗ 数据库无匹配记录，未能更新';
-        statusEl.style.color = updated > 0 ? '#4CAF50' : '#f44336';
-        setTimeout(() => {
-            const overlays = document.querySelectorAll('.modal-overlay.active');
-            overlays.forEach(o => o.remove());
-            refreshPartDetailWithCustomImage(partNum, colorId);
-        }, 1000);
-        return;
-    }
     
+    const statusEl = document.getElementById('custom-img-status');
     statusEl.textContent = '⏳ 正在下载并保存图片...';
+    statusEl.style.color = '#2196F3';
     
     try {
         // 下载图片并转为 base64
@@ -3456,6 +5535,59 @@ function uploadLocalImage(partNum, colorId) {
     reader.readAsDataURL(file);
 }
 
+// 更新图片：强制加载线上图片（RB优先，无则Gitee）覆盖离线缓存中的原图
+// 遵循离线图片命名规则（buildPartsImgUrl: parts/{partNum}_{colorId}.jpg）
+async function updatePartImageSource(partNum, colorId) {
+    showToast('🔄 正在加载线上图片覆盖离线缓存...');
+    try {
+        // ① RB 数据库图片
+        let rbUrls = [];
+        try { rbUrls = await getRBPartImageUrls(partNum, colorId); } catch (e) {}
+        let url = Array.isArray(rbUrls) && rbUrls.length ? rbUrls[0] : null;
+        let source = 'RB';
+
+        // ② Gitee 图片
+        if (!url) {
+            let giteeOk = false;
+            try { giteeOk = await checkPartsImgOnGitee(partNum, colorId); } catch (e) {}
+            if (giteeOk) {
+                url = buildPartsImgUrl(partNum, colorId);
+                source = 'Gitee';
+            }
+        }
+
+        if (!url) {
+            showToast('⚠️ 未找到RB/Gitee在线图片');
+            return;
+        }
+
+        // ③ 下载图片（优先 CORS，失败回退 no-cors）
+        let response;
+        try {
+            response = await fetch(url);
+        } catch (_) {
+            response = await fetch(url, { mode: 'no-cors' });
+        }
+        if (!response) {
+            showToast('⚠️ 图片加载失败');
+            return;
+        }
+
+        // ④ 覆盖写入离线缓存（缓存.put 相同 key 会覆盖原图）
+        const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+        if (!ok) {
+            showToast('⚠️ 离线缓存写入失败');
+            return;
+        }
+
+        showToast(`✅ 已用${source}图片更新离线缓存`);
+        await closeManageModalAndRefresh(partNum, colorId);
+    } catch (e) {
+        console.error('更新图片失败:', partNum, colorId, e);
+        showToast('⚠️ 更新图片失败: ' + e.message);
+    }
+}
+
 // 管理自定义图片（从离线缓存读取当前图片）
 async function manageCustomImage(partNum, colorId) {
     const cached = await getPartImageFromOfflineCache(partNum, colorId);
@@ -3479,8 +5611,9 @@ async function manageCustomImage(partNum, colorId) {
                 <img src="${currentUrl}" style="max-width:100%;max-height:150px;border-radius:4px;border:1px solid #eee;">
             </div>
             <div style="display:flex;gap:8px;">
-                <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">替换图片</button>
-                <button onclick="removeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">删除图片</button>
+                <button onclick="updatePartImageSource('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#FF9800;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">更新图片</button>
+                <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">替换图片</button>
+                <button onclick="deleteCustomImageWithOptions('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">删除图片</button>
             </div>
         </div>
     `;
@@ -3498,13 +5631,63 @@ function changeCustomImage(partNum, colorId) {
     addCustomImage(partNum, colorId);
 }
 
-// 删除自定义图片（关闭管理弹窗后弹出选择：仅删缓存 / 删Gitee）
-async function removeCustomImage(partNum, colorId) {
-    // 关闭管理弹窗
+// 删除自定义图片：弹窗选择 仅删除离线图片 / 删除 Gitee 图片
+function deleteCustomImageWithOptions(partNum, colorId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'max-width:320px;padding:20px;text-align:center;';
+    box.innerHTML = `
+        <div style="margin-bottom:16px;font-size:16px;font-weight:bold;">选择删除方式</div>
+        <div style="margin-bottom:20px;font-size:14px;color:#888;">${partNum}_${colorId}.jpg</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <button id="del-offline-img" style="padding:12px;border:none;border-radius:8px;background:#ff9800;color:#fff;font-size:14px;cursor:pointer;">仅删除离线图片</button>
+            <button id="del-gitee-img" style="padding:12px;border:none;border-radius:8px;background:#f44336;color:#fff;font-size:14px;cursor:pointer;">删除 Gitee 图片</button>
+            <button id="del-img-cancel" style="padding:10px;border:none;border-radius:8px;background:#666;color:#fff;font-size:14px;cursor:pointer;">取消</button>
+        </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    box.querySelector('#del-offline-img').onclick = () => {
+        overlay.remove();
+        deleteCustomOfflineImage(partNum, colorId);
+    };
+    box.querySelector('#del-gitee-img').onclick = () => {
+        overlay.remove();
+        deleteCustomGiteeImage(partNum, colorId);
+    };
+    box.querySelector('#del-img-cancel').onclick = () => overlay.remove();
+}
+
+// 仅删除离线图片（保留Gitee云端图片），关闭管理弹窗并刷新详情
+async function deleteCustomOfflineImage(partNum, colorId) {
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    showToast('已删除离线图片，下次联网可重新加载');
+    await closeManageModalAndRefresh(partNum, colorId);
+}
+
+// 删除 Gitee 图片 + 离线缓存 + RB 数据库记录，关闭管理弹窗并刷新详情
+async function deleteCustomGiteeImage(partNum, colorId) {
+    await deletePartImageFromOfflineCache(partNum, colorId);
+    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
+    await clearPartImageUrlInRB(partNum, colorId);
+    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
+        showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
+    } else {
+        showToast('图片已删除');
+    }
+    await closeManageModalAndRefresh(partNum, colorId);
+}
+
+// 关闭当前管理弹窗并刷新零件详情
+async function closeManageModalAndRefresh(partNum, colorId) {
     const overlay = document.querySelector('.modal-overlay.active');
     if (overlay) overlay.remove();
-    // 弹出删除选择
-    deletePartDetailImage(partNum, colorId);
+    refreshPartDetailWithCustomImage(partNum, colorId);
 }
 
 // 刷新零件详情（带自定义图片更新）
@@ -4142,7 +6325,7 @@ async function initializeApp() {
         if (colorIdInput) {
             colorIdInput.addEventListener('input', (e) => {
                 const val = e.target.value.trim();
-                if (val) {
+                if (val !== '') {
                     updateColorPickButton(val);
                 } else {
                     updateColorPickButton('');
@@ -4210,7 +6393,10 @@ async function loadRBOnStartup() {
 
         for (const file of csvFiles) {
             try {
-                const csvText = await fetchRBFile(file.name);
+                // inventory_parts 已分片（避免 Gitee contents API 10MiB 截断），需合并下载
+                const csvText = file.schemaKey === 'inventory_parts'
+                    ? await fetchRBInventoryParts()
+                    : await fetchRBFile(file.name);
                 if (!csvText) {
                     failCount++;
                     continue;
@@ -4239,6 +6425,27 @@ async function loadRBOnStartup() {
             }
         } catch (error) {
             console.error('加载 weights.json 失败:', error);
+        }
+
+        // 可选：加载 BL-parts（BG型号+颜色名→CODENAME），用于方法一兑底匹配。
+        // 若仓库暂无 bl_parts.csv 或导入失败，不阻塞 RB 主库与 ready 状态。
+        try {
+            const blCsv = await fetchRBFile('BL-parts.csv');
+            if (blCsv) {
+                const { data } = parseRBCSV(blCsv);
+                await importRBData(RB_STORES.BL_PARTS, convertRBData('bl_parts', data));
+                console.log(`BL-parts 加载成功: ${data.length} 条`);
+            }
+        } catch (error) {
+            console.warn('BL-parts 可选加载失败（不影响RB主库）:', error.message);
+        }
+
+        // 加载零件别名映射（part_aliases.csv → RB离线数据库 rb_part_aliases 表）
+        try {
+            const aliases = await loadPartAliasesFromGiteeToRBDB();
+            console.log(`零件别名映射加载成功: ${Object.keys(aliases).length} 条`);
+        } catch (error) {
+            console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
         }
 
         if (successCount === csvFiles.length) {
@@ -4512,6 +6719,146 @@ function reloadApp() {
     }
 }
 
+// RB分片：选择本地 inventory_parts.csv，分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
+// 分片命名 inventory_parts_1.csv ...（序号从1开始），上传后写入清单，更新RB按清单合并读取
+function splitAndUploadRB() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.csv,text/csv';
+    fileInput.style.display = 'none';
+    fileInput.onchange = () => {
+        document.body.removeChild(fileInput);
+        const file = fileInput.files && fileInput.files[0];
+        if (file) {
+            showSplitUploadConfirm(file);
+        }
+    };
+    document.body.appendChild(fileInput);
+    fileInput.click();
+}
+
+// 分片上传确认弹窗（展示文件信息与预计分片数）
+function showSplitUploadConfirm(file) {
+    const estimatedShards = Math.max(1, Math.ceil(file.size / (4 * 1024 * 1024)));
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">RB分片上传</span>
+            </div>
+            <div class="modal-body">
+                <div style="font-size: 13px; color: #666; text-align: left; line-height: 2;">
+                    <div>文件名：${file.name}</div>
+                    <div>文件大小：${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                    <div>预计分片数：${estimatedShards} 个（每个 &lt;4MB）</div>
+                </div>
+                <div style="font-size: 12px; color: #999; margin-top: 10px; line-height: 1.8;">
+                    上传前将按 (part_num, color_id, img_url) 去重：仅移除完全重复的行，
+                    保留全部不同零件/颜色/图片记录，确保数据完整。去重后再分割上传到 Gitee
+                    parts-rb 仓库，命名为 inventory_parts_1.csv、inventory_parts_2.csv ...，
+                    完成后自动写入分片清单，更新RB将按清单合并读取。
+                </div>
+                <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;">
+                    <button class="btn-save" id="split-upload-start" style="padding: 8px 24px;">开始上传</button>
+                    <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">取消</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const startBtn = overlay.querySelector('#split-upload-start');
+    startBtn.onclick = () => {
+        overlay.remove();
+        doSplitUploadRB(file);
+    };
+}
+
+// 执行分片上传，展示进度（含429限流重试提示）
+async function doSplitUploadRB(file) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
+            <div class="modal-header">
+                <span class="modal-title">RB分片上传</span>
+            </div>
+            <div class="modal-body">
+                <div style="padding: 20px 0;">
+                    <div class="rb-progress-bar" style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; margin: 10px 0;">
+                        <div id="split-upload-progress-fill" style="background: #FF5722; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="split-upload-progress-text" style="font-size: 14px; color: #666; margin-top: 10px;">准备分割...</div>
+                    <div id="split-upload-progress-detail" style="font-size: 12px; color: #999; margin-top: 5px;"></div>
+                </div>
+                <div id="split-upload-result" style="display: none;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const updateProgress = (percent, text, detail) => {
+        const fill = document.getElementById('split-upload-progress-fill');
+        const textEl = document.getElementById('split-upload-progress-text');
+        const detailEl = document.getElementById('split-upload-progress-detail');
+        if (fill) fill.style.width = Math.round(percent * 100) + '%';
+        if (text && textEl) textEl.textContent = text;
+        if (detail && detailEl) detailEl.textContent = detail;
+    };
+
+    try {
+        updateProgress(0.03, '正在分割文件...', file.name);
+
+        const result = await uploadRBInventoryShards(file, {
+            onProgress: (p) => {
+                let percent;
+                if (p.phase === 'manifest') {
+                    percent = 0.95;
+                } else if (p.shardTotal > 0) {
+                    percent = 0.03 + (p.shardIndex / p.shardTotal) * 0.92;
+                } else {
+                    percent = 0.5;
+                }
+                updateProgress(percent, p.message || '', '');
+            }
+        });
+
+        updateProgress(1, '分片上传完成！', '');
+
+        setTimeout(() => {
+            const resultDiv = document.getElementById('split-upload-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✓ 上传成功</div>
+                    <div style="font-size: 12px; color: #666; text-align: left; line-height: 1.8;">
+                        <div>分片数量：${result.count} 个</div>
+                        <div>数据行数：${result.rows} 条（去重前 ${result.source_rows} 条）</div>
+                        <div style="word-break: break-all;">文件：${result.files.join(', ')}</div>
+                    </div>
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 500);
+
+    } catch (error) {
+        console.error('RB分片上传失败:', error);
+        updateProgress(1, '上传失败', error.message);
+
+        setTimeout(() => {
+            const resultDiv = document.getElementById('split-upload-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; margin-top: 10px; color: #f44336;">
+                    <div style="font-size: 16px; margin-bottom: 10px;">✗ 上传失败</div>
+                    <div style="font-size: 12px; margin: 10px 0; word-break: break-all;">${error.message}</div>
+                    <button class="btn-save" style="margin-top: 15px;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+                </div>
+            `;
+        }, 500);
+    }
+}
+
 // 更新 RB 数据库（从 Parts-RB 读取 CSV，更新离线数据库）
 async function updateRB() {
     if (!confirm('确定要从 Parts-RB 读取最新的 CSV 数据吗？\n这将更新本地 RB 数据库。')) {
@@ -4570,7 +6917,10 @@ async function updateRB() {
             updateProgress(progress, `读取 ${file.label} (${i + 1}/${csvFiles.length})...`, file.name);
 
             try {
-                const csvText = await fetchRBFile(file.name);
+                // inventory_parts 已分片（避免 Gitee contents API 10MiB 截断），需合并下载
+                const csvText = file.schemaKey === 'inventory_parts'
+                    ? await fetchRBInventoryParts()
+                    : await fetchRBFile(file.name);
                 if (!csvText) {
                     failCount++;
                     importResults[file.schemaKey] = false;
@@ -4610,6 +6960,35 @@ async function updateRB() {
             importResults['weights'] = false;
         }
 
+        // 可选：加载 BL-parts（BG型号+颜色名→CODENAME），用于方法一兑底匹配
+        try {
+            updateProgress(0.83, '读取BL-parts数据...', 'bl_parts.csv');
+            const blCsv = await fetchRBFile('BL-parts.csv');
+            if (blCsv) {
+                const { data } = parseRBCSV(blCsv);
+                await importRBData(RB_STORES.BL_PARTS, convertRBData('bl_parts', data));
+                importResults['bl_parts'] = true;
+                updateProgress(0.88, 'BL-parts - 导入成功', `${data.length}条`);
+            } else {
+                importResults['bl_parts'] = false;
+                updateProgress(0.88, 'BL-parts - 未提供', '');
+            }
+        } catch (error) {
+            console.warn('BL-parts 可选加载失败:', error.message);
+            importResults['bl_parts'] = false;
+        }
+
+        // 加载零件别名映射（part_aliases.csv → RB离线数据库 rb_part_aliases 表）
+        try {
+            updateProgress(0.91, '读取别名映射数据...', 'part_aliases.csv');
+            const aliases = await loadPartAliasesFromGiteeToRBDB();
+            importResults['part_aliases'] = true;
+            updateProgress(0.95, '别名映射 - 导入成功', `${Object.keys(aliases).length}条`);
+        } catch (error) {
+            console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
+            importResults['part_aliases'] = false;
+        }
+
         // 显示结果
         updateProgress(1, '更新完成！', '');
 
@@ -4624,7 +7003,7 @@ async function updateRB() {
             statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
-            statsHtml += `<div>BL零件: ${stats.rb_bl_parts || 0} 条</div>`;
+            statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
             statsHtml += '</div>';
         }
 
@@ -4942,3 +7321,62 @@ function hidePasswordWheel() {
 // 将密码轮相关函数暴露到全局
 window.showPasswordWheel = showPasswordWheel;
 window.cancelPwWheel = cancelPwWheel;
+
+// ========== 离线缓存零件图片 ==========
+
+// 自动缓存零件图片到离线缓存（首次加载时触发）
+// imgElement - 图片加载成功后的 <img> 元素，从 this.src 获取实际加载的图片URL
+async function autoCachePartImage(partNum, colorId, imgElement) {
+    try {
+        const cached = await getPartImageFromOfflineCache(partNum, colorId);
+        if (cached) return;
+        if (!imgElement || !imgElement.src) return;
+        // 优先尝试 CORS 模式获取完整响应
+        // 若服务器不支持 CORS，再回退到 no-cors 模式获取不透明响应
+        let response;
+        try {
+            response = await fetch(imgElement.src);
+        } catch (_) {
+            response = await fetch(imgElement.src, { mode: 'no-cors' });
+        }
+        if (response) {
+            await savePartImageToOfflineCache(partNum, colorId, response);
+            showToast('✅ 图片已缓存到本地');
+        }
+    } catch (e) {
+        // 静默失败，不影响用户使用
+    }
+}
+
+// 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
+async function tryCachePartImage(partNum, colorId, url) {
+    showToast('🔄 缓存中: ' + partNum + '_' + colorId);  // 确认函数被调用
+    try {
+        const cached = await getPartImageFromOfflineCache(partNum, colorId);
+        if (cached) return;
+        // 优先 CORS，失败回退 no-cors
+        let response;
+        try {
+            response = await fetch(url);
+        } catch (_) {
+            response = await fetch(url, { mode: 'no-cors' });
+        }
+        if (response) {
+            console.log('缓存图片响应:', partNum, colorId, 'type=', response.type, 'status=', response.status, 'url=', url);
+            const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+            if (ok) {
+                showToast('✅ 图片已离线缓存');
+            } else {
+                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
+                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
+            }
+        }
+    } catch (e) {
+        console.error('立即缓存失败:', partNum, colorId, url, e);
+        showToast('⚠️ 缓存失败: ' + e.message);
+    }
+}
+
+// 全局暴露，供 onload 属性调用
+window.autoCachePartImage = autoCachePartImage;
+window.tryCachePartImage = tryCachePartImage;

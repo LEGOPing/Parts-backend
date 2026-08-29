@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v77';
+const CACHE_NAME = 'lego-parts-v79';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -26,10 +26,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
-            // 清理旧版本缓存，但保留零件图片离线缓存（part-images-cache-*）
+            // 清理旧版本缓存，但保留最新的零件图片离线缓存（part-images-cache-v2）
+            // 删除 v1（其中存有 data URL 字符串，浏览器无法解析为图片二进制）
             return Promise.all(
                 cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME && !cacheName.startsWith('part-images-cache')) {
+                    if (cacheName !== CACHE_NAME && cacheName !== 'part-images-cache-v2') {
                         console.log('删除旧缓存:', cacheName);
                         return caches.delete(cacheName);
                     }
@@ -44,7 +45,7 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
     
-    // POST/PATCH/DELETE requests: always go to network
+    // POST/PATCH/DELETE: network-first
     if (request.method === 'POST' || 
         request.method === 'PATCH' || 
         request.method === 'DELETE') {
@@ -54,7 +55,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // Gitee Parts-img 图片：缓存优先（用户手动上传的图片 + 自动缓存的图片）
+    // Gitee Parts-img 零件图片：缓存优先（手动上传 + 自动缓存）
     if (url.hostname.includes('gitee.com') && url.pathname.includes('Parts-img')) {
         event.respondWith(
             caches.match(request).then(cached => {
@@ -65,7 +66,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // API 请求：网络优先
+    // API (supabase, gitee 非图片): network-first
     if (url.hostname.includes('supabase.co') || url.hostname.includes('gitee.com')) {
         event.respondWith(fetch(request).catch(() => {
             return caches.match(request);

@@ -59,6 +59,56 @@ function clearSelection() {
     selectedBox = null;
 }
 
+// ==================== 灰卡白平衡校准 ====================
+let grayCardGains = null; // { r, g, b } 白平衡增益系数
+let grayCardCalibrated = false;
+let grayCardCalibrationActive = false; // 是否启用灰卡校准
+
+function getGrayCardGains() {
+    return grayCardGains;
+}
+
+function setGrayCardGains(gains) {
+    grayCardGains = gains;
+    grayCardCalibrated = gains !== null;
+    // 持久化保存
+    saveToLocalStorage('gray_card_gains', gains);
+}
+
+function isGrayCardCalibrated() {
+    return grayCardCalibrated;
+}
+
+function isGrayCardCalibrationActive() {
+    return grayCardCalibrationActive;
+}
+
+function setGrayCardCalibrationActive(active) {
+    grayCardCalibrationActive = active;
+    saveToLocalStorage('gray_card_active', active);
+}
+
+function resetGrayCardCalibration() {
+    grayCardGains = null;
+    grayCardCalibrated = false;
+    grayCardCalibrationActive = false;
+    saveToLocalStorage('gray_card_gains', null);
+    saveToLocalStorage('gray_card_active', false);
+}
+
+// 初始化时从 localStorage 恢复状态
+(function initGrayCardState() {
+    loadFromLocalStorage('gray_card_gains').then(gains => {
+        if (gains) {
+            grayCardGains = gains;
+            grayCardCalibrated = true;
+        }
+    });
+    loadFromLocalStorage('gray_card_active').then(active => {
+        grayCardCalibrationActive = active === true;
+    });
+})();
+
 async function saveToLocalStorage(key, data) {
     try {
         localStorage.setItem(key, JSON.stringify(data));

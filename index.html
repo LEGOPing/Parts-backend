@@ -12,7 +12,7 @@
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026082502">
+    <link rel="stylesheet" href="css/style.css?v=2026082903">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -40,11 +40,11 @@
     }
     </script>
 
-    <script src="js/api.js?v=2026082701"></script>
-    <script src="js/store.js?v=2026081401"></script>
-    <script src="js/part-aliases.js?v=2026082802"></script>
-    <script src="js/rb-db.js?v=2026082802"></script>
-    <script src="js/ui.js?v=2026082701"></script>
+    <script src="js/api.js?v=2026082910"></script>
+    <script src="js/store.js?v=2026081811"></script>
+    <script src="js/part-aliases.js?v=2026082910"></script>
+    <script src="js/rb-db.js?v=2026082910"></script>
+    <script src="js/ui.js?v=2026082910"></script>
 </head>
 <body>
     <div class="container">
@@ -157,8 +157,12 @@
                     <div class="search-filters">
                         <div class="filter-row">
                             <div class="filter-group">
-                                <label>型号</label>
+                                <div class="filter-group-header">
+                                    <label>型号</label>
+                                    <button type="button" class="btn-recognize-search" onclick="recognizePartFromSearch()">识别</button>
+                                </div>
                                 <input type="text" id="search-part-num" placeholder="零件型号">
+                                <div class="data-source-hint" id="search-data-source-hint"></div>
                             </div>
                             <div class="filter-group">
                                 <label>名称</label>
@@ -200,6 +204,7 @@
                         <div class="settings-buttons" style="margin-top: 8px;">
                             <button onclick="updateRB()" class="btn-settings" style="background-color: #00BCD4; color: white; flex: 1;">更新RB</button>
                             <button onclick="exportRB()" class="btn-settings" style="background-color: #4CAF50; color: white; flex: 1;">导出RB</button>
+                            <button onclick="splitAndUploadRB()" class="btn-settings" style="background-color: #FF5722; color: white; flex: 1;">RB分片</button>
                         </div>
                         <div id="rb-status-hint" style="font-size: 12px; margin-top: 8px; text-align: center;"></div>
                         <div id="idb-version-info" style="font-size: 12px; margin-top: 4px; text-align: center; color: var(--dark-gray-color);"></div>
@@ -254,7 +259,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
-                navigator.serviceWorker.register('service-worker.js?v=v74', { updateViaCache: 'none' })
+                navigator.serviceWorker.register('service-worker.js?v=v79', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
                         // 如果有旧SW在控制页面，强制重新加载以应用新版本
