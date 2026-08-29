@@ -62,6 +62,35 @@ async function fetchPartAliasesFromGitee() {
 // 获取完整的别名映射表（在线优先，离线回退本地）
 let cachedAliases = null;
 
+// ==================== 本地持久化（localStorage）====================
+// BL匹配/BG兑底自动建立的别名会写入 localStorage，实现跨浏览器会话（重启）可靠持久化。
+// 这样即使后端 Supabase part_aliases 表写入失败（无权限/网络），本机别名也不会丢失，
+// 重启后 resolvePartAlias 仍能正确解析（如 2431p52 → 2431pr0017）。
+const ALIAS_LOCAL_STORAGE_KEY = 'bl_alias_map';
+
+// 从 localStorage 读取本地别名映射 { aliasPartNum: rbPartNum }
+function getLocalAliasMap() {
+    try {
+        const raw = localStorage.getItem(ALIAS_LOCAL_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+// 将一条别名写入 localStorage（BL匹配/BG兑底建立的别名，优先级最高）
+function persistAliasToLocal(aliasPartNum, rbPartNum) {
+    try {
+        const map = getLocalAliasMap();
+        map[String(aliasPartNum)] = String(rbPartNum);
+        localStorage.setItem(ALIAS_LOCAL_STORAGE_KEY, JSON.stringify(map));
+        return true;
+    } catch (e) {
+        console.warn('[别名]写入本地存储失败:', e.message);
+        return false;
+    }
+}
+
 async function getAllPartAliases() {
     if (cachedAliases) return cachedAliases;
 
@@ -75,7 +104,7 @@ async function getAllPartAliases() {
     }
 
     // 2. 再从后端 Supabase part_aliases 表加载（兑底匹配自动建立的别名）
-    //    这些别名是用户通过「拍照识别 → 兑底匹配」生成的，优先级高于 Gitee/本地数据
+    //    这些别名是用户通过「拍照识别 → 兑底匹配」生成的
     try {
         const supabaseAliases = await supabaseRequest('part_aliases', {
             select: 'alias_part_num,rb_part_num',
@@ -89,6 +118,13 @@ async function getAllPartAliases() {
         }
     } catch (e) {
         console.warn('[别名]从后端加载别名失败:', e.message);
+    }
+
+    // 3. 最后应用 localStorage 本地别名（BL匹配/BG兑底自动建立的，优先级最高）
+    //    覆盖 Gitee/后端，确保本机建立的别名跨重启仍生效
+    const localMap = getLocalAliasMap();
+    if (localMap && Object.keys(localMap).length > 0) {
+        Object.assign(cachedAliases, localMap);
     }
 
     return cachedAliases;

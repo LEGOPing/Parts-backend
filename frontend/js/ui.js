@@ -2442,7 +2442,13 @@ async function savePartAlias(aliasPartNum, rbPartNum) {
     } catch (e) {
         console.warn('[兑底]写入后端别名失败:', e.message);
     }
-    // 2) 刷新/注入前端本地别名缓存（本次会话立即生效）
+    // 2) 持久化到本地 localStorage（跨重启可靠，后端失败时也能兜底）
+    try {
+        persistAliasToLocal(aliasPartNum, rbPartNum);
+    } catch (e) {
+        console.warn('[兑底]写入本地别名失败:', e.message);
+    }
+    // 3) 刷新/注入前端本地别名缓存（本次会话立即生效）
     try {
         const aliases = await getAllPartAliases();
         if (aliases) aliases[String(aliasPartNum)] = String(rbPartNum);
