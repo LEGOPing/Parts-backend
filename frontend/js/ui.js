@@ -5058,7 +5058,7 @@ async function showPartImageUrl(partNum, colorId) {
 // 零件详情页触发。流程：
 //   1) 匹配模型：直接RB匹配 → 别名解析 → BL匹配（matchRBByColorFallback 的 方法一）
 //   2) 弹窗展示匹配结果（型号 / 名称 / 颜色 / 图片+URL），用户确认
-//   3) 更新零件基本信息（型号 / 名称 / 颜色）
+//   3) 更新零件基本信息（仅名称/颜色；原BL型号保持不变，RB 关系写入别名映射）
 //   4) 检查别名映射：无记录则新增保存；有记录则比较，相同返回，不同让用户选择后更新
 
 // 入口：按零件ID查询后执行重配
@@ -5226,7 +5226,8 @@ async function reconfigurePartBLMatch(part) {
             <div><b>名称：</b>${name || '（无）'}</div>
             <div><b>颜色：</b>${colorText}</div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:16px;">
+        <div style="font-size:12px;color:#999;margin-top:12px;">原BL型号将保持不变，匹配结果用于修正名称/颜色并写入别名映射</div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
             <button id="bl-rec-cancel" style="flex:1;padding:9px;border:none;border-radius:6px;background:#607D8B;color:#fff;font-size:14px;cursor:pointer;">取消</button>
             <button id="bl-rec-confirm" style="flex:2;padding:9px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">确认更新</button>
         </div>
@@ -5252,12 +5253,9 @@ async function reconfigurePartBLMatch(part) {
 
 // 确认后：更新零件基本信息 + 处理别名映射
 async function applyRematchToPart(part, result) {
-    // —— 更新零件基本信息（型号 / 名称 / 颜色）——
-    const updateData = {};
+    // 保留原BL型号（不改写 part_num），仅依据匹配结果修正名称/颜色，RB 关系交给别名映射
     const newPartNum = String(result.matchedPartNum).trim();
-    if (newPartNum !== String(part.part_num).trim()) {
-        updateData.part_num = newPartNum;
-    }
+    const updateData = {};
     if (result.rbPart && result.rbPart.name && result.rbPart.name !== part.name) {
         updateData.name = result.rbPart.name;
     }
@@ -5272,7 +5270,7 @@ async function applyRematchToPart(part, result) {
         }
     }
 
-    // —— 别名映射处理 ——
+    // —— 别名映射处理（原BL型号 → 匹配到的RB型号）——
     await handleAliasAfterRematch(String(part.part_num).trim(), newPartNum);
 }
 
@@ -5570,6 +5568,59 @@ function uploadLocalImage(partNum, colorId) {
     reader.readAsDataURL(file);
 }
 
+// 更新图片：强制加载线上图片（RB优先，无则Gitee）覆盖离线缓存中的原图
+// 遵循离线图片命名规则（buildPartsImgUrl: parts/{partNum}_{colorId}.jpg）
+async function updatePartImageSource(partNum, colorId) {
+    showToast('🔄 正在加载线上图片覆盖离线缓存...');
+    try {
+        // ① RB 数据库图片
+        let rbUrls = [];
+        try { rbUrls = await getRBPartImageUrls(partNum, colorId); } catch (e) {}
+        let url = Array.isArray(rbUrls) && rbUrls.length ? rbUrls[0] : null;
+        let source = 'RB';
+
+        // ② Gitee 图片
+        if (!url) {
+            let giteeOk = false;
+            try { giteeOk = await checkPartsImgOnGitee(partNum, colorId); } catch (e) {}
+            if (giteeOk) {
+                url = buildPartsImgUrl(partNum, colorId);
+                source = 'Gitee';
+            }
+        }
+
+        if (!url) {
+            showToast('⚠️ 未找到RB/Gitee在线图片');
+            return;
+        }
+
+        // ③ 下载图片（优先 CORS，失败回退 no-cors）
+        let response;
+        try {
+            response = await fetch(url);
+        } catch (_) {
+            response = await fetch(url, { mode: 'no-cors' });
+        }
+        if (!response) {
+            showToast('⚠️ 图片加载失败');
+            return;
+        }
+
+        // ④ 覆盖写入离线缓存（缓存.put 相同 key 会覆盖原图）
+        const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+        if (!ok) {
+            showToast('⚠️ 离线缓存写入失败');
+            return;
+        }
+
+        showToast(`✅ 已用${source}图片更新离线缓存`);
+        await closeManageModalAndRefresh(partNum, colorId);
+    } catch (e) {
+        console.error('更新图片失败:', partNum, colorId, e);
+        showToast('⚠️ 更新图片失败: ' + e.message);
+    }
+}
+
 // 管理自定义图片（从离线缓存读取当前图片）
 async function manageCustomImage(partNum, colorId) {
     const cached = await getPartImageFromOfflineCache(partNum, colorId);
@@ -5593,8 +5644,9 @@ async function manageCustomImage(partNum, colorId) {
                 <img src="${currentUrl}" style="max-width:100%;max-height:150px;border-radius:4px;border:1px solid #eee;">
             </div>
             <div style="display:flex;gap:8px;">
-                <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">替换图片</button>
-                <button onclick="deleteCustomImageWithOptions('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;">删除图片</button>
+                <button onclick="updatePartImageSource('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#FF9800;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">更新图片</button>
+                <button onclick="changeCustomImage('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">替换图片</button>
+                <button onclick="deleteCustomImageWithOptions('${partNum}', ${colorId})" style="flex:1;padding:8px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">删除图片</button>
             </div>
         </div>
     `;
