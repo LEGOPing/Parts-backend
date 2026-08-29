@@ -4663,6 +4663,21 @@ async function showPartDetail(part) {
         console.warn('获取RB零件名称失败:', e);
     }
 
+    // 检测零件型号是否为别名映射（如 BG 识别型号 4073 → RB 6141）
+    // 若是，取映射到的 RB 标准型号名称，在型号后以绿色括号显示
+    let aliasRbName = '';
+    try {
+        const resolvedNum = await resolvePartAlias(part.part_num);
+        if (resolvedNum && String(resolvedNum).trim() !== String(part.part_num).trim()) {
+            const rbPart = await getPartByNum(resolvedNum);
+            if (rbPart && rbPart.name) {
+                aliasRbName = rbPart.name;
+            }
+        }
+    } catch (e) {
+        console.warn('获取别名映射RB名称失败:', e);
+    }
+
     // 从RB数据库获取颜色名称（回退到本地颜色）
     let rbColorName = '未知颜色';
     try {
@@ -4731,13 +4746,12 @@ async function showPartDetail(part) {
                 ${imageHtml}
             </div>
             <div class="pd-image-action">
-                <button class="pd-img-del-btn" onclick="deletePartDetailImage('${part.part_num}', ${part.color_id})">删除图片</button>
                 <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
                 <button class="pd-img-url-btn" onclick="showPartImageUrl('${part.part_num}', ${part.color_id})">图片URL</button>
             </div>
         </div>
         <div class="pd-row pd-model-row">
-            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span></span>
+            <span class="pd-left">型号：<span class="pd-model">${part.part_num}</span>${aliasRbName ? `<span class="pd-alias-rb-name">（${aliasRbName}）</span>` : ''}</span>
             <span class="pd-status ${isNew ? 'pd-status-new' : 'pd-status-used'}">${isNew ? '新' : '旧'}</span>
         </div>
         <div class="pd-row pd-name-row">
@@ -4889,75 +4903,6 @@ async function changePartImage(partNum, colorId) {
         manageCustomImage(partNum, colorId);
     } else {
         addCustomImage(partNum, colorId);
-    }
-}
-
-// 删除零件详情图片（左滑操作区按钮：删离线缓存 + 删Gitee + 详情显示暂无图片）
-async function deletePartDetailImage(partNum, colorId) {
-    // 弹出选择框：仅删除本地缓存 / 删除Gitee图片
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
-    const box = document.createElement('div');
-    box.className = 'modal-content';
-    box.style.cssText = 'max-width:320px;padding:20px;text-align:center;';
-    box.innerHTML = `
-        <div style="margin-bottom:16px;font-size:16px;font-weight:bold;">选择删除方式</div>
-        <div style="margin-bottom:20px;font-size:14px;color:#888;">${partNum}_${colorId}.jpg</div>
-        <div style="display:flex;flex-direction:column;gap:10px;">
-            <button id="del-cache-only" style="padding:12px;border:none;border-radius:8px;background:#ff9800;color:#fff;font-size:14px;cursor:pointer;">仅删除本地缓存</button>
-            <button id="del-gitee-img" style="padding:12px;border:none;border-radius:8px;background:#f44336;color:#fff;font-size:14px;cursor:pointer;">删除 Gitee 图片</button>
-            <button id="del-cancel" style="padding:10px;border:none;border-radius:8px;background:#666;color:#fff;font-size:14px;cursor:pointer;">取消</button>
-        </div>
-    `;
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
-    });
-    box.querySelector('#del-cache-only').onclick = () => {
-        overlay.remove();
-        deleteCacheOnly(partNum, colorId);
-    };
-    box.querySelector('#del-gitee-img').onclick = () => {
-        overlay.remove();
-        deleteGiteeImage(partNum, colorId);
-    };
-    box.querySelector('#del-cancel').onclick = () => overlay.remove();
-}
-
-// 仅删除本地离线缓存（保留Gitee云端图片）
-async function deleteCacheOnly(partNum, colorId) {
-    await deletePartImageFromOfflineCache(partNum, colorId);
-    showToast('已删除本地缓存，下次联网可重新加载');
-}
-
-// 删除Gitee云端图片 + 本地缓存 + RB数据库记录
-async function deleteGiteeImage(partNum, colorId) {
-    // 删除浏览器离线缓存
-    await deletePartImageFromOfflineCache(partNum, colorId);
-    // 删除 Gitee Parts-img 仓库图片
-    const giteeResult = await deletePartImageFromGitee(partNum, colorId);
-    // 清除 RB 数据库中的 img_url
-    await clearPartImageUrlInRB(partNum, colorId);
-    // 关闭左滑并更新当前详情
-    const sheet = document.querySelector('.part-detail-modal');
-    if (sheet) {
-        const imageContent = sheet.querySelector('.pd-image-content');
-        if (imageContent) imageContent.innerHTML = '<div class="pd-no-image">暂无图片</div>';
-        const changeBtn = sheet.querySelector('.pd-img-change-btn');
-        if (changeBtn) changeBtn.textContent = '添加图片';
-        const imageSwipe = sheet.querySelector('#pd-image-swipe');
-        if (imageSwipe) {
-            const content = imageSwipe.querySelector('.pd-image-content');
-            const action = imageSwipe.querySelector('.pd-image-action');
-            if (content) content.style.transform = 'translateX(0)';
-            if (action) action.style.transform = 'translateX(90px)';
-        }
-    }
-    if (giteeResult && giteeResult.success === false && giteeResult.error && giteeResult.error !== '文件不存在，无需删除') {
-        showToast('图片已删除，但云端(Gitee)删除失败，刷新后可能仍显示');
-    } else {
-        showToast('图片已删除');
     }
 }
 
