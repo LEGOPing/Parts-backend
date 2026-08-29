@@ -690,6 +690,14 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
                 console.warn('拒绝缓存不可用的图片响应:', imageData.type, imageData.status);
                 return false;
             }
+            // 内容类型非图片时同样拒收（例如服务器返回了 HTML/JSON 错误页）
+            const ct = (imageData.headers.get('content-type') || '').toLowerCase();
+            // 离线缓存键为 buildPartsImgUrl 图片地址，Service Worker 会按图片 MIME 渲染；
+            // 若来源响应并非图片类型，存储后也会被当作坏图返回，故一并拒收
+            if (ct && !ct.startsWith('image/')) {
+                console.warn('拒绝缓存非图片类型响应:', ct, imageData.status);
+                return false;
+            }
             response = imageData;
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
@@ -715,16 +723,44 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
     }
 }
 
+// 会话内存中使用过的校验结果（避免列表渲染时对每个图片都重复读字节）
+const _usableEntryCache = new Map();
+
+// 判断离线缓存条目是否确为可渲染的图片（自愈用）
+// 不透明/非成功/内容并非真实图片字节（含被误存为字符串的 data URL、HTML/JSON 错误页）都视为坏图
+async function isUsableImageEntry(url, entry) {
+    if (!entry) return false;
+    if (entry.type === 'opaque' || !entry.ok) return false;
+    if (_usableEntryCache.has(url)) return true; // 本次会话已校验可用
+    try {
+        const buf = new Uint8Array(await entry.clone().arrayBuffer());
+        const text = String.fromCharCode(...buf.subarray(0, 12));
+        let valid = buf.length > 0;
+        if (valid) {
+            if (text.startsWith('data:')) valid = false;              // 误存为字符串的 data URL
+            else if (text.startsWith('\xFF\xD8')) valid = true;       // JPEG
+            else if (text.startsWith('\x89PNG')) valid = true;        // PNG
+            else if (text.startsWith('GIF8')) valid = true;           // GIF
+            else if (text.startsWith('RIFF') && text.includes('WEBP')) valid = true; // WebP
+            else valid = false;
+        }
+        if (valid) _usableEntryCache.set(url, true);
+        return valid;
+    } catch (_) {
+        return false;
+    }
+}
+
 // 从浏览器离线缓存读取零件图片
 async function getPartImageFromOfflineCache(partNum, colorId) {
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
         const url = buildPartsImgUrl(partNum, colorId);
         const entry = await cache.match(url);
-        // 自愈：不透明（no-cors）或非成功状态的缓存条目不透明/无法渲染，
-        // 若直接返回会被 Service Worker 缓存优先命中，导致图片"加载失败/暂无图片"。
-        // 这里删除坏条目并返回 null，让上层回退到 RB 数据库好图。
-        if (entry && (entry.type === 'opaque' || !entry.ok)) {
+        // 自愈：若缓存条目不透明/非成功/并非真实图片字节，则删除并返回 null，
+        // 让上层回退到 RB 数据库好图（避免 Service Worker 缓存优先持续返回坏图，
+        // 导致图片"加载失败/暂无图片"，删除离线图后又复发）
+        if (entry && !(await isUsableImageEntry(url, entry))) {
             console.warn('离线缓存条目不可用，删除:', url, entry.type, entry.status);
             await cache.delete(url);
             return null;
