@@ -5239,7 +5239,23 @@ async function reconfigurePartBLMatch(part) {
         btn.disabled = true;
         try {
             await applyRematchToPart(part, result);
+            // 关闭 BL重配 弹窗
             overlay.remove();
+            // 刷新零件详情（型号 / 图片等）：读取最新数据后重新打开详情弹窗
+            try {
+                const fresh = await getPartById(part.id);
+                // 先移除旧的零件详情弹窗，避免叠加
+                document.querySelectorAll('.part-detail-modal').forEach(m => {
+                    const ov = m.closest('.modal-overlay');
+                    if (ov) ov.remove();
+                });
+                if (fresh) {
+                    await showPartDetail(fresh);
+                }
+            } catch (e2) {
+                console.warn('BL重配后刷新零件详情失败:', e2);
+            }
+            // 刷新盒子零件列表
             if (selectedBox) {
                 await loadParts(selectedBox.id);
             }
