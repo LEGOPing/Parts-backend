@@ -1215,11 +1215,13 @@ body {
     gap: 4px;
     margin-top: 0;
     cursor: pointer;
-    align-items: stretch;
+    align-items: center;
+    justify-items: stretch;
 }
 
 .search-repo-mini {
     box-sizing: border-box;
+    width: 100%;
     padding: 2px;
     aspect-ratio: 3 / 2;
     display: flex;
