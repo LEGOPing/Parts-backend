@@ -1097,6 +1097,7 @@ body {
     gap: 8px;
     margin-bottom: 6px;
     flex-wrap: wrap;
+    align-items: flex-start;
 }
 
 .filter-row:last-child {
@@ -1196,6 +1197,7 @@ body {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-bottom: 6px;
+    align-items: start;
 }
 
 .repo-status-grid .filter-group {
