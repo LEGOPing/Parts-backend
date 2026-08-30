@@ -922,7 +922,7 @@ async function updatePartsByBox(boxId, data) {
 
 async function searchParts(params) {
     try {
-        const { part_num, name, color_id, is_new } = params;
+        const { part_num, name, color_id, is_new, repo_ids } = params;
         const filters = {};
         
         if (color_id !== undefined && color_id !== null && color_id !== '') {
@@ -955,6 +955,18 @@ async function searchParts(params) {
         if (name) {
             const q = name.toLowerCase().replace(/\s*x\s*/g, 'x');
             filtered = filtered.filter(p => p.name.toLowerCase().replace(/\s*x\s*/g, 'x').includes(q));
+        }
+
+        // 按仓库（repository）过滤：零件通过 box 归属到仓库
+        if (repo_ids && repo_ids.length > 0) {
+            const boxIdSet = new Set();
+            for (const repoId of repo_ids) {
+                const boxes = await getBoxes(repoId);
+                if (boxes) {
+                    boxes.forEach(b => boxIdSet.add(b.id));
+                }
+            }
+            filtered = filtered.filter(p => p.box_id != null && boxIdSet.has(p.box_id));
         }
         
         return filtered;

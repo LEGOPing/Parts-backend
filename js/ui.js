@@ -4407,7 +4407,8 @@ async function handleAdvancedSearch() {
         name: nameInput.value,
         color_id: document.getElementById('search-color-id').value,
         is_new: document.getElementById('search-status').value === '' ? undefined : 
-               document.getElementById('search-status').value === 'true'
+               document.getElementById('search-status').value === 'true',
+        repo_ids: searchSelectedRepos && searchSelectedRepos.size > 0 ? Array.from(searchSelectedRepos) : undefined
     };
     
     let parts = await advancedSearchParts(params);
@@ -4509,15 +4510,101 @@ async function updateColorPickButton(colorId) {
     btn.textContent = colorInfo.name || '选色';
 }
 
+// 搜索时已选中的仓库（repository）ID 集合（多选）
+let searchSelectedRepos = new Set();
+
 function resetSearchFilters() {
     document.getElementById('search-part-num').value = '';
     document.getElementById('search-part-name').value = '';
     document.getElementById('search-color-id').value = '';
     document.getElementById('search-status').value = '';
+    searchSelectedRepos = new Set();
+    updateSearchRepoHint();
     document.getElementById('search-results').innerHTML = '';
     updateColorPickButton('');
     const dsHint = document.getElementById('search-data-source-hint');
     if (dsHint) dsHint.textContent = '';
+}
+
+// 更新搜索页"仓库"筛选的提示文字
+function updateSearchRepoHint() {
+    const hint = document.getElementById('search-repo-hint');
+    if (!hint) return;
+    if (searchSelectedRepos.size === 0) {
+        hint.textContent = '全部仓库';
+        hint.style.color = '';
+    } else {
+        hint.textContent = `已选 ${searchSelectedRepos.size} 个仓库`;
+        hint.style.color = '#2196F3';
+    }
+}
+
+// 打开仓库选择弹窗（多选，仓库以卡片形式展示）
+async function openSearchWarehouseSelect() {
+    const repos = await getRepositories();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'search-repo-overlay';
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeSearchWarehouseSelect();
+    });
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content search-repo-modal';
+    sheet.innerHTML = `
+        <div class="search-repo-header">
+            <span class="search-repo-title">选择需要搜索的仓库</span>
+            <span class="search-repo-count" id="search-repo-selected-count"></span>
+        </div>
+        <div class="search-repo-grid" id="search-repo-grid"></div>
+        <div class="search-repo-footer">
+            <button class="btn-secondary" onclick="closeSearchWarehouseSelect()">取消</button>
+            <button class="btn-primary" onclick="closeSearchWarehouseSelect()">确定</button>
+        </div>
+    `;
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    const grid = document.getElementById('search-repo-grid');
+    if (!repos || repos.length === 0) {
+        grid.innerHTML = '<div class="search-repo-empty">暂无仓库</div>';
+    } else {
+        repos.forEach(repo => {
+            const card = document.createElement('div');
+            card.className = 'search-repo-card' + (searchSelectedRepos.has(repo.id) ? ' selected' : '');
+            card.dataset.id = repo.id;
+            card.textContent = repo.name;
+            card.title = repo.name;
+            card.addEventListener('click', () => toggleSearchWarehouse(repo.id, card));
+            grid.appendChild(card);
+        });
+    }
+    updateSearchRepoCount();
+}
+
+// 切换某个仓库的选中状态
+function toggleSearchWarehouse(repoId, card) {
+    if (searchSelectedRepos.has(repoId)) {
+        searchSelectedRepos.delete(repoId);
+        card.classList.remove('selected');
+    } else {
+        searchSelectedRepos.add(repoId);
+        card.classList.add('selected');
+    }
+    updateSearchRepoCount();
+}
+
+// 更新弹窗内已选仓库数量
+function updateSearchRepoCount() {
+    const countEl = document.getElementById('search-repo-selected-count');
+    if (countEl) countEl.textContent = searchSelectedRepos.size > 0 ? `已选 ${searchSelectedRepos.size} 个` : '';
+}
+
+// 关闭仓库选择弹窗并刷新页面提示
+function closeSearchWarehouseSelect() {
+    const overlay = document.getElementById('search-repo-overlay');
+    if (overlay) overlay.remove();
+    updateSearchRepoHint();
 }
 
 async function renderSearchResults(parts) {
