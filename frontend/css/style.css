@@ -1190,6 +1190,118 @@ body {
     font-size: 14px;
 }
 
+/* 搜索页"仓库"筛选：按钮风格与状态下拉框一致 */
+.btn-repo-select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #fff;
+    color: #333;
+    text-align: left;
+    cursor: pointer;
+}
+
+.btn-repo-select:hover,
+.btn-repo-select:active {
+    border-color: var(--secondary-color);
+}
+
+.search-repo-hint {
+    font-size: 12px;
+    margin-top: 4px;
+    color: #888;
+    text-align: left;
+}
+
+/* 仓库选择弹窗（多选，卡片形式） */
+.search-repo-modal {
+    width: 92%;
+    max-width: 560px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.search-repo-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.search-repo-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #34495e;
+    flex: 1;
+}
+
+.search-repo-count {
+    font-size: 13px;
+    color: #2196F3;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.search-repo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 2px;
+    align-content: start;
+}
+
+.search-repo-card {
+    padding: 10px 8px;
+    background: white;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.search-repo-card:hover {
+    transform: scale(1.03);
+    border-color: #2196F3;
+}
+
+.search-repo-card.selected {
+    background: #4CAF50;
+    border-color: #4CAF50;
+    color: white;
+}
+
+.search-repo-empty {
+    font-size: 13px;
+    color: #999;
+    padding: 16px 0;
+    text-align: center;
+}
+
+.search-repo-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
 .search-actions {
     display: flex;
     gap: 8px;
