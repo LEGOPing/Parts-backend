@@ -1190,30 +1190,68 @@ body {
     font-size: 14px;
 }
 
-/* 搜索页"仓库"筛选：按钮风格与状态下拉框一致 */
-.btn-repo-select {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    background: #fff;
-    color: #333;
-    text-align: left;
+/* 颜色ID / 仓库 / 状态 区域布局：颜色在上、状态在颜色下方、仓库在颜色右边 */
+.repo-status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.repo-status-grid .filter-group {
+    flex: none;
+    min-width: 0;
+}
+
+.repo-status-grid .repo-col {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+}
+
+/* A 区域：点击打开仓库弹窗，展示所有仓库的缩小卡片（与弹窗布局一致，3 列） */
+.search-repo-selected {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 6px;
     cursor: pointer;
+    align-items: stretch;
 }
 
-.btn-repo-select:hover,
-.btn-repo-select:active {
-    border-color: var(--secondary-color);
-}
-
-.search-repo-hint {
+.search-repo-mini {
+    padding: 4px 6px;
+    aspect-ratio: 3 / 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
     font-size: 12px;
-    margin-top: 4px;
-    color: #888;
-    text-align: left;
+    font-weight: 600;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+}
+
+.search-repo-mini.selected {
+    background: #4CAF50;
+    border-color: #4CAF50;
+    color: #fff;
+}
+
+.search-repo-mini-empty {
+    grid-column: 1 / -1;
+    aspect-ratio: 3 / 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed #ddd;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #aaa;
 }
 
 /* 仓库选择弹窗（多选，卡片形式） */
@@ -1260,6 +1298,10 @@ body {
 
 .search-repo-card {
     padding: 10px 8px;
+    aspect-ratio: 3 / 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: white;
     border: 1.5px solid #e0e0e0;
     border-radius: 12px;

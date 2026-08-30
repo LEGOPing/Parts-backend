@@ -169,13 +169,17 @@
                                 <input type="text" id="search-part-name" placeholder="零件名称">
                             </div>
                         </div>
-                        <div class="filter-row">
+                        <div class="repo-status-grid">
                             <div class="filter-group">
                                 <div class="filter-group-header">
                                     <label>颜色ID</label>
                                     <button type="button" class="btn-color-pick" onclick="showSearchColorPicker()">选色</button>
                                 </div>
                                 <input type="number" id="search-color-id" placeholder="颜色ID">
+                            </div>
+                            <div class="filter-group repo-col">
+                                <label>仓库</label>
+                                <div class="search-repo-selected" id="search-repo-selected" onclick="openSearchWarehouseSelect()"></div>
                             </div>
                             <div class="filter-group">
                                 <label>状态</label>
@@ -184,11 +188,6 @@
                                     <option value="true">新品</option>
                                     <option value="false">旧品</option>
                                 </select>
-                            </div>
-                            <div class="filter-group">
-                                <label>仓库</label>
-                                <button type="button" class="btn-repo-select" onclick="openSearchWarehouseSelect()">选择仓库</button>
-                                <div class="search-repo-hint" id="search-repo-hint">全部仓库</div>
                             </div>
                         </div>
                     </div>
