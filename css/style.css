@@ -1208,10 +1208,10 @@ body {
     grid-row: 1 / span 2;
 }
 
-/* A 区域：点击打开仓库弹窗，展示所有仓库的缩小卡片（与弹窗布局一致，3 列） */
+/* A 区域：点击打开仓库弹窗，展示所有仓库的缩小卡片（三等分均布，留间隙） */
 .search-repo-selected {
     display: grid;
-    grid-template-columns: repeat(3, 38px);
+    grid-template-columns: repeat(3, 1fr);
     gap: 4px;
     margin-top: 0;
     cursor: pointer;
@@ -1220,7 +1220,6 @@ body {
 
 .search-repo-mini {
     box-sizing: border-box;
-    width: 38px;
     padding: 2px;
     aspect-ratio: 3 / 2;
     display: flex;
@@ -1229,7 +1228,7 @@ body {
     background: #fff;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
-    font-size: 6px;
+    font-size: 8px;
     font-weight: 600;
     color: #333;
     white-space: nowrap;
