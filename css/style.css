@@ -1211,23 +1211,25 @@ body {
 /* A 区域：点击打开仓库弹窗，展示所有仓库的缩小卡片（与弹窗布局一致，3 列） */
 .search-repo-selected {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    margin-top: 6px;
+    grid-template-columns: repeat(3, 38px);
+    gap: 4px;
+    margin-top: 0;
     cursor: pointer;
     align-items: stretch;
 }
 
 .search-repo-mini {
-    padding: 4px 6px;
+    box-sizing: border-box;
+    width: 38px;
+    padding: 2px;
     aspect-ratio: 3 / 2;
     display: flex;
     align-items: center;
     justify-content: center;
     background: #fff;
-    border: 1.5px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 6px;
     font-weight: 600;
     color: #333;
     white-space: nowrap;
@@ -1288,7 +1290,8 @@ body {
 
 .search-repo-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, 92px);
+    justify-content: center;
     gap: 8px;
     max-height: 60vh;
     overflow-y: auto;
@@ -1297,7 +1300,9 @@ body {
 }
 
 .search-repo-card {
-    padding: 10px 8px;
+    box-sizing: border-box;
+    width: 92px;
+    padding: 0 6px;
     aspect-ratio: 3 / 2;
     display: flex;
     align-items: center;
@@ -1305,7 +1310,7 @@ body {
     background: white;
     border: 1.5px solid #e0e0e0;
     border-radius: 12px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: #333;
     cursor: pointer;
