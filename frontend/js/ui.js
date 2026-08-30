@@ -4527,25 +4527,29 @@ function resetSearchFilters() {
     if (dsHint) dsHint.textContent = '';
 }
 
-// 在"仓库"下方以两列小卡片的形式展示已选仓库
-function renderSearchSelectedRepos() {
+// 在"仓库"下方区域 A 渲染所有仓库的缩小卡片（未选白底黑字 / 已选绿底白字），点击 A 打开弹窗
+async function renderSearchSelectedRepos() {
     const container = document.getElementById('search-repo-selected');
     if (!container) return;
+    if (Object.keys(searchRepoNames).length === 0) {
+        const repos = await getRepositories();
+        (repos || []).forEach(r => { searchRepoNames[r.id] = r.name; });
+    }
+    const entries = Object.entries(searchRepoNames);
     container.innerHTML = '';
-    if (searchSelectedRepos.size === 0) {
+    if (entries.length === 0) {
         const empty = document.createElement('div');
-        empty.className = 'search-repo-chip-empty';
-        empty.textContent = '全部仓库';
+        empty.className = 'search-repo-mini-empty';
+        empty.textContent = '暂无仓库';
         container.appendChild(empty);
         return;
     }
-    searchSelectedRepos.forEach(id => {
-        const chip = document.createElement('div');
-        chip.className = 'search-repo-chip';
-        const name = searchRepoNames[id] || `仓库 ${id}`;
-        chip.textContent = name;
-        chip.title = name;
-        container.appendChild(chip);
+    entries.forEach(([id, name]) => {
+        const card = document.createElement('div');
+        card.className = 'search-repo-mini' + (searchSelectedRepos.has(Number(id)) ? ' selected' : '');
+        card.textContent = name;
+        card.title = name;
+        container.appendChild(card);
     });
 }
 
@@ -6639,6 +6643,9 @@ async function initializeApp() {
                 }
             });
         }
+        
+        // 初始化并渲染"仓库"区域 A 的仓库卡片
+        renderSearchSelectedRepos();
         
         // 监听弹窗（modal-overlay）的添加/移除，自动锁定/解锁 body 滚动
         const bodyObserver = new MutationObserver(() => {
