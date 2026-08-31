@@ -755,7 +755,15 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
                 // 并规避原始网络 Response 的流被消费后 cache.put 抛错的问题
                 const cloned = imageData.clone();
                 const bytes = new Uint8Array(await cloned.arrayBuffer());
-                const mime = guessImageMime(bytes);
+                let mime = guessImageMime(bytes);
+                if (!mime) {
+                    // 魔数无法识别时，回退信任原始响应声明的 image/* Content-Type，
+                    // 兼容部分图床返回 AVIF 等新格式图片（其魔数不在 guessImageMime 覆盖内）
+                    const declared = imageData.headers && imageData.headers.get('content-type');
+                    if (declared && /^image\//i.test(declared)) {
+                        mime = declared.split(';')[0].trim();
+                    }
+                }
                 if (!mime) {
                     _lastCacheWriteError = '返回字节非图片（' + imageData.type + '/' + imageData.status + '）';
                     console.warn('拒绝缓存非图片字节响应:', imageData.status, imageData.type);
