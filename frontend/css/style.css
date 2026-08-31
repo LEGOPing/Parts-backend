@@ -3032,58 +3032,57 @@ body {
     }
 }
 
-/* 名称搜索精度设置弹窗 */
+/* 名称搜索精度设置弹窗：六格橙色色块横条 */
 .name-precision-modal {
     max-width: 320px !important;
 }
 
-.name-precision-tip {
-    font-size: 12px;
-    color: #888;
-    margin: 0 0 12px 0;
-    text-align: center;
+.np-bar {
+    display: flex;
+    gap: 6px;
+    justify-content: space-between;
+    padding: 2px 0 10px;
 }
 
-.name-precision-list {
+.np-block-wrap {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-}
-
-.name-precision-item {
-    display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 11px 14px;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
     cursor: pointer;
-    background: #fff;
-    font-size: 14px;
-    transition: border-color 0.15s, background 0.15s;
 }
 
-.name-precision-item:hover {
-    border-color: #e67e22;
+.np-block {
+    width: 100%;
+    height: 34px;
+    border-radius: 6px;
+    background: #e67e22;
+    border: 2px solid transparent;
+    box-sizing: border-box;
+    transition: border-color 0.15s, transform 0.15s;
 }
 
-.name-precision-item.selected {
-    border-color: #e67e22;
-    background: #fff6ec;
+.np-block:hover {
+    transform: scale(1.05);
 }
 
-.name-precision-item .np-level {
-    font-weight: bold;
-    color: #333;
+.np-block.selected {
+    border-color: #333;
 }
 
-.name-precision-item .np-desc {
+.np-block-label {
+    margin-top: 5px;
+    font-size: 12px;
     color: #666;
 }
 
-.name-precision-item .np-pct {
-    color: #e67e22;
+.np-hint {
+    text-align: center;
+    font-size: 14px;
     font-weight: bold;
+    color: #e67e22;
+    min-height: 20px;
+    padding-top: 2px;
 }
 
 /* 颜色选择器样式 */

@@ -4313,7 +4313,15 @@ function updateNamePrecisionBtn() {
     btn.textContent = '精度 ' + level;
 }
 
-// 打开名称搜索精度设置弹窗
+// 名称搜索精度提示文案
+function precisionHintText(level) {
+    const opt = NAME_PRECISION_OPTIONS[level];
+    if (!opt) return '';
+    return `精度 ${-level}（${opt.label} ${opt.pct}%）`;
+}
+
+// 打开名称搜索精度设置弹窗：六格橙色色块横条，透明度从左到右 100%→50%，
+// 依次对应提示 0、-1、-2、-3、-4、-5
 function showNamePrecisionPicker() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
@@ -4323,14 +4331,16 @@ function showNamePrecisionPicker() {
 
     const current = getSearchNamePrecisionLevel();
 
-    const itemsHtml = NAME_PRECISION_OPTIONS.map(opt => `
-        <div class="name-precision-item ${opt.level === current ? 'selected' : ''}"
-             onclick="setNamePrecision(${opt.level})">
-            <span class="np-level">级别 ${opt.level}</span>
-            <span class="np-desc">${opt.label}</span>
-            <span class="np-pct">${opt.pct}%</span>
-        </div>
-    `).join('');
+    const barHtml = NAME_PRECISION_OPTIONS.map(opt => {
+        const opacity = 1 - opt.level * 0.1;
+        return `
+            <div class="np-block-wrap" onclick="setNamePrecision(${opt.level})">
+                <div class="np-block ${opt.level === current ? 'selected' : ''}"
+                     style="opacity:${opacity}"></div>
+                <span class="np-block-label">${-opt.level}</span>
+            </div>
+        `;
+    }).join('');
 
     sheet.innerHTML = `
         <div class="modal-header">
@@ -4340,8 +4350,8 @@ function showNamePrecisionPicker() {
             </div>
         </div>
         <div class="modal-body">
-            <div class="name-precision-tip">从精准 100% 到模糊 50%，共 6 级（0-5）</div>
-            <div class="name-precision-list">${itemsHtml}</div>
+            <div class="np-bar">${barHtml}</div>
+            <div class="np-hint" id="np-hint">${precisionHintText(current)}</div>
         </div>
     `;
 
