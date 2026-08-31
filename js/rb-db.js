@@ -675,6 +675,23 @@ function dataURLToBlob(dataUrl) {
     return new Blob([arr], { type: mime || 'image/jpeg' });
 }
 
+// 根据图片魔数判断真实图片 MIME（不依赖 Content-Type，兼容图床把 .jpg 返回为 application/octet-stream 等情况）
+function guessImageMime(bytes) {
+    if (bytes.length < 4) return null;
+    // JPEG：FF D8 FF
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8) return 'image/jpeg';
+    // PNG：89 50 4E 47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
+    // GIF：47 49 46 38
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
+    // WebP：RIFF .... WEBP
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+        const s = String.fromCharCode(bytes[8] || 0, bytes[9] || 0, bytes[10] || 0, bytes[11] || 0);
+        if (s === 'WEBP') return 'image/webp';
+    }
+    return null;
+}
+
 // 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
 // 注意：data URL 必须转为 Blob 再存储，否则 Service Worker 缓存优先策略下，
 // 浏览器会把 data URL 字符串当作图片二进制返回，导致 onerror 加载失败
@@ -693,13 +710,17 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
                 console.warn('拒绝缓存状态码非成功的图片响应:', imageData.status);
                 return false;
             } else {
-                // 内容类型非图片时拒收（例如服务器返回了 HTML/JSON 错误页）
-                const ct = (imageData.headers.get('content-type') || '').toLowerCase();
-                if (ct && !ct.startsWith('image/')) {
-                    console.warn('拒绝缓存非图片类型响应:', ct, imageData.status);
+                // 基本/跨域响应：按图片魔数清真实图片字节，再重建一个干净的 Response 存入，
+                // 兼容图床返回 application/octet-stream 等非 image/* 的 Content-Type，
+                // 并规避原始网络 Response 的流被消费后 cache.put 抛错的问题
+                const cloned = imageData.clone();
+                const bytes = new Uint8Array(await cloned.arrayBuffer());
+                const mime = guessImageMime(bytes);
+                if (!mime) {
+                    console.warn('拒绝缓存非图片字节响应:', imageData.status, imageData.type);
                     return false;
                 }
-                response = imageData;
+                response = new Response(bytes, { headers: { 'Content-Type': mime } });
             }
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
