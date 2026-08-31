@@ -4639,14 +4639,14 @@ async function openSearchWarehouseSelect() {
     sheet.className = 'modal-content search-repo-modal';
     sheet.innerHTML = `
         <div class="search-repo-header">
-            <span class="search-repo-title">选择需要搜索的仓库</span>
+            <span class="search-repo-title">待选仓库</span>
             <span class="search-repo-count" id="search-repo-selected-count"></span>
+            <span class="search-repo-actions">
+                <button class="btn-secondary" onclick="closeSearchWarehouseSelect()">取消</button>
+                <button class="btn-primary" onclick="closeSearchWarehouseSelect()">确定</button>
+            </span>
         </div>
         <div class="search-repo-grid" id="search-repo-grid"></div>
-        <div class="search-repo-footer">
-            <button class="btn-secondary" onclick="closeSearchWarehouseSelect()">取消</button>
-            <button class="btn-primary" onclick="closeSearchWarehouseSelect()">确定</button>
-        </div>
     `;
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);

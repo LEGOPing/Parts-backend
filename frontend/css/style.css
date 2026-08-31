@@ -1293,8 +1293,8 @@ body {
 }
 
 .search-repo-title {
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: bold;
     color: #34495e;
     flex: 1;
 }
@@ -1304,6 +1304,35 @@ body {
     color: #2196F3;
     font-weight: 600;
     flex-shrink: 0;
+}
+
+/* "取消"/"确定"按钮：位于标题右侧、右对齐，宽度46px，宽高比3:2 */
+.search-repo-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.search-repo-actions .btn-primary,
+.search-repo-actions .btn-secondary {
+    width: 46px;
+    aspect-ratio: 3 / 2;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
 }
 
 .search-repo-grid {
