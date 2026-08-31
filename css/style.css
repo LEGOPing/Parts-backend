@@ -1114,6 +1114,9 @@ body {
     font-size: 12px;
     font-weight: bold;
     margin-bottom: 5px;
+    height: 18px;
+    line-height: 18px;
+    box-sizing: border-box;
 }
 
 /* 颜色ID筛选组的标题行：标签左对齐 + 选色按钮右对齐 */
@@ -1122,6 +1125,7 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 5px;
+    height: 18px;
 }
 
 .filter-group-header label {
