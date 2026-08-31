@@ -1083,6 +1083,8 @@ body {
 
 .search-header h2 {
     margin: 0;
+    font-size: 26px;
+    font-weight: bold;
 }
 
 .search-filters {
@@ -1293,8 +1295,8 @@ body {
 }
 
 .search-repo-title {
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: bold;
     color: #34495e;
     flex: 1;
 }
@@ -1304,6 +1306,35 @@ body {
     color: #2196F3;
     font-weight: 600;
     flex-shrink: 0;
+}
+
+/* "取消"/"确定"按钮：位于标题右侧、右对齐，宽度46px，宽高比3:2 */
+.search-repo-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.search-repo-actions .btn-primary,
+.search-repo-actions .btn-secondary {
+    width: 46px;
+    aspect-ratio: 3 / 2;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
 }
 
 .search-repo-grid {
@@ -1581,6 +1612,12 @@ body {
 
 .settings-tab {
     padding: 15px;
+}
+
+.settings-tab h2 {
+    font-size: 26px;
+    font-weight: bold;
+    margin: 0 0 16px;
 }
 
 .settings-group {
@@ -3125,8 +3162,81 @@ body {
 }
 
 /* 颜色选择器样式 */
+/* 颜色选择器弹窗：固定尺寸，避免筛选时页面跳动 */
 .color-picker-modal {
     max-width: 350px !important;
+    width: min(92%, 350px);
+    height: min(480px, 78vh);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 标题栏：标题在左，"关闭"按钮靠右、右对齐 */
+.color-picker-modal .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.color-picker-modal .modal-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #34495e;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.color-picker-modal .modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* 关闭按钮：宽度46px，宽高比3:2 */
+.color-picker-modal .btn-cancel {
+    width: 46px;
+    aspect-ratio: 3 / 2;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    background: #f44336;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+/* 弹窗主体：固定布局，颜色网格占满剩余空间 */
+.color-picker-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.color-picker-modal .color-search-bar {
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+
+.color-picker-modal .color-grid {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
 }
 
 .color-search-bar {
