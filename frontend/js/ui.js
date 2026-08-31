@@ -4864,10 +4864,8 @@ async function showPartDetail(part) {
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
-        // 立即尝试缓存图片（不等待 onload）
-        if (imgUrl && !hasCustomImage) {
-            tryCachePartImage(part.part_num, part.color_id, imgUrl);
-        }
+        // 缓存时机：图片在零件卡片/详情 <img> onload 成功时即写入离线缓存（见 autoCachePartImage）。
+        // 这里不再主动预取，避免每次进入详情都重复触发“缓存中”与重复网络请求。
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -7958,9 +7956,10 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
             // 只有真正写入成功才提示成功，避免写入被拒收（如非图片响应）时仍谎称"已缓存"
             const ok = await savePartImageToOfflineCache(partNum, colorId, response);
             if (ok) {
+                console.log('✅ 已写入离线缓存:', partNum, colorId, response.type + '/' + response.status, imgElement.src);
                 showToast('✅ 图片已缓存到本地');
             } else {
-                console.warn('零件图片未写入离线缓存（写入被拒收）:', partNum, colorId, response.type, response.status);
+                console.warn('零件图片未写入离线缓存（写入被拒收）:', partNum, colorId, response.type, response.status, 'reason=', _lastCacheWriteError);
             }
         }
     } catch (e) {
@@ -7970,7 +7969,6 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
 
 // 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
 async function tryCachePartImage(partNum, colorId, url) {
-    showToast('🔄 缓存中: ' + partNum + '_' + colorId);  // 确认函数被调用
     try {
         const cached = await getPartImageFromOfflineCache(partNum, colorId);
         if (cached) return;
