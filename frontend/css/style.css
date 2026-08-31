@@ -1168,6 +1168,17 @@ body {
     color: #fff;
 }
 
+/* 搜索页名称精度按钮：与识别按钮一致，白底橙字 */
+.btn-name-precision {
+    border: 1px solid #e67e22;
+    color: #e67e22;
+}
+
+.btn-name-precision:active {
+    background: #e67e22;
+    color: #fff;
+}
+
 /* 添加零件页 BL 匹配按钮：与搜索页识别按钮风格一致 */
 .btn-bl-match {
     height: 18px;
@@ -3019,6 +3030,60 @@ body {
     .box-grid, .part-grid {
         grid-template-columns: repeat(4, 1fr);
     }
+}
+
+/* 名称搜索精度设置弹窗 */
+.name-precision-modal {
+    max-width: 320px !important;
+}
+
+.name-precision-tip {
+    font-size: 12px;
+    color: #888;
+    margin: 0 0 12px 0;
+    text-align: center;
+}
+
+.name-precision-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.name-precision-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #fff;
+    font-size: 14px;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.name-precision-item:hover {
+    border-color: #e67e22;
+}
+
+.name-precision-item.selected {
+    border-color: #e67e22;
+    background: #fff6ec;
+}
+
+.name-precision-item .np-level {
+    font-weight: bold;
+    color: #333;
+}
+
+.name-precision-item .np-desc {
+    color: #666;
+}
+
+.name-precision-item .np-pct {
+    color: #e67e22;
+    font-weight: bold;
 }
 
 /* 颜色选择器样式 */

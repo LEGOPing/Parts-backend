@@ -4295,7 +4295,68 @@ async function updateColorButtonColor(colorId) {
 
 
 
-// 搜索页颜色选择器（参照添加零件的颜色选择方法）
+// 名称搜索精度选项：6级（0-5），从精准100%到模糊50%
+const NAME_PRECISION_OPTIONS = [
+    { level: 0, pct: 100, label: '精准'   },
+    { level: 1, pct: 90,  label: '较准'   },
+    { level: 2, pct: 80,  label: '标准'   },
+    { level: 3, pct: 70,  label: '较模糊' },
+    { level: 4, pct: 60,  label: '模糊'   },
+    { level: 5, pct: 50,  label: '最模糊' }
+];
+
+// 更新名称精度按钮文字，显示当前等级
+function updateNamePrecisionBtn() {
+    const btn = document.getElementById('search-name-precision-btn');
+    if (!btn) return;
+    const level = getSearchNamePrecisionLevel();
+    btn.textContent = '精度 ' + level;
+}
+
+// 打开名称搜索精度设置弹窗
+function showNamePrecisionPicker() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content name-precision-modal';
+
+    const current = getSearchNamePrecisionLevel();
+
+    const itemsHtml = NAME_PRECISION_OPTIONS.map(opt => `
+        <div class="name-precision-item ${opt.level === current ? 'selected' : ''}"
+             onclick="setNamePrecision(${opt.level})">
+            <span class="np-level">级别 ${opt.level}</span>
+            <span class="np-desc">${opt.label}</span>
+            <span class="np-pct">${opt.pct}%</span>
+        </div>
+    `).join('');
+
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">名称搜索精度</span>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="name-precision-tip">从精准 100% 到模糊 50%，共 6 级（0-5）</div>
+            <div class="name-precision-list">${itemsHtml}</div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+}
+
+// 设置名称搜索精度等级并关闭弹窗
+function setNamePrecision(level) {
+    localStorage.setItem('searchNamePrecision', String(level));
+    updateNamePrecisionBtn();
+    const picker = document.querySelector('.name-precision-modal');
+    if (picker) picker.closest('.modal-overlay').remove();
+}
+
 function showSearchColorPicker() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
@@ -4719,6 +4780,7 @@ function clearSearchResults() {
     document.getElementById('search-status').value = '';
     document.getElementById('search-results').innerHTML = '';
     updateColorPickButton('');
+    updateNamePrecisionBtn();
 }
 
 async function showPartDetail(part) {
