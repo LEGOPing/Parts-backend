@@ -954,7 +954,12 @@ async function searchParts(params) {
         }
         if (name) {
             const q = name.toLowerCase().replace(/\s*x\s*/g, 'x');
-            filtered = filtered.filter(p => p.name.toLowerCase().replace(/\s*x\s*/g, 'x').includes(q));
+            const level = getSearchNamePrecisionLevel();
+            const threshold = 1 - level * 0.1;
+            filtered = filtered.filter(p => {
+                const pName = p.name.toLowerCase().replace(/\s*x\s*/g, 'x');
+                return nameMatchingScore(pName, q) >= threshold;
+            });
         }
 
         // 按仓库（repository）过滤：零件通过 box 归属到仓库
@@ -974,6 +979,53 @@ async function searchParts(params) {
         console.error('搜索零件失败:', error.message);
         return [];
     }
+}
+
+// 获取名称搜索精度等级（0-5，默认0=精准100%）
+function getSearchNamePrecisionLevel() {
+    const v = parseInt(localStorage.getItem('searchNamePrecision'), 10);
+    return (v >= 0 && v <= 5) ? v : 0;
+}
+
+// 计算两个字符串的编辑距离（Levenshtein）
+function levenshteinDist(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    const dp = [];
+    for (let i = 0; i <= m; i++) dp[i] = [i];
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost
+            );
+        }
+    }
+    return dp[m][n];
+}
+
+// 名称匹配得分（0-1，越接近1越精确）。
+// 名称包含查询串时返回1；其余情况取名称中与查询等长的滑动窗口的最小编辑距离相似度。
+function nameMatchingScore(name, query) {
+    if (!query) return 1;
+    if (name.includes(query)) return 1;
+    const qlen = query.length;
+    let minDist = Infinity;
+    for (let i = 0; i + qlen <= name.length; i++) {
+        const d = levenshteinDist(name.substring(i, i + qlen), query);
+        if (d < minDist) minDist = d;
+        if (minDist === 0) break;
+    }
+    if (name.length < qlen) {
+        const d = levenshteinDist(name, query);
+        if (d < minDist) minDist = d;
+    }
+    if (minDist === Infinity) minDist = qlen;
+    return Math.max(0, 1 - minDist / qlen);
 }
 
 async function advancedSearchParts(params) {
