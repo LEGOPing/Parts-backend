@@ -7955,8 +7955,13 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
             response = await fetch(imgElement.src, { mode: 'no-cors' });
         }
         if (response) {
-            await savePartImageToOfflineCache(partNum, colorId, response);
-            showToast('✅ 图片已缓存到本地');
+            // 只有真正写入成功才提示成功，避免写入被拒收（如非图片响应）时仍谎称"已缓存"
+            const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+            if (ok) {
+                showToast('✅ 图片已缓存到本地');
+            } else {
+                console.warn('零件图片未写入离线缓存（写入被拒收）:', partNum, colorId, response.type, response.status);
+            }
         }
     } catch (e) {
         // 静默失败，不影响用户使用
