@@ -683,22 +683,24 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
         let response;
         if (imageData instanceof Response) {
-            // 拒绝缓存不透明响应（no-cors 抓取得到，status 0）和非成功状态码：
-            // 这类响应无法被可靠重放为可渲染的图片，存入会污染离线缓存，
-            // 导致 Service Worker 缓存优先时一直返回坏图（详见零件图"加载失败/暂无图片"问题）
-            if (imageData.type === 'opaque' || !imageData.ok) {
-                console.warn('拒绝缓存不可用的图片响应:', imageData.type, imageData.status);
+            // no-cors 抓取得到的不透明响应（status 0，例如 RB cdn.rebrickable.com 无 CORS 头）：
+            // 无法读取其状态/头信息，但调用方（autoCachePartImage）只在 <img> onload 成功后才触发缓存，
+            // 即它一定是一张能被渲染的真实图片，直接存入即可（Service Worker 缓存优先时可按图片重放）。
+            if (imageData.type === 'opaque') {
+                response = imageData;
+            } else if (!imageData.ok) {
+                // 显式非成功状态码（4xx/5xx）可能返回错误页，拒收避免污染缓存
+                console.warn('拒绝缓存状态码非成功的图片响应:', imageData.status);
                 return false;
+            } else {
+                // 内容类型非图片时拒收（例如服务器返回了 HTML/JSON 错误页）
+                const ct = (imageData.headers.get('content-type') || '').toLowerCase();
+                if (ct && !ct.startsWith('image/')) {
+                    console.warn('拒绝缓存非图片类型响应:', ct, imageData.status);
+                    return false;
+                }
+                response = imageData;
             }
-            // 内容类型非图片时同样拒收（例如服务器返回了 HTML/JSON 错误页）
-            const ct = (imageData.headers.get('content-type') || '').toLowerCase();
-            // 离线缓存键为 buildPartsImgUrl 图片地址，Service Worker 会按图片 MIME 渲染；
-            // 若来源响应并非图片类型，存储后也会被当作坏图返回，故一并拒收
-            if (ct && !ct.startsWith('image/')) {
-                console.warn('拒绝缓存非图片类型响应:', ct, imageData.status);
-                return false;
-            }
-            response = imageData;
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
             response = new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
@@ -730,7 +732,10 @@ const _usableEntryCache = new Map();
 // 不透明/非成功/内容并非真实图片字节（含被误存为字符串的 data URL、HTML/JSON 错误页）都视为坏图
 async function isUsableImageEntry(url, entry) {
     if (!entry) return false;
-    if (entry.type === 'opaque' || !entry.ok) return false;
+    // no-cors 存储的不透明条目无法读取 body/状态，但既然它来自某次 onload 成功的图片，
+    // 又只在离线缓存命中时无可用校验数据，这里直接信任，避免把已缓存的 RB 图片误删导致回退网络
+    if (entry.type === 'opaque') return true;
+    if (!entry.ok) return false;
     if (_usableEntryCache.has(url)) return true; // 本次会话已校验可用
     try {
         const buf = new Uint8Array(await entry.clone().arrayBuffer());
@@ -849,21 +854,37 @@ async function getRBPartImageUrl(partNum, colorId) {
     return urls.length ? urls[0] : null;
 }
 
-// 根据 part_num 和 color_id 查询图片URL（三级读取：① Gitee Parts-img → ② 离线缓存 → ③ RB数据库）
-// 注：Gitee 用原始型号查询（缓存图片以原始型号命名，如 4073_colorId.jpg）；
+// 会话内记忆 Gitee 存在性校验结果，避免每次进入页面都对每个零件重复调用 Gitee API（网络慢、易被限流）
+const _giteeExistsCache = new Map();
+async function memoCheckPartsImgOnGitee(partNum, colorId) {
+    const key = `${String(partNum)}_${colorId}`;
+    if (_giteeExistsCache.has(key)) return _giteeExistsCache.get(key);
+    const result = await checkPartsImgOnGitee(partNum, colorId);
+    // 只记忆"存在"的结果；"不存在"可能是网络失败/限流的误判，下次再重试
+    if (result) {
+        _giteeExistsCache.set(key, true);
+        if (_giteeExistsCache.size > 500) {
+            const firstKey = _giteeExistsCache.keys().next().value;
+            if (firstKey) _giteeExistsCache.delete(firstKey);
+        }
+    }
+    return result;
+}
+
+// 根据 part_num 和 color_id 查询图片URL（三级读取：① 离线缓存 → ② Gitee Parts-img → ③ RB数据库）
+// 注：离线缓存与 Gitee 图片共用 gitee 地址作为 key（缓存图片以原始型号命名，如 4073_colorId.jpg）；
 //     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
 async function getPartImageUrl(partNum, colorId) {
-    // ① 先用原始型号检查 Gitee Parts-img（可能已有离线缓存图片）
-    if (await checkPartsImgOnGitee(partNum, colorId)) {
-        return buildPartsImgUrl(partNum, colorId);
-    }
-    // ② 检查离线缓存（用户自定义上传的图片在上传前已存入离线缓存；
-    //    即使 Gitee API 限流或上传因网络问题仅存了离线缓存，也能显示）
+    // ① 先查离线缓存（本地最快，命中即返回，无需网络，也无须再查 Gitee/RB）
     const cached = await getPartImageFromOfflineCache(partNum, colorId);
     if (cached) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ③ 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
+    // ② 再查 Gitee Parts-img（首次命中会成为离线缓存候选，下次直接走 ①）
+    if (await memoCheckPartsImgOnGitee(partNum, colorId)) {
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ③ 最后从 RB 数据库获取图片 URL（会解析别名）
     const resolvedNum = typeof resolvePartAlias === 'function'
         ? await resolvePartAlias(partNum) : partNum;
     return await getRBPartImageUrl(resolvedNum, colorId);
