@@ -4845,10 +4845,11 @@ async function showPartDetail(part) {
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
-        // 立即尝试缓存图片（不等待 onload）
-        if (imgUrl && !hasCustomImage) {
-            tryCachePartImage(part.part_num, part.color_id, imgUrl);
-        }
+        // 不再冗余的立即 fetch：图床（如 Gitee raw）在你尚未渲染时就 fetch，
+        // 常会返回 HTML 错误页/限流页或 302 重定向页（非图片字节），导致误报“缓存写入失败”。
+        // 真正的缓存统一交给 <img> onload 钩子（autoCachePartImage）——它只在图已成功渲染后才抓取，
+        // 拿到的必然是真实图片字节，缓存更可靠，也避免对图床发出双倍请求触发限流。
+        // （tryCachePartImage 保留备用，失败时静默）
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -7963,13 +7964,13 @@ async function tryCachePartImage(partNum, colorId, url) {
             if (ok) {
                 showToast('✅ 图片已离线缓存');
             } else {
-                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
-                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
+                // 图床对图片 URL 返回非图片字节（HTML/限流页/重定向页）属于正常情况，
+                // 不弹失败提示（由 <img> onload 钩子缓存真实已渲染图），仅记录到控制台
+                console.warn('缓存写入被拒收（非图片字节，忽略）:', partNum, colorId, response.type, response.status, url);
             }
         }
     } catch (e) {
         console.error('立即缓存失败:', partNum, colorId, url, e);
-        showToast('⚠️ 缓存失败: ' + e.message);
     }
 }
 
