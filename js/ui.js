@@ -7986,6 +7986,10 @@ async function tryCachePartImage(partNum, colorId, url) {
             const ok = await savePartImageToOfflineCache(partNum, colorId, response);
             if (ok) {
                 showToast('✅ 图片已离线缓存');
+            } else if (_lastCacheWriteError && _lastCacheWriteError.indexOf('返回字节非图片') >= 0) {
+                // 该色块图不存在于图床/数据库，或服务器返回了非图片（如 200 HTML 错误页/未识别新格式），
+                // 属正常的变体缺失，静默跳过，不当作缓存失败报警
+                console.warn('图片变体不可用，跳过缓存:', partNum, colorId, url, _lastCacheWriteError);
             } else {
                 showToast('⚠️ 缓存写入失败 [' + response.type + '/' + response.status + (_lastCacheWriteError ? ' ' + _lastCacheWriteError : '') + ']');
                 console.error('savePartImageToOfflineCache returned false', partNum, colorId, url, 'reason=', _lastCacheWriteError);
