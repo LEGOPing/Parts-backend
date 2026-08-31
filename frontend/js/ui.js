@@ -7987,8 +7987,8 @@ async function tryCachePartImage(partNum, colorId, url) {
             if (ok) {
                 showToast('✅ 图片已离线缓存');
             } else {
-                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
-                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
+                showToast('⚠️ 缓存写入失败 [' + response.type + '/' + response.status + (_lastCacheWriteError ? ' ' + _lastCacheWriteError : '') + ']');
+                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url, 'reason=', _lastCacheWriteError);
             }
         }
     } catch (e) {

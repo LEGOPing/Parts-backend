@@ -692,21 +692,61 @@ function guessImageMime(bytes) {
     return null;
 }
 
+// 记录最近一次缓存写入失败的具体原因，便于前端提示/排查
+let _lastCacheWriteError = '';
+
+// 将条目写入 Cache：写入失败且疑似存储配额不足时，清理最旧条目后重试一次。
+// 每次尝试都用 responseFactory() 新造一个 body，避免上次 put 消耗 body 后无法重试。
+async function putPartImageEntry(cache, url, responseFactory) {
+    const attempt = async () => {
+        const r = responseFactory();
+        await cache.put(url, r);
+    };
+    try {
+        await attempt();
+        _lastCacheWriteError = '';
+        return true;
+    } catch (err) {
+        const detail = (err && (err.name + ': ' + err.message)) || String(err);
+        _lastCacheWriteError = detail;
+        if (cache && /quota|exceeded|full/i.test(detail)) {
+            // 存储配额不足：按插入顺序（最旧在前）删除若干旧条目腾出空间后重试
+            try {
+                const keys = await cache.keys();
+                for (let i = 0; i < 5 && keys[i]; i++) {
+                    try { await cache.delete(keys[i]); } catch (_) {}
+                }
+            } catch (_) {}
+            try {
+                await attempt();
+                _lastCacheWriteError = '';
+                return true;
+            } catch (err2) {
+                _lastCacheWriteError = '配额清理后仍失败: ' + ((err2 && (err2.name + ': ' + err2.message)) || err2);
+                return false;
+            }
+        }
+        return false;
+    }
+}
+
 // 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
 // 注意：data URL 必须转为 Blob 再存储，否则 Service Worker 缓存优先策略下，
 // 浏览器会把 data URL 字符串当作图片二进制返回，导致 onerror 加载失败
 async function savePartImageToOfflineCache(partNum, colorId, imageData) {
+    _lastCacheWriteError = '';
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
-        let response;
+        let factory;
         if (imageData instanceof Response) {
             // no-cors 抓取得到的不透明响应（status 0，例如 RB cdn.rebrickable.com 无 CORS 头）：
             // 无法读取其状态/头信息，但调用方（autoCachePartImage）只在 <img> onload 成功后才触发缓存，
             // 即它一定是一张能被渲染的真实图片，直接存入即可（Service Worker 缓存优先时可按图片重放）。
             if (imageData.type === 'opaque') {
-                response = imageData;
+                factory = () => imageData;
             } else if (!imageData.ok) {
                 // 显式非成功状态码（4xx/5xx）可能返回错误页，拒收避免污染缓存
+                _lastCacheWriteError = '非成功状态码 ' + imageData.status;
                 console.warn('拒绝缓存状态码非成功的图片响应:', imageData.status);
                 return false;
             } else {
@@ -717,21 +757,23 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
                 const bytes = new Uint8Array(await cloned.arrayBuffer());
                 const mime = guessImageMime(bytes);
                 if (!mime) {
+                    _lastCacheWriteError = '返回字节非图片（' + imageData.type + '/' + imageData.status + '）';
                     console.warn('拒绝缓存非图片字节响应:', imageData.status, imageData.type);
                     return false;
                 }
-                // 用 Blob 包裹字节再构造 Response，避免把裸 Uint8Array 直接交给 cache.put
-                // 时因缓冲区被转移/脱离导致的写入失败（某些浏览器下会抛错）
-                response = new Response(new Blob([bytes], { type: mime }), { headers: { 'Content-Type': mime } });
+                // 用 Blob 包裹字节，factory 每次新建 Response，避免写入因字节/配额问题失败
+                factory = () => new Response(new Blob([bytes], { type: mime }), { headers: { 'Content-Type': mime } });
             }
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
-            response = new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
+            factory = () => new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
         } else {
-            response = new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+            const blob = imageData instanceof Blob ? imageData : new Blob([imageData], { type: 'image/jpeg' });
+            factory = () => new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
         }
         const url = buildPartsImgUrl(partNum, colorId);
-        await cache.put(url, response);
+        const ok = await putPartImageEntry(cache, url, factory);
+        if (!ok) return false;
         // 清理旧 v1 缓存中的同 key 条目（避免 Service Worker 缓存优先时取到 v1 中的 data URL 字符串）
         try {
             const oldCache = await caches.open('part-images-cache-v1');
@@ -743,6 +785,7 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
         } catch (_) { /* 忽略 */ }
         return true;
     } catch (error) {
+        _lastCacheWriteError = (error && (error.name + ': ' + error.message)) || String(error);
         console.error('保存零件图片到离线缓存失败:', error);
         return false;
     }
