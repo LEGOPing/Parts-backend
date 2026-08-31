@@ -829,13 +829,21 @@ async function loadParts(boxId) {
     
     document.getElementById('part-count').textContent = parts.length;
     
-    for (const part of parts) {
+    // 先并行解析所有零件图片URL（避免逐个 await 串行，极大提升页面刷新速度）
+    const partsWithUrl = await Promise.all(parts.map(async (part) => ({
+        part,
+        imgUrl: await getPartImageUrl(part.part_num, part.color_id)
+    })));
+    
+    for (const { part, imgUrl } of partsWithUrl) {
         const card = document.createElement('div');
         card.className = 'part-card';
         card.dataset.id = part.id;
         
         const color = colorMap[part.color_id];
         const colorName = color ? color.name : '未知颜色';
+        // 转义型号中的单引号/反斜杠，避免破坏 onload 内联属性
+        const partNumEsc = String(part.part_num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         
         card.innerHTML = `
             <div class="part-num">${part.part_num}</div>
@@ -850,11 +858,13 @@ async function loadParts(boxId) {
             </div>
         `;
         
-        // 异步加载图片
-        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         const imageContainer = card.querySelector('.part-image');
         if (imgUrl) {
-            imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+            // onload 成功即写入离线缓存（Gitee/RB 都满足：首次加载的图片进入离线缓存区）
+            const escapedUrl = imgUrl.replace(/"/g, '&quot;');
+            imageContainer.innerHTML = `<img src="${escapedUrl}" alt="${part.name}"
+                onload="autoCachePartImage('${partNumEsc}', ${part.color_id}, this)"
+                onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
         } else {
             imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
         }
@@ -946,7 +956,13 @@ async function renderPartTransferParts(parts) {
     const colorMap = {};
     colors.forEach(c => colorMap[c.id] = c);
 
-    for (const part of parts) {
+    // 先并行解析图片URL，避免串行等待拖慢弹窗渲染
+    const partsWithUrl = await Promise.all(parts.map(async (part) => ({
+        part,
+        imgUrl: await getPartImageUrl(part.part_num, part.color_id)
+    })));
+    
+    for (const { part, imgUrl } of partsWithUrl) {
         const color = colorMap[part.color_id];
         const colorName = color ? color.name : '未知颜色';
         const card = document.createElement('div');
@@ -962,10 +978,13 @@ async function renderPartTransferParts(parts) {
             </div>
             <div class="pt-part-check"></div>
         `;
-        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         const imgBox = card.querySelector('.pt-part-image');
         if (imgUrl) {
-            imgBox.innerHTML = `<img src="${imgUrl}" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+            const partNumEsc = String(part.part_num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const escapedUrl = imgUrl.replace(/"/g, '&quot;');
+            imgBox.innerHTML = `<img src="${escapedUrl}" alt="${part.name}"
+                onload="autoCachePartImage('${partNumEsc}', ${part.color_id}, this)"
+                onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
         }
         card.addEventListener('click', () => togglePartTransferSelection(part.id, card));
         grid.appendChild(card);
