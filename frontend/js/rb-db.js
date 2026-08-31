@@ -720,7 +720,9 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
                     console.warn('拒绝缓存非图片字节响应:', imageData.status, imageData.type);
                     return false;
                 }
-                response = new Response(bytes, { headers: { 'Content-Type': mime } });
+                // 用 Blob 包裹字节再构造 Response，避免把裸 Uint8Array 直接交给 cache.put
+                // 时因缓冲区被转移/脱离导致的写入失败（某些浏览器下会抛错）
+                response = new Response(new Blob([bytes], { type: mime }), { headers: { 'Content-Type': mime } });
             }
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
