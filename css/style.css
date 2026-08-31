@@ -1083,6 +1083,8 @@ body {
 
 .search-header h2 {
     margin: 0;
+    font-size: 26px;
+    font-weight: bold;
 }
 
 .search-filters {
@@ -1610,6 +1612,12 @@ body {
 
 .settings-tab {
     padding: 15px;
+}
+
+.settings-tab h2 {
+    font-size: 26px;
+    font-weight: bold;
+    margin: 0 0 16px;
 }
 
 .settings-group {
