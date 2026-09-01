@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v81';
+const CACHE_NAME = 'lego-parts-v82';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -44,6 +44,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
+    
+    // RB 图片（cdn.rebrickable.com）：完全绕过 Service Worker，不调用 respondWith，
+    // 让页面 fetch 直连 RB 拿到真实图片字节，避免 SW 内部网络失败时用 index.html 兜底
+    // 而误判为非图片导致离线缓存写入被拒收。
+    if (url.hostname === 'cdn.rebrickable.com') {
+        return;
+    }
     
     // POST/PATCH/DELETE: network-first
     if (request.method === 'POST' || 
