@@ -161,7 +161,6 @@ async function loadRepositories() {
             index === self.findIndex(r => r.id === repo.id)
         );
         const list = document.getElementById('repositories-list');
-        list.innerHTML = '';
         
         document.getElementById('repository-count').textContent = uniqueRepos.length;
         
@@ -182,6 +181,7 @@ async function loadRepositories() {
             boxCounts[repo.id] = uniqueBoxes.length;
         }));
         
+        const fragment = document.createDocumentFragment();
         uniqueRepos.forEach(repo => {
             const card = document.createElement('div');
             card.className = `repository-card ${selectedRepository && selectedRepository.id === repo.id ? 'selected' : ''}`;
@@ -213,8 +213,11 @@ async function loadRepositories() {
                 });
             }
             
-            list.appendChild(card);
+            fragment.appendChild(card);
         });
+        // 一次性原子替换，避免清空后异步填充造成的空窗闪烁和页面跳动
+        list.innerHTML = '';
+        list.appendChild(fragment);
     } finally {
         isLoadingRepositories = false;
     }
@@ -407,7 +410,6 @@ async function deleteRepositoryConfirm(id) {
 async function loadBoxes(repoId) {
     let boxes = await getBoxes(repoId);
     const grid = document.getElementById('boxes-list');
-    grid.innerHTML = '';
     
     // 去重：按id去重，同时按box_number+name去重
     const seenIds = new Set();
@@ -428,7 +430,7 @@ async function loadBoxes(repoId) {
         const parts = await getParts(box.id);
         partCounts[box.id] = parts.length;
     }));
-    
+    const fragment = document.createDocumentFragment();
     uniqueBoxes.forEach(box => {
         const transferMode = getBoxTransferMode();
         const isSelectedForTransfer = transferMode && getSelectedTransferBoxes().some(b => b.id === box.id);
@@ -490,8 +492,11 @@ async function loadBoxes(repoId) {
             });
         }
         
-        grid.appendChild(card);
+        fragment.appendChild(card);
     });
+    // 一次性原子替换，避免清空后异步填充造成的空窗闪烁和页面跳动
+    grid.innerHTML = '';
+    grid.appendChild(fragment);
 }
 
 // ===== 盒子转仓 =====
