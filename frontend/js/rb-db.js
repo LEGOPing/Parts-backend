@@ -692,6 +692,31 @@ function guessImageMime(bytes) {
     return null;
 }
 
+// 将图片字节统一转为 JPEG（离线缓存命名规则为 型号_颜色ID.jpg，非 JPG 需转换）
+// 解码/绘制失败（如极少数格式或浏览器不支持）时回退返回原始字节，保证图片仍可用
+async function convertImageBytesToJpeg(bytes, mime) {
+    try {
+        if (mime === 'image/jpeg' || mime === 'image/jpg') return { bytes, mime: 'image/jpeg' };
+        const blob = new Blob([bytes], { type: mime });
+        const bmp = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bmp, 0, 0);
+        if (typeof bmp.close === 'function') bmp.close();
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const b64 = dataUrl.split(',')[1];
+        const bin = atob(b64);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return { bytes: out, mime: 'image/jpeg' };
+    } catch (e) {
+        // 转换失败：保留原字节（已通过魔数校验/声明校验，仍是可渲染图片）
+        return { bytes, mime };
+    }
+}
+
 // 记录最近一次缓存写入失败的具体原因，便于前端提示/排查
 let _lastCacheWriteError = '';
 
@@ -769,8 +794,10 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
                     console.warn('拒绝缓存非图片字节响应:', imageData.status, imageData.type);
                     return false;
                 }
+                // 离线命名规则为 型号_颜色ID.jpg：非 JPG 格式统一转为 JPEG（转换失败保留原字节）
+                const jpeg = await convertImageBytesToJpeg(bytes, mime);
                 // 用 Blob 包裹字节，factory 每次新建 Response，避免写入因字节/配额问题失败
-                factory = () => new Response(new Blob([bytes], { type: mime }), { headers: { 'Content-Type': mime } });
+                factory = () => new Response(new Blob([jpeg.bytes], { type: jpeg.mime }), { headers: { 'Content-Type': jpeg.mime } });
             }
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
@@ -945,23 +972,27 @@ async function memoCheckPartsImgOnGitee(partNum, colorId) {
     return result;
 }
 
-// 根据 part_num 和 color_id 查询图片URL（三级读取：① 离线缓存 → ② Gitee Parts-img → ③ RB数据库）
-// 注：离线缓存与 Gitee 图片共用 gitee 地址作为 key（缓存图片以原始型号命名，如 4073_colorId.jpg）；
-//     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
+// 根据 part_num 和 color_id 查询图片URL（统一加载顺序：① 离线缓存 → ② RB 图片URL → ③ Gitee Parts-img → ④ 暂无）
+// 注：离线缓存 key 与 Gitee 图片共用 gitee 地址（命名 parts/{partNum}_{colorId}.jpg），无论图源是 RB 还是 Gitee，
+//     首次加载成功后都会回写离线缓存，后续直接命中 ①；
+//     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL；缓存命名始终用传入的原始型号
 async function getPartImageUrl(partNum, colorId) {
-    // ① 先查离线缓存（本地最快，命中即返回，无需网络，也无须再查 Gitee/RB）
+    // ① 先查离线缓存（本地最快，命中即返回，无需网络，也无须再查 RB/Gitee）
     const cached = await getPartImageFromOfflineCache(partNum, colorId);
     if (cached) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ② 再查 Gitee Parts-img（首次命中会成为离线缓存候选，下次直接走 ①）
+    // ② 再查 RB 数据库图片 URL（会解析别名）
+    const resolvedNum = typeof resolvePartAlias === 'function'
+        ? await resolvePartAlias(partNum) : partNum;
+    const rbUrl = await getRBPartImageUrl(resolvedNum, colorId);
+    if (rbUrl) return rbUrl;
+    // ③ 再查 Gitee Parts-img（首次命中会成为离线缓存候选，下次直接走 ①）
     if (await memoCheckPartsImgOnGitee(partNum, colorId)) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ③ 最后从 RB 数据库获取图片 URL（会解析别名）
-    const resolvedNum = typeof resolvePartAlias === 'function'
-        ? await resolvePartAlias(partNum) : partNum;
-    return await getRBPartImageUrl(resolvedNum, colorId);
+    // ④ 都没有：返回 null，调用方显示“暂无图片”
+    return null;
 }
 
 // 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
