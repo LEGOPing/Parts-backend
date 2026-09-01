@@ -908,6 +908,37 @@ async function checkPartsImgOnGitee(partNum, colorId) {
     }
 }
 
+// RB 数据库无图片记录、仅 Gitee 有图时，用 Gitee API 拉取真实图片字节预热离线缓存。
+// 原因：直接 <img src=raw> 走 302 → raw.giteeusercontent.com 签名链路，在设备网络下偶发失败，
+// 而 autoCachePartImage 只在 onload 成功时才写缓存 —— raw 一旦失败，就会“Gitee 有图但不显示、离线也永不缓存”。
+// Gitee contents API 带 CORS 头且返回 base64 字节，与 checkPartsImgOnGitee 同源可靠，用它提前落一份可渲染 JPEG 到离线缓存。
+const _seededGiteeImages = new Set();
+async function seedGiteeImageToOfflineCache(partNum, colorId) {
+    const key = `${String(partNum).trim()}_${colorId}`;
+    if (_seededGiteeImages.has(key)) return;
+    _seededGiteeImages.add(key);
+    try {
+        const filePath = `parts/${String(partNum).trim()}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}?ref=${GITEE_IMG_BRANCH}`;
+        const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('gitee_token') : null)
+            || (typeof DEFAULT_GITEE_TOKEN !== 'undefined' ? DEFAULT_GITEE_TOKEN : null);
+        const headers = token ? { 'Authorization': `token ${token}` } : {};
+        const response = await fetch(apiUrl, { cache: 'no-store', headers });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data || typeof data.content !== 'string' || !data.content) return;
+        const b64 = data.content.replace(/\s+/g, '');
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes.buffer], { type: 'image/jpeg' });
+        // 使用与 buildPartsImgUrl 一致的原始 partNum，确保离线缓存 key（parts/{partNum}_{colorId}.jpg）可被读侧命中
+        await savePartImageToOfflineCache(partNum, colorId, blob);
+    } catch (e) {
+        // 预热失败静默跳过，仍让 <img> 走 raw 路径，不影响原有行为
+    }
+}
+
 // 从 RB 数据库查询零件图片URL：通过型号和颜色匹配 inventory_parts 表
 // 同一 part+color 可能有多条记录（不同 inventory 或不同 element），返回去重后的 img_url 列表，供弹窗卡片让用户选择
 // 若 inventory_parts 无匹配（该 part+color 组合未出现在任何 inventory 中），回退到 elements 表按 element_id 构造 URL
@@ -989,6 +1020,10 @@ async function getPartImageUrl(partNum, colorId) {
     if (rbUrl) return rbUrl;
     // ③ 再查 Gitee Parts-img（首次命中会成为离线缓存候选，下次直接走 ①）
     if (await memoCheckPartsImgOnGitee(partNum, colorId)) {
+        // 此处 RB 无记录（rbUrl 已在上方命中即返回）：预热离线缓存，
+        // 避免只依赖易失效的 raw 302 渲染路径导致“Gitee 有图但不显示、且永不进离线缓存”。
+        // 预热完成后再返回，SW 缓存优先即可直接命中真实字节。
+        await seedGiteeImageToOfflineCache(partNum, colorId);
         return buildPartsImgUrl(partNum, colorId);
     }
     // ④ 都没有：返回 null，调用方显示“暂无图片”
