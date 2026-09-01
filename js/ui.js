@@ -5153,14 +5153,21 @@ async function changePartImage(partNum, colorId) {
 async function showPartImageUrl(partNum, colorId) {
     const giteeUrl = buildPartsImgUrl(partNum, colorId);
     let cached = false, giteeOk = false, rbUrls = [];
+    let cacheEntry = null, cacheDiag = '';
     try {
-        [cached, giteeOk, rbUrls] = await Promise.all([
-            getPartImageFromOfflineCache(partNum, colorId).then(r => !!r),
+        [cacheEntry, giteeOk, rbUrls] = await Promise.all([
+            getPartImageFromOfflineCache(partNum, colorId),
             checkPartsImgOnGitee(partNum, colorId),
             getRBPartImageUrls(partNum, colorId)
         ]);
+        cached = !!cacheEntry;
+        cacheDiag = cacheEntry
+            ? `已命中 · ${cacheEntry.type}/${cacheEntry.status}`
+            : `未命中 · 最近写入错误: ${_lastCacheWriteError || '无'}`;
+        console.log('【图片URL诊断】', partNum, colorId, 'giteeUrl=', giteeUrl, 'cached=', cached, 'cacheEntry=', cacheEntry, '_lastCacheWriteError=', _lastCacheWriteError);
     } catch (e) {
         console.warn('获取零件图片URL失败:', e);
+        cacheDiag = '查询出错已回退 · ' + (e && e.message);
     }
     const rbUrl = rbUrls.length ? rbUrls[0] : null;
     // 当前生效URL（与详情页 getPartImageUrl 三级读取顺序一致）
@@ -5190,6 +5197,7 @@ async function showPartImageUrl(partNum, colorId) {
         <div class="modal-body">
             <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}</div>
             ${row('① 离线缓存区', cached ? '已缓存' : '未缓存', cached, giteeUrl)}
+            <div style="font-size:11px;color:#999;margin:4px 0 12px;word-break:break-all;">诊断：${cacheDiag}</div>
             ${row('② Gitee', giteeOk ? '存在' : '不存在', giteeOk, giteeUrl)}
             ${row('③ RB数据库', rbUrl ? `${rbUrls.length}条记录` : '无记录', !!rbUrl, rbUrl || '（无）')}
             ${rbUrls.length > 1 ? `
