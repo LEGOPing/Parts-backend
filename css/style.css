@@ -4850,78 +4850,52 @@ body {
     color: #333;
 }
 
-.id-abc-close {
+/* "取消"按钮 */
+.id-abc-cancel {
     border: none;
     background: #f0f0f0;
     color: #666;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    font-size: 18px;
-    line-height: 1;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
-    padding: 0;
 }
 
-.id-abc-close:hover {
+.id-abc-cancel:hover {
     background: #e0e0e0;
 }
 
-.id-abc-search {
-    width: 100%;
-    height: 36px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    padding: 0 10px;
-    font-size: 14px;
-    box-sizing: border-box;
-    margin-bottom: 10px;
-}
-
-.id-abc-list {
-    flex: 1;
+/* 待选文字一栏：自动换行、约三行、超出垂直滚动 */
+.id-abc-wrap {
+    max-height: 108px; /* ≈3 行（含内边距） */
     overflow-y: auto;
     overscroll-behavior: contain;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 8px;
     border: 1px solid #eee;
     border-radius: 6px;
-    min-height: 120px;
+    box-sizing: border-box;
 }
 
-.id-abc-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    font-size: 14px;
-    color: #333;
-    cursor: pointer;
-    border-bottom: 1px solid #f2f2f2;
-}
-
-.id-abc-item:last-child {
-    border-bottom: none;
-}
-
-.id-abc-item:hover {
-    background: #f0f6ff;
-    color: #1565C0;
-}
-
-.id-abc-word {
-    font-weight: 600;
-}
-
-.id-abc-count {
-    font-size: 11px;
-    color: #999;
-    background: #f0f0f0;
-    border-radius: 10px;
-    padding: 1px 8px;
-}
-
-.id-abc-empty {
-    text-align: center;
-    color: #999;
-    padding: 24px 0;
+.id-abc-chip {
+    display: inline-block;
+    padding: 4px 10px;
     font-size: 13px;
+    color: #333;
+    background: #f6f6f6;
+    border: 1px solid #e0e0e0;
+    border-radius: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.id-abc-chip:hover {
+    background: #e8f0fe;
+    border-color: #90b8f0;
+    color: #1565C0;
 }

@@ -7028,49 +7028,42 @@ async function showIDAbcPicker() {
     overlay.className = 'modal-overlay active id-abc-picker-modal';
     overlay.id = 'id-abc-picker-overlay';
 
+    // 按 ID_Abc 顺序（出现次数降序）取词汇
+    const words = records.map(r => r.word);
+
     overlay.innerHTML = `
-        <div class="modal-content">
+        <div class="modal-content id-abc-picker-content">
             <div class="id-abc-modal-header">
-                <span class="id-abc-modal-title">型号英文词库（${records.length}）</span>
-                <button class="id-abc-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                <span class="id-abc-modal-title">型号英文词库（${words.length}）</span>
+                <button type="button" class="id-abc-cancel" id="id-abc-cancel">取消</button>
             </div>
-            <input type="text" class="id-abc-search" id="id-abc-search" placeholder="输入字母过滤..." autocomplete="off" />
-            <div class="id-abc-list" id="id-abc-list"></div>
+            <div class="id-abc-wrap" id="id-abc-wrap"></div>
         </div>
     `;
     document.body.appendChild(overlay);
 
-    const listEl = overlay.querySelector('#id-abc-list');
+    // "取消"按钮下方一栏待选文字：自动换行、最多显示三行、超出垂直滚动
+    const wrapEl = overlay.querySelector('#id-abc-wrap');
+    wrapEl.innerHTML = words.map(w =>
+        `<span class="id-abc-chip" data-word="${w}">${w}</span>`
+    ).join('');
 
-    function render(filter) {
-        const q = (filter || '').toLowerCase().trim();
-        const filtered = records.filter(r => !q || r.word.toLowerCase().includes(q));
-        if (filtered.length === 0) {
-            listEl.innerHTML = '<div class="id-abc-empty">无匹配词汇</div>';
-            return;
-        }
-        listEl.innerHTML = filtered.map(r =>
-            `<div class="id-abc-item" data-word="${r.word}"><span class="id-abc-word">${r.word}</span>${r.count ? `<span class="id-abc-count">${r.count}</span>` : ''}</div>`
-        ).join('');
-
-        listEl.querySelectorAll('.id-abc-item').forEach(el => {
-            el.addEventListener('click', () => {
-                const word = el.getAttribute('data-word');
-                const input = document.getElementById('new-part-num');
-                if (input) {
-                    input.value = (input.value || '') + word;
-                    // 触发既有 input 事件，更新联想与零件信息预览
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                overlay.remove();
-            });
+    // 点选词后填入型号输入框并关闭
+    wrapEl.querySelectorAll('.id-abc-chip').forEach(el => {
+        el.addEventListener('click', () => {
+            const word = el.getAttribute('data-word');
+            const input = document.getElementById('new-part-num');
+            if (input) {
+                input.value = (input.value || '') + word;
+                // 触发既有 input 事件，更新联想与零件信息预览
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            overlay.remove();
         });
-    }
+    });
 
-    render('');
-
-    const searchEl = overlay.querySelector('#id-abc-search');
-    searchEl.addEventListener('input', () => render(searchEl.value));
+    // "取消"按钮关闭
+    overlay.querySelector('#id-abc-cancel').addEventListener('click', () => overlay.remove());
 
     // 点击遮罩空白处关闭
     overlay.addEventListener('click', (e) => {
