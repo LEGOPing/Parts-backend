@@ -4639,12 +4639,25 @@ body {
 }
 
 .q4-cell {
-    flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     box-sizing: border-box;
+}
+
+.q4-model {
+    flex: 1 1 auto;
+}
+
+.q4-color {
+    flex: 0 0 118px;
+    width: 118px;
+}
+
+.q4-qty {
+    flex: 0 0 92px;
+    width: 92px;
 }
 
 .q4-top {
@@ -4683,24 +4696,17 @@ body {
     box-sizing: border-box;
 }
 
-.q4-value {
-    height: 22px;
-    display: flex;
-    align-items: center;
-    font-size: 14px;
-    color: var(--black-color);
-}
-
 .q4-add-cell {
-    flex: 0 0 38px;
+    flex: 0 0 46px;
+    width: 46px;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .q4-add-btn {
-    width: 38px;
-    height: 38px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
     border: none;
     background: #4CAF50;
