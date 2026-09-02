@@ -8024,6 +8024,23 @@ let listModel = '';
 let listColor = '';
 let listQty = 1;
 
+// 滚动锁定（输入法弹出时固定页面不移动）
+let _scrollLockCount = 0;
+function lockScroll() {
+    _scrollLockCount++;
+    if (_scrollLockCount === 1) {
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+    }
+}
+function unlockScroll() {
+    if (_scrollLockCount > 0) _scrollLockCount--;
+    if (_scrollLockCount === 0) {
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+    }
+}
+
 // 打开清单页面（Q1 标题+返回 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
 function openListPage() {
     if (document.getElementById('list-page-overlay')) return;
@@ -8074,11 +8091,15 @@ function openListPage() {
     document.body.appendChild(overlay);
     renderListParts();
     refreshQ4Labels();
+    lockScroll();
 }
 
 function closeListPage() {
     const overlay = document.getElementById('list-page-overlay');
-    if (overlay) overlay.remove();
+    if (overlay) {
+        overlay.remove();
+        unlockScroll();
+    }
 }
 
 // 更新 Q2 信息提示区（清单名称或其他提示）
@@ -8164,9 +8185,11 @@ function editQ4Value(field) {
     else { title = '请输入数量'; value = String(listQty); inputType = 'number'; }
 
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active';
+    overlay.className = 'modal-overlay active q4-popup-overlay';
     overlay.dataset.field = field;
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) { unlockScroll(); overlay.remove(); }
+    });
     overlay.innerHTML = `
         <div class="q4-popup">
             <div class="q4-popup-title">${title}</div>
@@ -8178,6 +8201,7 @@ function editQ4Value(field) {
         </div>
     `;
     document.body.appendChild(overlay);
+    lockScroll();
 
     const input = overlay.querySelector('#q4-popup-input');
     input.focus();
@@ -8186,7 +8210,7 @@ function editQ4Value(field) {
 
 function cancelQ4Input(btn) {
     const ov = btn.closest('.modal-overlay');
-    if (ov) ov.remove();
+    if (ov) { ov.remove(); unlockScroll(); }
 }
 
 function confirmQ4Input(btn) {
@@ -8203,6 +8227,7 @@ function confirmQ4Input(btn) {
         listColor = val;
     }
     ov.remove();
+    unlockScroll();
     refreshQ4Labels();
 }
 
