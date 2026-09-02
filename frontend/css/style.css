@@ -4778,3 +4778,11 @@ body {
     background: #2196F3;
     color: #fff;
 }
+
+/* Q4 弹窗：靠上显示，避免输入法遮挡/顶起页面 */
+.q4-popup-overlay {
+    align-items: flex-start;
+    padding-top: 12vh;
+    overflow-y: auto;
+    overscroll-behavior: none;
+}
