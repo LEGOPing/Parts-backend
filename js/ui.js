@@ -8029,14 +8029,14 @@ function openListPage() {
             <div class="list-q4">
                 <div class="q4-cell q4-model">
                     <div class="q4-top">
-                        <span class="q4-label">型号ID</span>
+                        <span class="q4-label">型号</span>
                         <button class="q4-action" onclick="identifyModel()">识别</button>
                     </div>
                     <div class="q4-value-label" id="q4-model-val" onclick="editQ4Value('model')">—</div>
                 </div>
                 <div class="q4-cell q4-color">
                     <div class="q4-top">
-                        <span class="q4-label">颜色ID</span>
+                        <span class="q4-label">颜色</span>
                         <button class="q4-action" onclick="pickColor()">选色</button>
                     </div>
                     <div class="q4-value-label" id="q4-color-val" onclick="editQ4Value('color')">—</div>
@@ -8146,8 +8146,8 @@ function refreshQ4Labels() {
 // 点击 Q4 标签，弹窗输入对应值（避免页面内输入框触发输入法导致画面跳动）
 function editQ4Value(field) {
     let title, value, inputType;
-    if (field === 'model') { title = '请输入型号ID'; value = listModel; inputType = 'text'; }
-    else if (field === 'color') { title = '请输入颜色ID'; value = listColor; inputType = 'text'; }
+    if (field === 'model') { title = '请输入型号'; value = listModel; inputType = 'text'; }
+    else if (field === 'color') { title = '请输入颜色'; value = listColor; inputType = 'text'; }
     else { title = '请输入数量'; value = String(listQty); inputType = 'number'; }
 
     const overlay = document.createElement('div');
@@ -8159,7 +8159,7 @@ function editQ4Value(field) {
     overlay.innerHTML = `
         <div class="q4-popup">
             <div class="q4-popup-title">${title}</div>
-            <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" min="${inputType === 'number' ? 1 : ''}" value="${value}">
+            <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" inputmode="numeric" min="${inputType === 'number' ? 1 : ''}" value="${value}">
             <div class="q4-popup-actions">
                 <button class="q4-popup-btn" onclick="cancelQ4Input(this)">取消</button>
                 <button class="q4-popup-btn q4-popup-btn-confirm" onclick="confirmQ4Input(this)">确定</button>

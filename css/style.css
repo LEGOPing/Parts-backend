@@ -4651,13 +4651,13 @@ body {
 }
 
 .q4-color {
-    flex: 0 0 118px;
-    width: 118px;
+    flex: 0 0 92px;
+    width: 92px;
 }
 
 .q4-qty {
-    flex: 0 0 92px;
-    width: 92px;
+    flex: 0 0 69px;
+    width: 69px;
 }
 
 .q4-top {
@@ -4669,6 +4669,7 @@ body {
 
 .q4-label {
     font-size: 10px;
+    font-weight: bold;
     color: var(--dark-gray-color);
     white-space: nowrap;
 }
@@ -4713,13 +4714,13 @@ body {
 }
 
 .q4-add-btn {
-    width: 46px;
-    height: 46px;
+    width: 33px;
+    height: 33px;
     border-radius: 50%;
     border: none;
     background: #4CAF50;
     color: white;
-    font-size: 22px;
+    font-size: 16px;
     font-weight: bold;
     cursor: pointer;
     box-sizing: border-box;
