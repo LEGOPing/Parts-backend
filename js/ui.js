@@ -7985,6 +7985,10 @@ window.tryCachePartImage = tryCachePartImage;
 /* ============ 清单页面 ============ */
 // 当前清单内容（零件数组），后续深化设计时作为数据源
 let listParts = [];
+// Q4 型号/颜色/数量状态（以标签展示，点击后弹窗输入）
+let listModel = '';
+let listColor = '';
+let listQty = 1;
 
 // 打开清单页面（Q1 标题+返回 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
 function openListPage() {
@@ -8011,20 +8015,20 @@ function openListPage() {
                         <span class="q4-label">型号ID</span>
                         <button class="q4-action" onclick="identifyModel()">识别</button>
                     </div>
-                    <input class="q4-input" id="list-model" placeholder="型号">
+                    <div class="q4-value-label" id="q4-model-val" onclick="editQ4Value('model')">—</div>
                 </div>
                 <div class="q4-cell q4-color">
                     <div class="q4-top">
                         <span class="q4-label">颜色ID</span>
                         <button class="q4-action" onclick="pickColor()">选色</button>
                     </div>
-                    <input class="q4-input" id="list-color" placeholder="颜色ID">
+                    <div class="q4-value-label" id="q4-color-val" onclick="editQ4Value('color')">—</div>
                 </div>
                 <div class="q4-cell q4-qty">
                     <div class="q4-top">
                         <span class="q4-label">数量</span>
                     </div>
-                    <input class="q4-input" id="list-qty" type="number" min="1" value="1">
+                    <div class="q4-value-label" id="q4-qty-val" onclick="editQ4Value('quantity')">1</div>
                 </div>
                 <div class="q4-add-cell">
                     <button class="q4-add-btn" onclick="addListPartFromSelector()">+</button>
@@ -8035,6 +8039,7 @@ function openListPage() {
 
     document.body.appendChild(overlay);
     renderListParts();
+    refreshQ4Labels();
 }
 
 function closeListPage() {
@@ -8093,23 +8098,78 @@ function pickColor() {
 
 // “+”：按当前型号/颜色/数量将零件添加到清单（已存在则数量累加）
 function addListPartFromSelector() {
-    const model = (document.getElementById('list-model') ? document.getElementById('list-model').value : '').trim();
-    const color = (document.getElementById('list-color') ? document.getElementById('list-color').value : '').trim();
-    let qty = parseInt(document.getElementById('list-qty') ? document.getElementById('list-qty').value : '1', 10);
-    if (!qty || qty < 1) qty = 1;
+    if (!listModel) { showToast('请先输入型号ID'); return; }
+    if (!listColor) { showToast('请先选择颜色'); return; }
 
-    if (!model) { showToast('请先输入型号ID'); return; }
-    if (!color) { showToast('请先选择颜色'); return; }
-
-    const idx = listParts.findIndex((p) => (p.part_num || '') === model && (p.name || '') === color);
+    const idx = listParts.findIndex((p) => (p.part_num || '') === listModel && (p.name || '') === listColor);
     if (idx >= 0) {
-        listParts[idx].quantity = (listParts[idx].quantity || 0) + qty;
+        listParts[idx].quantity = (listParts[idx].quantity || 0) + listQty;
     } else {
-        listParts.push({ part_num: model, name: color, quantity: qty });
+        listParts.push({ part_num: listModel, name: listColor, quantity: listQty });
     }
 
     renderListParts();
     showToast('已添加到清单');
+}
+
+// 刷新 Q4 三个标签的显示值
+function refreshQ4Labels() {
+    const mv = document.getElementById('q4-model-val');
+    const cv = document.getElementById('q4-color-val');
+    const qv = document.getElementById('q4-qty-val');
+    if (mv) mv.textContent = listModel || '—';
+    if (cv) cv.textContent = listColor || '—';
+    if (qv) qv.textContent = String(listQty);
+}
+
+// 点击 Q4 标签，弹窗输入对应值（避免页面内输入框触发输入法导致画面跳动）
+function editQ4Value(field) {
+    let title, value, inputType;
+    if (field === 'model') { title = '请输入型号ID'; value = listModel; inputType = 'text'; }
+    else if (field === 'color') { title = '请输入颜色ID'; value = listColor; inputType = 'text'; }
+    else { title = '请输入数量'; value = String(listQty); inputType = 'number'; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.dataset.field = field;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.innerHTML = `
+        <div class="q4-popup">
+            <div class="q4-popup-title">${title}</div>
+            <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" min="${inputType === 'number' ? 1 : ''}" value="${value}">
+            <div class="q4-popup-actions">
+                <button class="q4-popup-btn" onclick="cancelQ4Input(this)">取消</button>
+                <button class="q4-popup-btn q4-popup-btn-confirm" onclick="confirmQ4Input(this)">确定</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#q4-popup-input');
+    input.focus();
+    if (input.select) input.select();
+}
+
+function cancelQ4Input(btn) {
+    const ov = btn.closest('.modal-overlay');
+    if (ov) ov.remove();
+}
+
+function confirmQ4Input(btn) {
+    const ov = btn.closest('.modal-overlay');
+    if (!ov) return;
+    const field = ov.dataset.field;
+    const val = ov.querySelector('#q4-popup-input').value.trim();
+    if (field === 'quantity') {
+        const n = parseInt(val, 10);
+        listQty = (!n || n < 1) ? 1 : n;
+    } else if (field === 'model') {
+        listModel = val;
+    } else {
+        listColor = val;
+    }
+    ov.remove();
+    refreshQ4Labels();
 }
 
 // 全局暴露，供内联 onclick 调用
@@ -8122,3 +8182,7 @@ window.renderListParts = renderListParts;
 window.identifyModel = identifyModel;
 window.pickColor = pickColor;
 window.addListPartFromSelector = addListPartFromSelector;
+window.refreshQ4Labels = refreshQ4Labels;
+window.editQ4Value = editQ4Value;
+window.confirmQ4Input = confirmQ4Input;
+window.cancelQ4Input = cancelQ4Input;
