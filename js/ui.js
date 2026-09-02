@@ -8216,6 +8216,15 @@ function editQ4Value(field) {
     const input = overlay.querySelector('#q4-popup-input');
     input.focus();
     if (input.select) input.select();
+
+    // 键盘回车/打勾键：顺带触发弹窗“确定”按钮
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const confirmBtn = overlay.querySelector('.q4-popup-btn-confirm');
+            confirmQ4Input(confirmBtn);
+        }
+    });
 }
 
 // 型号输入弹窗：在 数字键盘 / 英文键盘 之间切换
