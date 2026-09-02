@@ -8000,7 +8000,7 @@ function openListPage() {
     overlay.innerHTML = `
         <div class="list-page">
             <div class="list-q1">
-                <span class="list-title">清单</span>
+                <span class="list-title">零件清单</span>
                 <button class="list-back-btn" onclick="closeListPage()">返回</button>
             </div>
             <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
