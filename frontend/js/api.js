@@ -396,6 +396,56 @@ async function mergeAliasesToPartAliasesCSV(aliasPairs, remark = 'BL匹配') {
     return { added, skipped, total: outLines.length - 1 };
 }
 
+// 读取 Gitee parts-rb 仓库的 ID_Abc.json（型号英文词汇表），返回数组或 null
+// 文件形状为 [{ word, count }]，按出现次数降序排列
+async function fetchIDAbcJson() {
+    try {
+        const text = await fetchRBFile('ID_Abc.json');
+        if (!text) return null;
+        const data = JSON.parse(text);
+        return Array.isArray(data) ? data : null;
+    } catch (error) {
+        console.error('加载 ID_Abc.json 失败:', error);
+        return null;
+    }
+}
+
+// 将型号英文词汇数组（[{ word, count }]）全量写回 Gitee parts-rb 仓库的 ID_Abc.json
+// 文件不存在则 POST 创建，存在则 PUT 更新（携带 sha，幂等）。返回写入条数。
+async function uploadIDAbcToGitee(records, token) {
+    const t = token || localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!t) throw new Error('缺少 Gitee Token，无法写回 ID_Abc.json');
+
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/ID_Abc.json`;
+    const jsonText = JSON.stringify(records || []);
+    const base64Data = btoa(unescape(encodeURIComponent(jsonText)));
+
+    // 读取现有文件以获取 sha
+    const checkResp = await fetch(`${apiUrl}?ref=main`, {
+        headers: { 'Authorization': `token ${t}` }
+    });
+    const existing = checkResp.ok ? await checkResp.json() : null;
+
+    const body = {
+        message: 'feat: 更新型号英文词汇 ID_Abc.json [skip ci]',
+        content: base64Data,
+        branch: 'main'
+    };
+    if (existing && existing.sha) {
+        body.sha = existing.sha;
+    }
+
+    await giteeRequestWithRetry(() => fetch(apiUrl, {
+        method: existing ? 'PUT' : 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `token ${t}`
+        },
+        body: JSON.stringify(body)
+    }));
+    return (records || []).length;
+}
+
 // 将本地 inventory_parts.csv 去重后分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
 // 分片命名 inventory_parts_1.csv、inventory_parts_2.csv ...（序号从1开始，每片都带表头）
 // 上传完成后写入清单 inventory_parts_shards.json，前端读取逻辑按清单合并
