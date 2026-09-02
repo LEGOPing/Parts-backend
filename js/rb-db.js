@@ -1,5 +1,5 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 4;
+const RB_DB_VERSION = 5;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -12,7 +12,9 @@ const RB_STORES = {
     // BL-parts：Bricklink 目录表（方法一「BG型号+颜色名→CODENAME」的桥接表）
     BL_PARTS: 'rb_bl_parts',
     // 零件别名映射表（来自 Gitee part_aliases.csv，别名→RB标准型号）
-    PART_ALIASES: 'rb_part_aliases'
+    PART_ALIASES: 'rb_part_aliases',
+    // 型号英文词汇表（来自 Gitee ID_Abc.json，型号输入弹窗"词库"用）
+    ID_ABC: 'rb_id_abc'
 };
 
 const RB_STORE_KEYS = {
@@ -24,7 +26,8 @@ const RB_STORE_KEYS = {
     'rb_part_relationships': 'part_relationships',
     'rb_weights': 'weights',
     'rb_bl_parts': 'bl_parts',
-    'rb_part_aliases': 'part_aliases'
+    'rb_part_aliases': 'part_aliases',
+    'rb_id_abc': 'id_abc'
 };
 
 let rbDbInstance = null;
@@ -74,6 +77,10 @@ function openRBDatabase() {
             // 零件别名映射表：keyPath 为别名型号（alias_part_num），值列 rb_part_num
             if (!db.objectStoreNames.contains(RB_STORES.PART_ALIASES)) {
                 db.createObjectStore(RB_STORES.PART_ALIASES, { keyPath: 'alias_part_num' });
+            }
+            // 型号英文词汇表：keyPath 为词汇（word），值列 count（出现次数）
+            if (!db.objectStoreNames.contains(RB_STORES.ID_ABC)) {
+                db.createObjectStore(RB_STORES.ID_ABC, { keyPath: 'word' });
             }
         };
 
@@ -191,7 +198,8 @@ async function getRBStats() {
             'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
             'rb_weights': RB_STORES.WEIGHTS,
             'rb_bl_parts': RB_STORES.BL_PARTS,
-            'rb_part_aliases': RB_STORES.PART_ALIASES
+            'rb_part_aliases': RB_STORES.PART_ALIASES,
+            'rb_id_abc': RB_STORES.ID_ABC
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -343,12 +351,13 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
         'bl_parts': RB_STORES.BL_PARTS,
-        'part_aliases': RB_STORES.PART_ALIASES
+        'part_aliases': RB_STORES.PART_ALIASES,
+        'id_abc': RB_STORES.ID_ABC
     };
     
     const results = {};
     const keys = Object.keys(storeMapping);
-    
+
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
         const storeName = storeMapping[key];
@@ -391,7 +400,8 @@ async function exportRBDatabaseToJSON() {
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
         'bl_parts': RB_STORES.BL_PARTS,
-        'part_aliases': RB_STORES.PART_ALIASES
+        'part_aliases': RB_STORES.PART_ALIASES,
+        'id_abc': RB_STORES.ID_ABC
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
@@ -1113,5 +1123,46 @@ async function importWeightsFromJSON(weightsJson, onProgress) {
     } catch (error) {
         console.error('导入重量数据失败:', error);
         return { success: false, count: 0, error: error.message };
+    }
+}
+
+// ===== 型号英文词汇（rb_id_abc）离线缓冲区 =====
+// ID_Abc.json 是形状为 [{ word, count }] 的数组，按出现次数降序排列。
+
+// 将词汇数组写入离线缓冲区（覆盖重建）
+async function importIDAbcToRBDb(records) {
+    try {
+        const data = (records || [])
+            .filter(r => r && r.word)
+            .map(r => ({ word: String(r.word), count: Number(r.count) || 0 }));
+        await importRBData(RB_STORES.ID_ABC, data);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入型号英文词汇失败:', error);
+        return { success: false, count: 0, error: error.message };
+    }
+}
+
+// 读取离线词汇，按出现次数降序返回 [{ word, count }]
+async function getIDAbcRecords() {
+    try {
+        const records = await getAll(RB_STORES.ID_ABC);
+        records.sort((a, b) => (b.count || 0) - (a.count || 0)
+            || String(a.word).localeCompare(String(b.word)));
+        return records;
+    } catch (error) {
+        console.error('读取型号英文词汇失败:', error);
+        return [];
+    }
+}
+
+// 清空离线词汇缓冲区
+async function clearIDAbcStore() {
+    try {
+        await clearStore(RB_STORES.ID_ABC);
+        return true;
+    } catch (error) {
+        console.error('清空型号英文词汇失败:', error);
+        return false;
     }
 }

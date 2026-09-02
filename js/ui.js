@@ -1361,6 +1361,7 @@ function showAddPartSheet() {
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
+                    <button type="button" class="btn-id-abc" onclick="showIDAbcPicker()" title="从英文词汇库选择型号片段">词库</button>
                     <button type="button" class="btn-recognize" onclick="showRecognizeModal()">识别</button>
                 </div>
                 <div class="data-source-hint" id="data-source-hint"></div>
@@ -6787,6 +6788,8 @@ async function loadRBOnStartup() {
             } catch (e) {
                 console.warn('补充加载重量数据失败:', e.message);
             }
+            // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
+            loadIDAbcOnStartup();
             showRBStatusHint('rb-ready');
             return;
         }
@@ -6864,6 +6867,9 @@ async function loadRBOnStartup() {
             console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
         }
 
+        // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
+        loadIDAbcOnStartup();
+
         if (successCount === csvFiles.length) {
             console.log('RB数据库建立成功');
             showRBStatusHint('rb-ready');
@@ -6934,6 +6940,142 @@ function showRBStatusHint(status) {
             }
         }).catch(e => console.error('获取RB统计失败:', e));
     }
+}
+
+// ===== 型号英文词汇（ID_Abc.json）=====
+
+// 遍历 BL-parts 表，抽取 ITEMID 中的字母片段（英文词，含单个字母），按出现次数去重排序后
+// 1) 推送到 Gitee parts-rb 仓库的 ID_Abc.json；2) 写入本地离线缓冲区 rb_id_abc。
+async function buildIDAbcJson() {
+    try {
+        let blParts = [];
+        try {
+            blParts = await getAll(RB_STORES.BL_PARTS);
+        } catch (e) {
+            console.warn('读取 BL-parts 失败:', e.message);
+        }
+        if (!blParts || blParts.length === 0) {
+            alert('BL-parts 数据为空，请先执行"更新RB"加载 BL-parts 后再生成词汇。');
+            return;
+        }
+
+        // 统计每个字母片段在 ITEMID 中出现的次数
+        const countMap = {};
+        for (const row of blParts) {
+            const itemId = String(row.ITEMID == null ? '' : row.ITEMID).trim();
+            if (!itemId) continue;
+            const matches = itemId.match(/[A-Za-z]+/g);
+            if (!matches) continue;
+            for (const m of matches) {
+                const word = m.toLowerCase();
+                countMap[word] = (countMap[word] || 0) + 1;
+            }
+        }
+
+        const records = Object.keys(countMap)
+            .map(word => ({ word, count: countMap[word] }))
+            .sort((a, b) => (b.count - a.count) || a.word.localeCompare(b.word));
+
+        if (records.length === 0) {
+            alert('未从 BL-parts 中提取到任何英文词汇。');
+            return;
+        }
+
+        // 1) 推送到 Gitee parts-rb
+        await uploadIDAbcToGitee(records);
+        // 2) 同步本地离线缓冲区
+        await importIDAbcToRBDb(records);
+
+        const preview = records.slice(0, 10).map(r => r.word).join('、');
+        alert(`已生成 ${records.length} 个英文词汇并保存到 Gitee ID_Abc.json，同时更新了本地词库。\n\n高频示例：${preview}…`);
+    } catch (error) {
+        console.error('生成型号英文词汇失败:', error);
+        alert('生成失败: ' + (error.message || error));
+    }
+}
+
+// 启动时把 Gitee 的 ID_Abc.json 加载到本地离线缓冲区（非阻塞，失败不影响主流程）
+async function loadIDAbcOnStartup() {
+    try {
+        const records = await fetchIDAbcJson();
+        if (!records || records.length === 0) return;
+        const result = await importIDAbcToRBDb(records);
+        if (result.success) {
+            console.log(`型号英文词汇离线缓冲区加载成功: ${result.count} 条`);
+        }
+    } catch (error) {
+        console.warn('型号英文词汇离线加载失败（不影响主流程）:', error.message);
+    }
+}
+
+// 零件清单-添加零件面板的型号输入"词库"弹窗：从离线缓冲区列出英文词汇供用户选择输入
+async function showIDAbcPicker() {
+    let records = await getIDAbcRecords();
+    if (!records || records.length === 0) {
+        try {
+            records = await fetchIDAbcJson();
+            if (records && records.length) await importIDAbcToRBDb(records);
+        } catch (e) {
+            records = [];
+        }
+    }
+    if (!records || records.length === 0) {
+        alert('英文词汇库为空。请先在"系统设置 - 其他 - 型号英文"生成词汇后使用。');
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active id-abc-picker-modal';
+    overlay.id = 'id-abc-picker-overlay';
+
+    overlay.innerHTML = `
+        <div class="modal-content">
+            <div class="id-abc-modal-header">
+                <span class="id-abc-modal-title">型号英文词库（${records.length}）</span>
+                <button class="id-abc-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+            </div>
+            <input type="text" class="id-abc-search" id="id-abc-search" placeholder="输入字母过滤..." autocomplete="off" />
+            <div class="id-abc-list" id="id-abc-list"></div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const listEl = overlay.querySelector('#id-abc-list');
+
+    function render(filter) {
+        const q = (filter || '').toLowerCase().trim();
+        const filtered = records.filter(r => !q || r.word.toLowerCase().includes(q));
+        if (filtered.length === 0) {
+            listEl.innerHTML = '<div class="id-abc-empty">无匹配词汇</div>';
+            return;
+        }
+        listEl.innerHTML = filtered.map(r =>
+            `<div class="id-abc-item" data-word="${r.word}"><span class="id-abc-word">${r.word}</span>${r.count ? `<span class="id-abc-count">${r.count}</span>` : ''}</div>`
+        ).join('');
+
+        listEl.querySelectorAll('.id-abc-item').forEach(el => {
+            el.addEventListener('click', () => {
+                const word = el.getAttribute('data-word');
+                const input = document.getElementById('new-part-num');
+                if (input) {
+                    input.value = (input.value || '') + word;
+                    // 触发既有 input 事件，更新联想与零件信息预览
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                overlay.remove();
+            });
+        });
+    }
+
+    render('');
+
+    const searchEl = overlay.querySelector('#id-abc-search');
+    searchEl.addEventListener('input', () => render(searchEl.value));
+
+    // 点击遮罩空白处关闭
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
 }
 
 async function initializeDatabase() {

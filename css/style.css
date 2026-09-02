@@ -2219,6 +2219,27 @@ body {
     background: #732d91;
 }
 
+/* 型号输入-词库按钮 */
+.add-part-modal .btn-id-abc {
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 36px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    transition: background-color 0.3s;
+}
+
+.add-part-modal .btn-id-abc:hover {
+    background: #1565C0;
+}
+
 /* 识别结果区域 */
 .recognize-result {
     margin-top: 12px;
@@ -4799,4 +4820,108 @@ body {
     padding-top: 12vh;
     overflow-y: auto;
     overscroll-behavior: none;
+}
+
+/* ===== 型号英文词库弹窗 ===== */
+.id-abc-picker-modal {
+    align-items: flex-start;
+    padding-top: 12vh;
+}
+
+.id-abc-picker-modal .modal-content {
+    width: 92%;
+    max-width: 460px;
+    max-height: 68vh;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+.id-abc-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.id-abc-modal-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #333;
+}
+
+.id-abc-close {
+    border: none;
+    background: #f0f0f0;
+    color: #666;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.id-abc-close:hover {
+    background: #e0e0e0;
+}
+
+.id-abc-search {
+    width: 100%;
+    height: 36px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 0 10px;
+    font-size: 14px;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+}
+
+.id-abc-list {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    min-height: 120px;
+}
+
+.id-abc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    border-bottom: 1px solid #f2f2f2;
+}
+
+.id-abc-item:last-child {
+    border-bottom: none;
+}
+
+.id-abc-item:hover {
+    background: #f0f6ff;
+    color: #1565C0;
+}
+
+.id-abc-word {
+    font-weight: 600;
+}
+
+.id-abc-count {
+    font-size: 11px;
+    color: #999;
+    background: #f0f0f0;
+    border-radius: 10px;
+    padding: 1px 8px;
+}
+
+.id-abc-empty {
+    text-align: center;
+    color: #999;
+    padding: 24px 0;
+    font-size: 13px;
 }
