@@ -1404,10 +1404,6 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
-            <div class="form-section id-abc-inline-section">
-                <div class="id-abc-inline-label">型号英文词库</div>
-                <div class="id-abc-wrap" id="id-abc-inline-wrap"></div>
-            </div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
@@ -1419,8 +1415,6 @@ function showAddPartSheet() {
     
     // 初始化联想功能
     initAddPartSuggestions();
-    // 内嵌英文词库（添加到弹窗下半部）
-    initIDAbcInlineLibrary();
 }
 
 // ==================== 拍照识别弹窗（独立于添加零件表单）====================
@@ -7013,9 +7007,9 @@ async function loadIDAbcOnStartup() {
     }
 }
 
-// 在添加零件弹窗下半部内嵌英文词库（三行自动换行、垂直滚动），点选词填入型号输入框
-async function initIDAbcInlineLibrary() {
-    const wrapEl = document.getElementById('id-abc-inline-wrap');
+// 在「零件清单」型号输入弹窗下半部内嵌英文词库（三行自动换行、垂直滚动）
+async function initQ4IDAbcLibrary(overlay) {
+    const wrapEl = overlay ? overlay.querySelector('#q4-popup-idabc-wrap') : null;
     if (!wrapEl) return;
 
     let records = await getIDAbcRecords();
@@ -7040,14 +7034,13 @@ async function initIDAbcInlineLibrary() {
     ).join('');
 
     // 点选词后填入型号输入框
+    const input = overlay.querySelector('#q4-popup-input');
     wrapEl.querySelectorAll('.id-abc-chip').forEach(el => {
         el.addEventListener('click', () => {
             const word = el.getAttribute('data-word');
-            const input = document.getElementById('new-part-num');
             if (input) {
                 input.value = (input.value || '') + word;
-                // 触发既有 input 事件，更新联想与零件信息预览
-                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.focus();
             }
         });
     });
@@ -8141,9 +8134,6 @@ let listModel = '';
 let listColor = '';
 let listQty = 1;
 
-// 型号输入弹窗的键盘模式（numeric=数字键盘 / text=英文全键盘）
-let _q4InputMode = 'numeric';
-
 // 滚动锁定（输入法弹出时固定页面不移动）
 let _scrollLockCount = 0;
 function lockScroll() {
@@ -8299,15 +8289,15 @@ function refreshQ4Labels() {
 
 // 点击 Q4 标签，弹窗输入对应值（避免页面内输入框触发输入法导致画面跳动）
 function editQ4Value(field) {
-    _q4InputMode = 'numeric';
     let title, value, inputType, im;
     if (field === 'model') { title = '请输入型号'; value = listModel; inputType = 'text'; im = 'numeric'; }
     else if (field === 'color') { title = '请输入颜色'; value = listColor; inputType = 'text'; im = 'numeric'; }
     else { title = '请输入数量'; value = String(listQty); inputType = 'number'; im = ''; }
 
-    // 型号输入可能需要英文字母，提供键盘模式切换按钮（数字/英文）
-    const toggleBtn = field === 'model'
-        ? '<button class="q4-popup-mode" type="button" onclick="toggleQ4InputMode(this)">ABC</button>'
+    // 型号输入时才显示内嵌英文词库（三行自动换行、垂直滚动），点选词填入输入框
+    const idAbcSection = field === 'model'
+        ? `<div class="id-abc-inline-label">型号英文词库</div>
+           <div class="id-abc-wrap" id="q4-popup-idabc-wrap"></div>`
         : '';
 
     const overlay = document.createElement('div');
@@ -8320,11 +8310,11 @@ function editQ4Value(field) {
         <div class="q4-popup">
             <div class="q4-popup-title">${title}</div>
             <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" inputmode="${im}" min="${inputType === 'number' ? 1 : ''}" value="${value}">
-            ${toggleBtn}
             <div class="q4-popup-actions">
                 <button class="q4-popup-btn" onclick="cancelQ4Input(this)">取消</button>
                 <button class="q4-popup-btn q4-popup-btn-confirm" onclick="confirmQ4Input(this)">确定</button>
             </div>
+            ${idAbcSection}
         </div>
     `;
     document.body.appendChild(overlay);
@@ -8334,6 +8324,11 @@ function editQ4Value(field) {
     input.focus();
     if (input.select) input.select();
 
+    // 型号输入：加载内嵌英文词库
+    if (field === 'model') {
+        initQ4IDAbcLibrary(overlay);
+    }
+
     // 键盘回车/打勾键：顺带触发弹窗“确定”按钮
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -8342,18 +8337,6 @@ function editQ4Value(field) {
             confirmQ4Input(confirmBtn);
         }
     });
-}
-
-// 型号输入弹窗：在 数字键盘 / 英文键盘 之间切换
-function toggleQ4InputMode(btn) {
-    const ov = btn.closest('.modal-overlay');
-    const input = ov ? ov.querySelector('#q4-popup-input') : null;
-    _q4InputMode = (_q4InputMode === 'numeric') ? 'text' : 'numeric';
-    if (input) {
-        input.setAttribute('inputmode', _q4InputMode);
-        btn.textContent = (_q4InputMode === 'numeric') ? 'ABC' : '123';
-        input.focus();
-    }
 }
 
 function cancelQ4Input(btn) {
@@ -8391,6 +8374,5 @@ window.pickColor = pickColor;
 window.addListPartFromSelector = addListPartFromSelector;
 window.refreshQ4Labels = refreshQ4Labels;
 window.editQ4Value = editQ4Value;
-window.toggleQ4InputMode = toggleQ4InputMode;
 window.confirmQ4Input = confirmQ4Input;
 window.cancelQ4Input = cancelQ4Input;
