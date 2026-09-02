@@ -420,29 +420,51 @@ async function uploadIDAbcToGitee(records, token) {
     const jsonText = JSON.stringify(records || []);
     const base64Data = btoa(unescape(encodeURIComponent(jsonText)));
 
-    // 读取现有文件以获取 sha
-    const checkResp = await fetch(`${apiUrl}?ref=main`, {
-        headers: { 'Authorization': `token ${t}` }
-    });
-    const existing = checkResp.ok ? await checkResp.json() : null;
-
-    const body = {
+    const payload = {
         message: 'feat: 更新型号英文词汇 ID_Abc.json [skip ci]',
         content: base64Data,
         branch: 'main'
     };
-    if (existing && existing.sha) {
-        body.sha = existing.sha;
+
+    // 读取现有文件 sha。注意：路径不存在时 Gitee 可能返回空数组 []（JS 中为 truthy），
+    // 只有返回含 sha 的对象才视为文件已存在，否则按创建处理，避免 PUT 缺 sha 报错。
+    async function readSha() {
+        try {
+            const resp = await fetch(`${apiUrl}?ref=main`, { headers: { 'Authorization': `token ${t}` } });
+            if (!resp.ok) return null;
+            const json = await resp.json();
+            return (json && !Array.isArray(json) && json.sha) ? json.sha : null;
+        } catch (e) {
+            console.warn('读取 ID_Abc.json 的 sha 失败:', e.message);
+            return null;
+        }
     }
 
-    await giteeRequestWithRetry(() => fetch(apiUrl, {
-        method: existing ? 'PUT' : 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `token ${t}`
-        },
-        body: JSON.stringify(body)
-    }));
+    let sha = await readSha();
+    if (sha) payload.sha = sha;
+
+    try {
+        await giteeRequestWithRetry(() => fetch(apiUrl, {
+            method: sha ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `token ${t}` },
+            body: JSON.stringify(payload)
+        }));
+    } catch (e) {
+        // 文件已存在但未拿到 sha（POST 创建失败）：补读 sha 后改用 PUT 更新
+        if (!sha && /sha|exist/i.test(String(e.message))) {
+            sha = await readSha();
+            if (sha) {
+                payload.sha = sha;
+                await giteeRequestWithRetry(() => fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `token ${t}` },
+                    body: JSON.stringify(payload)
+                }));
+                return (records || []).length;
+            }
+        }
+        throw e;
+    }
     return (records || []).length;
 }
 
