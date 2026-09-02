@@ -8006,25 +8006,25 @@ function openListPage() {
             <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
             <div class="list-q3" id="list-q3"></div>
             <div class="list-q4">
-                <div class="q4-cell">
+                <div class="q4-cell q4-model">
                     <div class="q4-top">
                         <span class="q4-label">型号ID</span>
                         <button class="q4-action" onclick="identifyModel()">识别</button>
                     </div>
-                    <input class="q4-input" id="list-model" placeholder="型号" oninput="updateListQty()">
+                    <input class="q4-input" id="list-model" placeholder="型号">
                 </div>
-                <div class="q4-cell">
+                <div class="q4-cell q4-color">
                     <div class="q4-top">
                         <span class="q4-label">颜色ID</span>
                         <button class="q4-action" onclick="pickColor()">选色</button>
                     </div>
-                    <input class="q4-input" id="list-color" placeholder="颜色ID" oninput="updateListQty()">
+                    <input class="q4-input" id="list-color" placeholder="颜色ID">
                 </div>
-                <div class="q4-cell">
+                <div class="q4-cell q4-qty">
                     <div class="q4-top">
                         <span class="q4-label">数量</span>
                     </div>
-                    <div class="q4-value" id="list-qty">0</div>
+                    <input class="q4-input" id="list-qty" type="number" min="1" value="1">
                 </div>
                 <div class="q4-add-cell">
                     <button class="q4-add-btn" onclick="addListPartFromSelector()">+</button>
@@ -8091,30 +8091,24 @@ function pickColor() {
     showToast('选色功能待完善');
 }
 
-// 更新 Q4 数量区：显示当前型号在清单中的数量
-function updateListQty() {
-    const qtyEl = document.getElementById('list-qty');
-    if (!qtyEl) return;
-    const model = (document.getElementById('list-model') ? document.getElementById('list-model').value : '').trim();
-    qtyEl.textContent = String(model ? listParts.filter((p) => (p.part_num || '') === model).length : 0);
-}
-
-// “+”：按当前型号/颜色将零件添加到清单（已存在则数量 +1）
+// “+”：按当前型号/颜色/数量将零件添加到清单（已存在则数量累加）
 function addListPartFromSelector() {
     const model = (document.getElementById('list-model') ? document.getElementById('list-model').value : '').trim();
     const color = (document.getElementById('list-color') ? document.getElementById('list-color').value : '').trim();
+    let qty = parseInt(document.getElementById('list-qty') ? document.getElementById('list-qty').value : '1', 10);
+    if (!qty || qty < 1) qty = 1;
+
     if (!model) { showToast('请先输入型号ID'); return; }
     if (!color) { showToast('请先选择颜色'); return; }
 
     const idx = listParts.findIndex((p) => (p.part_num || '') === model && (p.name || '') === color);
     if (idx >= 0) {
-        listParts[idx].quantity = (listParts[idx].quantity || 0) + 1;
+        listParts[idx].quantity = (listParts[idx].quantity || 0) + qty;
     } else {
-        listParts.push({ part_num: model, name: color, quantity: 1 });
+        listParts.push({ part_num: model, name: color, quantity: qty });
     }
 
     renderListParts();
-    updateListQty();
     showToast('已添加到清单');
 }
 
@@ -8127,5 +8121,4 @@ window.clearListParts = clearListParts;
 window.renderListParts = renderListParts;
 window.identifyModel = identifyModel;
 window.pickColor = pickColor;
-window.updateListQty = updateListQty;
 window.addListPartFromSelector = addListPartFromSelector;
