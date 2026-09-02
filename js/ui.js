@@ -8024,6 +8024,9 @@ let listModel = '';
 let listColor = '';
 let listQty = 1;
 
+// 型号输入弹窗的键盘模式（numeric=数字键盘 / text=英文全键盘）
+let _q4InputMode = 'numeric';
+
 // 滚动锁定（输入法弹出时固定页面不移动）
 let _scrollLockCount = 0;
 function lockScroll() {
@@ -8179,10 +8182,16 @@ function refreshQ4Labels() {
 
 // 点击 Q4 标签，弹窗输入对应值（避免页面内输入框触发输入法导致画面跳动）
 function editQ4Value(field) {
-    let title, value, inputType;
-    if (field === 'model') { title = '请输入型号'; value = listModel; inputType = 'text'; }
-    else if (field === 'color') { title = '请输入颜色'; value = listColor; inputType = 'text'; }
-    else { title = '请输入数量'; value = String(listQty); inputType = 'number'; }
+    _q4InputMode = 'numeric';
+    let title, value, inputType, im;
+    if (field === 'model') { title = '请输入型号'; value = listModel; inputType = 'text'; im = 'numeric'; }
+    else if (field === 'color') { title = '请输入颜色'; value = listColor; inputType = 'text'; im = 'numeric'; }
+    else { title = '请输入数量'; value = String(listQty); inputType = 'number'; im = ''; }
+
+    // 型号输入可能需要英文字母，提供键盘模式切换按钮（数字/英文）
+    const toggleBtn = field === 'model'
+        ? '<button class="q4-popup-mode" type="button" onclick="toggleQ4InputMode(this)">ABC</button>'
+        : '';
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active q4-popup-overlay';
@@ -8193,7 +8202,8 @@ function editQ4Value(field) {
     overlay.innerHTML = `
         <div class="q4-popup">
             <div class="q4-popup-title">${title}</div>
-            <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" inputmode="numeric" min="${inputType === 'number' ? 1 : ''}" value="${value}">
+            <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" inputmode="${im}" min="${inputType === 'number' ? 1 : ''}" value="${value}">
+            ${toggleBtn}
             <div class="q4-popup-actions">
                 <button class="q4-popup-btn" onclick="cancelQ4Input(this)">取消</button>
                 <button class="q4-popup-btn q4-popup-btn-confirm" onclick="confirmQ4Input(this)">确定</button>
@@ -8206,6 +8216,18 @@ function editQ4Value(field) {
     const input = overlay.querySelector('#q4-popup-input');
     input.focus();
     if (input.select) input.select();
+}
+
+// 型号输入弹窗：在 数字键盘 / 英文键盘 之间切换
+function toggleQ4InputMode(btn) {
+    const ov = btn.closest('.modal-overlay');
+    const input = ov ? ov.querySelector('#q4-popup-input') : null;
+    _q4InputMode = (_q4InputMode === 'numeric') ? 'text' : 'numeric';
+    if (input) {
+        input.setAttribute('inputmode', _q4InputMode);
+        btn.textContent = (_q4InputMode === 'numeric') ? 'ABC' : '123';
+        input.focus();
+    }
 }
 
 function cancelQ4Input(btn) {
@@ -8243,5 +8265,6 @@ window.pickColor = pickColor;
 window.addListPartFromSelector = addListPartFromSelector;
 window.refreshQ4Labels = refreshQ4Labels;
 window.editQ4Value = editQ4Value;
+window.toggleQ4InputMode = toggleQ4InputMode;
 window.confirmQ4Input = confirmQ4Input;
 window.cancelQ4Input = cancelQ4Input;
