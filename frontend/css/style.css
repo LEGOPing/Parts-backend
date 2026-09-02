@@ -4801,48 +4801,18 @@ body {
     overscroll-behavior: none;
 }
 
-/* ===== 型号英文词库弹窗 ===== */
-.id-abc-picker-modal {
-    align-items: flex-start;
-    padding-top: 12vh;
-}
-
-.id-abc-picker-modal .modal-content {
-    width: 92%;
-    max-width: 460px;
-    max-height: 68vh;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-}
-
-.id-abc-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-}
-
-.id-abc-modal-title {
-    font-size: 15px;
-    font-weight: 700;
-    color: #333;
-}
-
-/* "取消"按钮 */
-.id-abc-cancel {
-    border: none;
-    background: #f0f0f0;
-    color: #666;
-    border-radius: 6px;
-    padding: 6px 14px;
+/* ===== 型号英文词库（内嵌于添加零件弹窗） ===== */
+.id-abc-inline-label {
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
+    color: #666;
+    margin-bottom: 8px;
 }
 
-.id-abc-cancel:hover {
-    background: #e0e0e0;
+.id-abc-empty {
+    padding: 8px;
+    color: #999;
+    font-size: 13px;
 }
 
 /* 待选文字一栏：自动换行、约三行、超出垂直滚动 */
