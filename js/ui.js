@@ -1361,7 +1361,6 @@ function showAddPartSheet() {
                         <div class="part-number-suggestions" id="part-number-suggestions"></div>
                         <span class="part-name-hint" id="part-name-hint"></span>
                     </div>
-                    <button type="button" class="btn-id-abc" onclick="showIDAbcPicker()" title="从英文词汇库选择型号片段">词库</button>
                     <button type="button" class="btn-recognize" onclick="showRecognizeModal()">识别</button>
                 </div>
                 <div class="data-source-hint" id="data-source-hint"></div>
@@ -1979,6 +1978,10 @@ function initAddPartSuggestions() {
     partNumInput.addEventListener('focus', () => {
         if (partNumInput.value && partNumInput.value.trim()) {
             showPartNumSuggestions(partNumInput.value);
+        }
+        // 型号输入时弹出英文词库供选词（取消/选词后短暂不重复弹出）
+        if (Date.now() - lastIDAbcDismiss > 1000) {
+            showIDAbcPicker();
         }
     });
     
@@ -7008,6 +7011,9 @@ async function loadIDAbcOnStartup() {
     }
 }
 
+// 记录英文词库弹窗最近一次关闭时间，避免取消后焦点回到输入框立即重复弹出
+let lastIDAbcDismiss = 0;
+
 // 零件清单-添加零件面板的型号输入"词库"弹窗：从离线缓冲区列出英文词汇供用户选择输入
 async function showIDAbcPicker() {
     let records = await getIDAbcRecords();
@@ -7042,6 +7048,12 @@ async function showIDAbcPicker() {
     `;
     document.body.appendChild(overlay);
 
+    // 关闭弹窗并记录时间（避免立刻重复弹出）
+    const dismiss = () => {
+        lastIDAbcDismiss = Date.now();
+        overlay.remove();
+    };
+
     // "取消"按钮下方一栏待选文字：自动换行、最多显示三行、超出垂直滚动
     const wrapEl = overlay.querySelector('#id-abc-wrap');
     wrapEl.innerHTML = words.map(w =>
@@ -7058,16 +7070,16 @@ async function showIDAbcPicker() {
                 // 触发既有 input 事件，更新联想与零件信息预览
                 input.dispatchEvent(new Event('input', { bubbles: true }));
             }
-            overlay.remove();
+            dismiss();
         });
     });
 
     // "取消"按钮关闭
-    overlay.querySelector('#id-abc-cancel').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#id-abc-cancel').addEventListener('click', dismiss);
 
     // 点击遮罩空白处关闭
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
+        if (e.target === overlay) dismiss();
     });
 }
 

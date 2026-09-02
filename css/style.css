@@ -2219,27 +2219,6 @@ body {
     background: #732d91;
 }
 
-/* 型号输入-词库按钮 */
-.add-part-modal .btn-id-abc {
-    background: #2196F3;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 0 14px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    height: 36px;
-    box-sizing: border-box;
-    flex-shrink: 0;
-    transition: background-color 0.3s;
-}
-
-.add-part-modal .btn-id-abc:hover {
-    background: #1565C0;
-}
-
 /* 识别结果区域 */
 .recognize-result {
     margin-top: 12px;
