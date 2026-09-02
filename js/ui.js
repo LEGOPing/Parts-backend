@@ -1404,6 +1404,10 @@ function showAddPartSheet() {
                     </div>
                 </div>
             </div>
+            <div class="form-section id-abc-inline-section">
+                <div class="id-abc-inline-label">型号英文词库</div>
+                <div class="id-abc-wrap" id="id-abc-inline-wrap"></div>
+            </div>
             <div id="add-part-error" style="color: red; font-size: 12px; display: none; padding: 10px; background: rgba(255, 0, 0, 0.1); border-radius: 4px;"></div>
         </div>
     `;
@@ -1415,6 +1419,8 @@ function showAddPartSheet() {
     
     // 初始化联想功能
     initAddPartSuggestions();
+    // 内嵌英文词库（添加到弹窗下半部）
+    initIDAbcInlineLibrary();
 }
 
 // ==================== 拍照识别弹窗（独立于添加零件表单）====================
@@ -1978,10 +1984,6 @@ function initAddPartSuggestions() {
     partNumInput.addEventListener('focus', () => {
         if (partNumInput.value && partNumInput.value.trim()) {
             showPartNumSuggestions(partNumInput.value);
-        }
-        // 型号输入时弹出英文词库供选词（取消/选词后短暂不重复弹出）
-        if (Date.now() - lastIDAbcDismiss > 1000) {
-            showIDAbcPicker();
         }
     });
     
@@ -7011,11 +7013,11 @@ async function loadIDAbcOnStartup() {
     }
 }
 
-// 记录英文词库弹窗最近一次关闭时间，避免取消后焦点回到输入框立即重复弹出
-let lastIDAbcDismiss = 0;
+// 在添加零件弹窗下半部内嵌英文词库（三行自动换行、垂直滚动），点选词填入型号输入框
+async function initIDAbcInlineLibrary() {
+    const wrapEl = document.getElementById('id-abc-inline-wrap');
+    if (!wrapEl) return;
 
-// 零件清单-添加零件面板的型号输入"词库"弹窗：从离线缓冲区列出英文词汇供用户选择输入
-async function showIDAbcPicker() {
     let records = await getIDAbcRecords();
     if (!records || records.length === 0) {
         try {
@@ -7025,42 +7027,19 @@ async function showIDAbcPicker() {
             records = [];
         }
     }
+
     if (!records || records.length === 0) {
-        alert('英文词汇库为空。请先在"系统设置 - 其他 - 型号英文"生成词汇后使用。');
+        wrapEl.innerHTML = '<div class="id-abc-empty">英文词汇库为空（可在系统设置-其他-型号英文生成）</div>';
         return;
     }
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay active id-abc-picker-modal';
-    overlay.id = 'id-abc-picker-overlay';
-
-    // 按 ID_Abc 顺序（出现次数降序）取词汇
+    // 按 ID_Abc 顺序显示
     const words = records.map(r => r.word);
-
-    overlay.innerHTML = `
-        <div class="modal-content id-abc-picker-content">
-            <div class="id-abc-modal-header">
-                <span class="id-abc-modal-title">型号英文词库（${words.length}）</span>
-                <button type="button" class="id-abc-cancel" id="id-abc-cancel">取消</button>
-            </div>
-            <div class="id-abc-wrap" id="id-abc-wrap"></div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-
-    // 关闭弹窗并记录时间（避免立刻重复弹出）
-    const dismiss = () => {
-        lastIDAbcDismiss = Date.now();
-        overlay.remove();
-    };
-
-    // "取消"按钮下方一栏待选文字：自动换行、最多显示三行、超出垂直滚动
-    const wrapEl = overlay.querySelector('#id-abc-wrap');
     wrapEl.innerHTML = words.map(w =>
         `<span class="id-abc-chip" data-word="${w}">${w}</span>`
     ).join('');
 
-    // 点选词后填入型号输入框并关闭
+    // 点选词后填入型号输入框
     wrapEl.querySelectorAll('.id-abc-chip').forEach(el => {
         el.addEventListener('click', () => {
             const word = el.getAttribute('data-word');
@@ -7070,16 +7049,7 @@ async function showIDAbcPicker() {
                 // 触发既有 input 事件，更新联想与零件信息预览
                 input.dispatchEvent(new Event('input', { bubbles: true }));
             }
-            dismiss();
         });
-    });
-
-    // "取消"按钮关闭
-    overlay.querySelector('#id-abc-cancel').addEventListener('click', dismiss);
-
-    // 点击遮罩空白处关闭
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) dismiss();
     });
 }
 
