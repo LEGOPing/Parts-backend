@@ -7981,3 +7981,91 @@ async function tryCachePartImage(partNum, colorId, url) {
 // 全局暴露，供 onload 属性调用
 window.autoCachePartImage = autoCachePartImage;
 window.tryCachePartImage = tryCachePartImage;
+
+/* ============ 清单页面 ============ */
+// 当前清单内容（零件数组），后续深化设计时作为数据源
+let listParts = [];
+
+// 打开清单页面（Q1 标题+返回 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
+function openListPage() {
+    if (document.getElementById('list-page-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active list-page-overlay';
+    overlay.id = 'list-page-overlay';
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeListPage();
+    });
+
+    overlay.innerHTML = `
+        <div class="list-page">
+            <div class="list-q1">
+                <span class="list-title">清单</span>
+                <button class="list-back-btn" onclick="closeListPage()">返回</button>
+            </div>
+            <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
+            <div class="list-q3" id="list-q3"></div>
+            <div class="list-q4">
+                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能1</button>
+                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能2</button>
+                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能3</button>
+                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能4</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    renderListParts();
+}
+
+function closeListPage() {
+    const overlay = document.getElementById('list-page-overlay');
+    if (overlay) overlay.remove();
+}
+
+// 更新 Q2 信息提示区（清单名称或其他提示）
+function updateListHint(text) {
+    const el = document.getElementById('list-q2');
+    if (el) el.textContent = text;
+}
+
+// 渲染 Q3 零件清单区
+function renderListParts() {
+    const q3 = document.getElementById('list-q3');
+    if (!q3) return;
+
+    if (!listParts.length) {
+        q3.innerHTML = '<div class="list-empty">暂无零件</div>';
+        return;
+    }
+
+    q3.innerHTML = listParts.map((p) => `
+        <div class="list-part-card">
+            <span class="list-part-num">${p.part_num}</span>
+            <span class="list-part-name">${p.name || ''}</span>
+            <span class="list-part-qty">${(p.quantity != null ? '×' + p.quantity : '')}</span>
+        </div>
+    `).join('');
+}
+
+// 向清单中追加一个零件并刷新列表
+function addListPart(part) {
+    if (part && part.part_num) {
+        listParts.push(part);
+        renderListParts();
+    }
+}
+
+// 清空清单
+function clearListParts() {
+    listParts = [];
+    renderListParts();
+}
+
+// 全局暴露，供内联 onclick 调用
+window.openListPage = openListPage;
+window.closeListPage = closeListPage;
+window.updateListHint = updateListHint;
+window.addListPart = addListPart;
+window.clearListParts = clearListParts;
+window.renderListParts = renderListParts;

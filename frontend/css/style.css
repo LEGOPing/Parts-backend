@@ -1405,13 +1405,21 @@ body {
 
 .btn-search { background: #2196F3; color: white; }
 .btn-reset { background: #9E9E9E; color: white; }
+.btn-list { background: #607D8B; color: white; }
 
-.btn-search, .btn-reset {
+.btn-search, .btn-reset, .btn-list {
     border: none;
-    padding: 6px 16px;
+    width: 46px;
+    aspect-ratio: 3 / 2;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0;
+    white-space: nowrap;
 }
 
 .search-results {
@@ -4497,4 +4505,148 @@ body {
 
 .pw-wheel-confirm-btn:active {
     transform: translate(-50%, -50%) scale(0.94);
+}
+
+/* ============ 清单页面 ============ */
+.list-page-overlay {
+    align-items: center;
+}
+
+.list-page {
+    display: flex;
+    flex-direction: column;
+    width: 90%;
+    max-width: 480px;
+    height: 80vh;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* Q1：标题 + 返回按钮 */
+.list-q1 {
+    flex: 0 0 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #eee;
+}
+
+.list-title {
+    font-size: 26px;
+    font-weight: bold;
+    text-align: left;
+    color: var(--black-color);
+}
+
+.list-back-btn {
+    width: 46px;
+    aspect-ratio: 3 / 2;
+    background: #F44336;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0;
+    white-space: nowrap;
+}
+
+/* Q2：信息提示区 */
+.list-q2 {
+    flex: 0 0 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 12px;
+    color: var(--dark-gray-color);
+    box-sizing: border-box;
+    border-bottom: 1px solid #eee;
+}
+
+/* Q3：零件清单区（可滚动，充满剩余空间） */
+.list-q3 {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+}
+
+.list-empty {
+    color: var(--dark-gray-color);
+    font-size: 14px;
+    text-align: center;
+    padding: 24px 0;
+}
+
+.list-part-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--light-gray-color);
+    border: 1px solid var(--light-gray-color);
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+.list-part-num {
+    font-weight: bold;
+    font-size: 14px;
+    color: var(--black-color);
+    min-width: 60px;
+}
+
+.list-part-name {
+    flex: 1;
+    font-size: 13px;
+    color: var(--black-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.list-part-qty {
+    font-size: 13px;
+    color: var(--dark-gray-color);
+    white-space: nowrap;
+}
+
+/* Q4：按钮区（暂定 4 个按钮，功能待深化设计） */
+.list-q4 {
+    flex: 0 0 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 8px;
+    padding: 0 8px;
+    box-sizing: border-box;
+    border-top: 1px solid #eee;
+}
+
+.list-q4-btn {
+    flex: 1;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: #9E9E9E;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    box-sizing: border-box;
+    white-space: nowrap;
 }
