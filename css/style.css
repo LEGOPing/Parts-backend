@@ -4625,28 +4625,92 @@ body {
     white-space: nowrap;
 }
 
-/* Q4：按钮区（暂定 4 个按钮，功能待深化设计） */
+/* Q4：水平分 4 区（型号/颜色/数量/添加按钮） */
 .list-q4 {
     flex: 0 0 46px;
     height: 46px;
     display: flex;
-    align-items: center;
-    justify-content: space-around;
-    gap: 8px;
-    padding: 0 8px;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 3px 8px;
     box-sizing: border-box;
     border-top: 1px solid #eee;
 }
 
-.list-q4-btn {
+.q4-cell {
     flex: 1;
-    height: 28px;
-    border: none;
-    border-radius: 6px;
-    background: #9E9E9E;
-    color: white;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-sizing: border-box;
+}
+
+.q4-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
+}
+
+.q4-label {
+    font-size: 10px;
+    color: var(--dark-gray-color);
+    white-space: nowrap;
+}
+
+.q4-action {
+    font-size: 10px;
+    color: #444;
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0 4px;
+    height: 16px;
+    line-height: 1;
+    box-sizing: border-box;
+}
+
+.q4-input {
+    width: 100%;
+    height: 22px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 0 4px;
     font-size: 12px;
+    box-sizing: border-box;
+}
+
+.q4-value {
+    height: 22px;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    color: var(--black-color);
+}
+
+.q4-add-cell {
+    flex: 0 0 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.q4-add-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: none;
+    background: #4CAF50;
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
     cursor: pointer;
     box-sizing: border-box;
-    white-space: nowrap;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }

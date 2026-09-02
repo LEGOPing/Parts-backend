@@ -8006,10 +8006,29 @@ function openListPage() {
             <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
             <div class="list-q3" id="list-q3"></div>
             <div class="list-q4">
-                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能1</button>
-                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能2</button>
-                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能3</button>
-                <button class="list-q4-btn" onclick="showToast('功能待完善')">功能4</button>
+                <div class="q4-cell">
+                    <div class="q4-top">
+                        <span class="q4-label">型号ID</span>
+                        <button class="q4-action" onclick="identifyModel()">识别</button>
+                    </div>
+                    <input class="q4-input" id="list-model" placeholder="型号" oninput="updateListQty()">
+                </div>
+                <div class="q4-cell">
+                    <div class="q4-top">
+                        <span class="q4-label">颜色ID</span>
+                        <button class="q4-action" onclick="pickColor()">选色</button>
+                    </div>
+                    <input class="q4-input" id="list-color" placeholder="颜色ID" oninput="updateListQty()">
+                </div>
+                <div class="q4-cell">
+                    <div class="q4-top">
+                        <span class="q4-label">数量</span>
+                    </div>
+                    <div class="q4-value" id="list-qty">0</div>
+                </div>
+                <div class="q4-add-cell">
+                    <button class="q4-add-btn" onclick="addListPartFromSelector()">+</button>
+                </div>
             </div>
         </div>
     `;
@@ -8062,6 +8081,43 @@ function clearListParts() {
     renderListParts();
 }
 
+// 识别（待深化设计）
+function identifyModel() {
+    showToast('识别功能待完善');
+}
+
+// 选色（待深化设计）
+function pickColor() {
+    showToast('选色功能待完善');
+}
+
+// 更新 Q4 数量区：显示当前型号在清单中的数量
+function updateListQty() {
+    const qtyEl = document.getElementById('list-qty');
+    if (!qtyEl) return;
+    const model = (document.getElementById('list-model') ? document.getElementById('list-model').value : '').trim();
+    qtyEl.textContent = String(model ? listParts.filter((p) => (p.part_num || '') === model).length : 0);
+}
+
+// “+”：按当前型号/颜色将零件添加到清单（已存在则数量 +1）
+function addListPartFromSelector() {
+    const model = (document.getElementById('list-model') ? document.getElementById('list-model').value : '').trim();
+    const color = (document.getElementById('list-color') ? document.getElementById('list-color').value : '').trim();
+    if (!model) { showToast('请先输入型号ID'); return; }
+    if (!color) { showToast('请先选择颜色'); return; }
+
+    const idx = listParts.findIndex((p) => (p.part_num || '') === model && (p.name || '') === color);
+    if (idx >= 0) {
+        listParts[idx].quantity = (listParts[idx].quantity || 0) + 1;
+    } else {
+        listParts.push({ part_num: model, name: color, quantity: 1 });
+    }
+
+    renderListParts();
+    updateListQty();
+    showToast('已添加到清单');
+}
+
 // 全局暴露，供内联 onclick 调用
 window.openListPage = openListPage;
 window.closeListPage = closeListPage;
@@ -8069,3 +8125,7 @@ window.updateListHint = updateListHint;
 window.addListPart = addListPart;
 window.clearListParts = clearListParts;
 window.renderListParts = renderListParts;
+window.identifyModel = identifyModel;
+window.pickColor = pickColor;
+window.updateListQty = updateListQty;
+window.addListPartFromSelector = addListPartFromSelector;
