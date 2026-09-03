@@ -3401,19 +3401,21 @@ function deltaE76(a, b) {
 }
 
 // ==================== 搜索页拍照识别 ====================
-let searchRecognizeInput = null;
+// 共享的拍照识别核心：压缩图片 → Brickognize 识别 → 别名解析，结果通过回调返回
+let recognizePhotoInput = null;
 
-function recognizePartFromSearch() {
+// 通用拍照识别入口（供搜索页“识别”与清单弹窗“识别”复用）
+function recognizePartPhoto(callback) {
     // 确保隐藏文件输入存在
-    if (!searchRecognizeInput) {
-        searchRecognizeInput = document.createElement('input');
-        searchRecognizeInput.type = 'file';
-        searchRecognizeInput.accept = 'image/*';
-        searchRecognizeInput.style.display = 'none';
-        searchRecognizeInput.addEventListener('change', async () => {
-            const file = searchRecognizeInput.files && searchRecognizeInput.files[0];
+    if (!recognizePhotoInput) {
+        recognizePhotoInput = document.createElement('input');
+        recognizePhotoInput.type = 'file';
+        recognizePhotoInput.accept = 'image/*';
+        recognizePhotoInput.style.display = 'none';
+        recognizePhotoInput.addEventListener('change', async () => {
+            const file = recognizePhotoInput.files && recognizePhotoInput.files[0];
             if (!file) return;
-            searchRecognizeInput.value = '';
+            recognizePhotoInput.value = '';
 
             try {
                 const compressed = await compressImage(file, 1024);
@@ -3423,9 +3425,6 @@ function recognizePartFromSearch() {
 
                 // 别名解析：如果型号在 RB 中找不到，尝试通过别名映射查找
                 const resolvedNum = await resolvePartAlias(candidate.id);
-
-                // 始终显示原始 BG 识别型号（如 4073）
-                document.getElementById('search-part-num').value = candidate.id;
 
                 // 名称：优先从 RB 数据库获取，别名解析后使用别名对应的 RB 数据
                 let name = candidate.name || '';
@@ -3437,30 +3436,40 @@ function recognizePartFromSearch() {
                         }
                     } catch(e) {}
                 }
-                document.getElementById('search-part-name').value = name;
 
-                // 如果 BG 返回了颜色，自动填入颜色ID
-                if (candidate.colorId !== null && candidate.colorId !== undefined) {
-                    document.getElementById('search-color-id').value = candidate.colorId;
-                    updateColorPickButton(candidate.colorId);
-                }
-
-                // 在型号输入框下方显示数据来源提示（始终显示）
-                const dsHint = document.getElementById('search-data-source-hint');
-                if (dsHint) {
-                    dsHint.textContent = `数据来源：${resolvedNum}`;
-                }
-
-                // 执行搜索
-                handleAdvancedSearch();
+                if (callback) callback({ id: candidate.id, resolvedNum, name, colorId: candidate.colorId });
             } catch (err) {
-                console.error('搜索识别失败:', err);
+                console.error('拍照识别失败:', err);
                 alert('识别失败：' + (err && err.message ? err.message : '网络错误'));
             }
         });
-        document.body.appendChild(searchRecognizeInput);
+        document.body.appendChild(recognizePhotoInput);
     }
-    searchRecognizeInput.click();
+    recognizePhotoInput.click();
+}
+
+function recognizePartFromSearch() {
+    recognizePartPhoto((result) => {
+        // 始终显示原始 BG 识别型号（如 4073）
+        document.getElementById('search-part-num').value = result.id;
+
+        document.getElementById('search-part-name').value = result.name;
+
+        // 如果 BG 返回了颜色，自动填入颜色ID
+        if (result.colorId !== null && result.colorId !== undefined) {
+            document.getElementById('search-color-id').value = result.colorId;
+            updateColorPickButton(result.colorId);
+        }
+
+        // 在型号输入框下方显示数据来源提示（始终显示）
+        const dsHint = document.getElementById('search-data-source-hint');
+        if (dsHint) {
+            dsHint.textContent = `数据来源：${result.resolvedNum}`;
+        }
+
+        // 执行搜索
+        handleAdvancedSearch();
+    });
 }
 
 function togglePartNewStatus(isNew) {
@@ -8110,9 +8119,13 @@ function clearListParts() {
     renderListParts();
 }
 
-// 识别（待深化设计）
+// 识别：复用搜索页“识别”的拍照识别能力，将识别到的型号返回给型号标签
 function identifyModel() {
-    showToast('识别功能待完善');
+    recognizePartPhoto((result) => {
+        listModel = result.id;
+        refreshQ4Labels();
+        showToast('已识别型号：' + result.id);
+    });
 }
 
 // 选色（待深化设计）
