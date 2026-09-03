@@ -8234,8 +8234,8 @@ function updateListHint(text) {
     if (el) el.textContent = text;
 }
 
-// 渲染 Q3 零件清单区
-function renderListParts() {
+// 渲染 Q3 零件清单区（零件卡片：左图/中信息/右仓库汇总）
+async function renderListParts() {
     const q3 = document.getElementById('list-q3');
     if (!q3) return;
 
@@ -8244,19 +8244,201 @@ function renderListParts() {
         return;
     }
 
-    q3.innerHTML = listParts.map((p) => `
-        <div class="list-part-card">
-            <span class="list-part-num">${p.part_num}</span>
-            <span class="list-part-name">${p.name || ''}</span>
-            <span class="list-part-qty">${(p.quantity != null ? '×' + p.quantity : '')}</span>
+    q3.innerHTML = listParts.map((p) => {
+        const partNum = p.part_num != null ? p.part_num : '';
+        const colorId = p.colorId != null ? p.colorId : '';
+        return `
+        <div class="list-part-card" data-part-num="${escapeHtml(partNum)}" data-color-id="${escapeHtml(colorId)}">
+            <div class="lpc-left">
+                <div class="lpc-img"><div class="no-image">加载中...</div></div>
+            </div>
+            <div class="lpc-mid">
+                <div class="lpc-num">${escapeHtml(partNum)}</div>
+                <div class="lpc-name"></div>
+                <div class="lpc-row3">
+                    <div class="lpc-color">
+                        <div class="lpc-color-id">${escapeHtml(colorId)}</div>
+                        <div class="lpc-color-name"></div>
+                    </div>
+                    <div class="lpc-qty-wrap">
+                        <div class="lpc-qty-label">数量：</div>
+                        <div class="lpc-qty">${escapeHtml(p.quantity != null ? p.quantity : '')}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="lpc-right">
+                <div class="lpc-repo-label"></div>
+                <div class="lpc-repo-total"></div>
+            </div>
+        </div>`;
+    }).join('');
+
+    // 数量文本较多时自动缩小字体，避免超出边界
+    q3.querySelectorAll('.lpc-qty').forEach(fitListQtyText);
+
+    // 异步补全各卡片：零件名称/颜色名称/图片/仓库数量汇总
+    listParts.forEach((p, i) => {
+        const card = q3.children[i];
+        if (card) enrichListPartCard(card, p);
+    });
+}
+
+// HTML 转义（清单卡片文本安全显示）
+function escapeHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// 数量文本超出 46px 宽度时自动缩小字体（16px 起，最小 8px）
+function fitListQtyText(el) {
+    if (!el) return;
+    let size = 16;
+    el.style.fontSize = size + 'px';
+    while (el.scrollWidth > el.clientWidth + 1 && size > 8) {
+        size--;
+        el.style.fontSize = size + 'px';
+    }
+}
+
+// 异步补全单个清单零件卡片：零件名称、颜色名称、图片、仓库数量汇总
+async function enrichListPartCard(card, part) {
+    const partNum = part.part_num;
+    const colorId = part.colorId;
+
+    // ① 零件名称（RB 数据库）
+    if (typeof getPartByNum === 'function') {
+        getPartByNum(partNum).then((rbPart) => {
+            const nameEl = card.querySelector('.lpc-name');
+            if (rbPart && rbPart.name && nameEl) nameEl.textContent = rbPart.name;
+        }).catch(() => {});
+    }
+
+    // ② 颜色名称（RB 数据库）
+    if (colorId != null && colorId !== '' && typeof getColorById === 'function') {
+        getColorById(colorId).then((color) => {
+            const cnEl = card.querySelector('.lpc-color-name');
+            if (color && color.name && cnEl) cnEl.textContent = color.name;
+        }).catch(() => {});
+    }
+
+    // ③ 零件图片（复用全局 getPartImageUrl 三级读取；onload 时自动写入离线缓存）
+    if (typeof getPartImageUrl === 'function') {
+        getPartImageUrl(partNum, colorId || 0).then((url) => {
+            const imgWrap = card.querySelector('.lpc-img');
+            if (!imgWrap) return;
+            if (url) {
+                const escUrl = url.replace(/"/g, '&quot;');
+                const partNumEsc = String(partNum).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const colorIdNum = colorId || 0;
+                imgWrap.innerHTML = `<img src="${escUrl}" alt="" onload="autoCachePartImage('${partNumEsc}', ${colorIdNum}, this)" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+            } else {
+                imgWrap.innerHTML = '<div class="no-image">暂无图片</div>';
+            }
+        }).catch(() => {
+            const imgWrap = card.querySelector('.lpc-img');
+            if (imgWrap) imgWrap.innerHTML = '<div class="no-image">暂无图片</div>';
+        });
+    }
+
+    // ④ 该零件在系统各仓库的数量总数（点击可查看各仓库详情）
+    try {
+        const summary = await getListPartRepoSummary(partNum);
+        const labelEl = card.querySelector('.lpc-repo-label');
+        const totalEl = card.querySelector('.lpc-repo-total');
+        if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共：` : '';
+        if (totalEl) {
+            totalEl.textContent = summary.total;
+            if (summary.repoCount) {
+                totalEl.title = '点击查看各仓库数量';
+                totalEl.addEventListener('click', () => showListPartRepoDetail(partNum));
+            } else {
+                totalEl.title = '系统暂无该零件库存';
+            }
+        }
+    } catch (e) {
+        console.error('获取清单零件仓库汇总失败:', e);
+    }
+}
+
+// 搜索该零件在系统各仓库的数量汇总（按 part_num 精确匹配，跨仓库）
+async function getListPartRepoSummary(partNum) {
+    try {
+        const [repos, boxes, parts] = await Promise.all([
+            getRepositories(),
+            supabaseRequest('boxes', { select: 'id,repository_id' }),
+            supabaseRequest('parts', { select: 'id,part_num,quantity,box_id' })
+        ]);
+        const boxRepoMap = {};
+        (boxes || []).forEach((b) => { boxRepoMap[b.id] = b.repository_id; });
+        const repoNameMap = {};
+        (repos || []).forEach((r) => { repoNameMap[r.id] = r.name; });
+        const perRepo = {};
+        (parts || []).forEach((p) => {
+            if (p.part_num !== partNum) return;
+            const rid = boxRepoMap[p.box_id];
+            if (rid == null) return;
+            perRepo[rid] = (perRepo[rid] || 0) + (p.quantity || 0);
+        });
+        const entries = Object.keys(perRepo).map((id) => ({
+            id: Number(id),
+            name: repoNameMap[id] || ('仓库' + id),
+            quantity: perRepo[id]
+        }));
+        const total = entries.reduce((s, e) => s + e.quantity, 0);
+        return { repos: entries, total: total, repoCount: entries.length };
+    } catch (error) {
+        console.error('获取清单零件仓库汇总失败:', error.message);
+        return { repos: [], total: 0, repoCount: 0 };
+    }
+}
+
+// 弹窗显示该零件在各个仓库的数量详情
+async function showListPartRepoDetail(partNum) {
+    const summary = await getListPartRepoSummary(partNum);
+    const rows = summary.repos.length
+        ? summary.repos.map((r) => `
+            <div class="repo-detail-row">
+                <span class="repo-detail-name">${escapeHtml(r.name)}</span>
+                <span class="repo-detail-qty">${escapeHtml(r.quantity)}</span>
+            </div>`).join('')
+        : '<div class="repo-detail-empty">系统暂无该零件库存</div>';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content repo-detail-modal';
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">${escapeHtml(partNum)} 仓库分布</span>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            </div>
         </div>
-    `).join('');
+        <div class="modal-body">
+            <div class="repo-detail-list">${rows}</div>
+        </div>
+    `;
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+}
+
+// 将各种来源的零件对象规范化为清单卡片所需结构
+function normalizeListPart(p) {
+    return {
+        part_num: p.part_num,
+        colorId: (p.colorId != null ? p.colorId : (p.color_id != null ? p.color_id : '')),
+        quantity: (p.quantity != null ? p.quantity : 1)
+    };
 }
 
 // 向清单中追加一个零件并刷新列表
 function addListPart(part) {
     if (part && part.part_num) {
-        listParts.push(part);
+        listParts.push(normalizeListPart(part));
         renderListParts();
     }
 }
@@ -8289,11 +8471,11 @@ function addListPartFromSelector() {
     if (!listModel) { showToast('请先输入型号ID'); return; }
     if (!listColor) { showToast('请先选择颜色'); return; }
 
-    const idx = listParts.findIndex((p) => (p.part_num || '') === listModel && (p.name || '') === listColor);
+    const idx = listParts.findIndex((p) => (p.part_num || '') === listModel && (p.colorId || '') === listColor);
     if (idx >= 0) {
         listParts[idx].quantity = (listParts[idx].quantity || 0) + listQty;
     } else {
-        listParts.push({ part_num: listModel, name: listColor, quantity: listQty });
+        listParts.push(normalizeListPart({ part_num: listModel, colorId: listColor, quantity: listQty }));
     }
 
     renderListParts();
