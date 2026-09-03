@@ -4400,14 +4400,14 @@ function setNamePrecision(level) {
     if (picker) picker.closest('.modal-overlay').remove();
 }
 
-function showSearchColorPicker() {
+// 通用颜色选择弹窗（供搜索页“选色”与清单弹窗“选色”复用）
+function showColorPickerModal(partNum, onSelect) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
 
     const sheet = document.createElement('div');
     sheet.className = 'modal-content color-picker-modal';
 
-    const partNum = document.getElementById('search-part-num').value.trim();
     const title = partNum ? `选择颜色 (${partNum})` : '选择颜色';
 
     sheet.innerHTML = `
@@ -4430,14 +4430,22 @@ function showSearchColorPicker() {
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
-    loadSearchColorGrid(partNum);
+    loadColorPickerGrid(partNum, onSelect);
 
     document.getElementById('color-search-input').addEventListener('input', function(e) {
         filterColors(e.target.value);
     });
 }
 
-async function loadSearchColorGrid(partNum) {
+function showSearchColorPicker() {
+    const partNum = document.getElementById('search-part-num').value.trim();
+    showColorPickerModal(partNum, (colorId) => {
+        document.getElementById('search-color-id').value = colorId;
+        updateColorPickButton(colorId);
+    });
+}
+
+async function loadColorPickerGrid(partNum, onSelect) {
     const grid = document.getElementById('color-grid');
     let colors = [];
 
@@ -4493,8 +4501,7 @@ async function loadSearchColorGrid(partNum) {
         `;
 
         colorCard.addEventListener('click', (e) => {
-            document.getElementById('search-color-id').value = color.id;
-            updateColorPickButton(color.id);
+            if (onSelect) onSelect(color.id);
             e.target.closest('.modal-overlay').remove();
         });
 
@@ -8269,9 +8276,12 @@ function identifyModel() {
     });
 }
 
-// 选色（待深化设计）
+// 选色：复用搜索页“选色”的颜色选择弹窗，将选择的颜色ID返回给颜色标签
 function pickColor() {
-    showToast('选色功能待完善');
+    showColorPickerModal(listModel, (colorId) => {
+        listColor = colorId;
+        refreshQ4Labels();
+    });
 }
 
 // “+”：按当前型号/颜色/数量将零件添加到清单（已存在则数量累加）
