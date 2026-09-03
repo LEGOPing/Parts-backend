@@ -3271,6 +3271,8 @@ body {
     max-height: 50vh;
     overflow-y: auto;
     padding: 4px;
+    /* 颜色较少时避免自动行被拉伸填满容器高度导致色块拉长，保持色块原始比例 */
+    align-content: start;
 }
 
 .color-card {
