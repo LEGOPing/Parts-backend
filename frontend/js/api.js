@@ -145,6 +145,149 @@ async function fetchRBFile(fileName) {
     }
 }
 
+// 从 Gitee parts-rb 下载 bl_colors.json 并写入离线 RB 数据库 rb_bl_colors 表。
+// 用于启动补全 / 更新 RB 时加载 BL 颜色表，非阻塞（失败仅告警）。
+async function loadBLColorsToRBDB() {
+    const text = await fetchRBFile('bl_colors.json');
+    if (!text) return { success: false, count: 0, error: 'bl_colors.json 读取失败' };
+    let records;
+    try {
+        records = JSON.parse(text);
+    } catch (e) {
+        return { success: false, count: 0, error: 'bl_colors.json 解析失败: ' + e.message };
+    }
+    return await importBLColorsToRBDb(records);
+}
+
+// ==================== Bricklink 价格指南（catalogPG.asp）====================
+// 价格数据位于“Last 6 Months Sales”下的“New”行：
+//   Min Price / Avg Price / Qty Avg Price / Max Price
+// 因该页面结构与.Product页不同、且有时带 WAF 反爬，这里采用锚定 + 正则的宽松解析，
+// 借助“Last 6 Months Sales”定位区域、以“New”标签定位新件行，避免误取“Stores搜索筛选”里的 Min/Max。
+
+// 从价格指南 HTML 中提取 New 商品的四个价格（含币种），返回 { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice }
+function extractBLPriceGuide(html) {
+    if (!html || typeof html !== 'string') return null;
+
+    // 1. 定位 “Last 6 Months Sales” 区域，限长 40000 字符（避免命中其他页面片段）
+    const anchor = html.indexOf('Last 6 Months Sales');
+    if (anchor < 0) return null;
+    const section = html.slice(anchor, anchor + 40000);
+
+    // 2. 定位 “New” 条件段；页面中 New 可能包在 <a>、<span>、<div> 等标签里，
+    //    取所有候选锚点的最早一个（其后紧跟 New 条件下的价格单元格）。
+    const newCandidates = [
+        section.indexOf('>New<'),
+        section.indexOf('New</a>'),        // 常见：<a ...>New</a>
+        section.indexOf('>New</'),          // <div>New</div> / <span>New</span>
+        section.indexOf('New Price'),       // 备用锚点
+    ].filter(i => i >= 0);
+    const newIdx = newCandidates.length ? Math.min(...newCandidates) : -1;
+    if (newIdx < 0) return null;
+    const newSection = section.slice(newIdx, newIdx + 12000);
+
+    // 币种：取 New 统计区里“货币代码 + 带小数金额”组合（两者可能分属不同 span，
+    //    允许其间有 ≤80 字符的标签/空白）。用三字母代码开头再提炼，避免误取属性里的数字。
+    let currency = '';
+    const curMatch = newSection.match(/(CNY|USD|EUR|GBP|HKD|RMB|JPY|AUD|CAD)[\s\S]{0,80}?[\d,]+\.\d+/i);
+    if (curMatch) currency = String(curMatch[1]).toUpperCase();
+
+    // 3. 提取单个标签的价格。策略：标签后最多 500 字符内，优先匹配
+    //    “币种代码 + 带小数金额”（真实 BL 价格通常带 CNY/USD/EUR 等，且能借此避开
+    //    标签属性里出现的纯数字如 font-weight:700）；仅当标签后确实无币种时才退回
+    //    直接匹配带小数金额。金额必须含小数点，属性里的整数（如 700、80）会被排除。
+    function valueFor(label, allowNoCurrency) {
+        const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const withCur = new RegExp(esc + '[\\s\\S]{0,500}?([A-Z]{2,3})[\\s\\u00a0]*([\\d,]+\\.[\\d]+)', 'i');
+        let m = newSection.match(withCur);
+        if (m) {
+            const v = parseFloat(m[2].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        if (allowNoCurrency) {
+            const noCur = new RegExp(esc + '[\\s\\S]{0,500}?([\\d,]+\\.[\\d]+)', 'i');
+            m = newSection.match(noCur);
+            if (m) {
+                const v = parseFloat(m[1].replace(/,/g, ''));
+                return isNaN(v) ? null : v;
+            }
+        }
+        return null;
+    }
+
+    // Avg Price 须用负向后行排除 "Qty Avg Price"。
+    function avgValue() {
+        const m = newSection.match(/(?<!Qty )Avg Price[\s\S]{0,500}?([A-Z]{2,3})[\s\u00a0]*([\d,]+\.\d+)/i);
+        if (m) {
+            const v = parseFloat(m[2].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        const m2 = newSection.match(/(?<!Qty )Avg Price[\s\S]{0,500}?([\d,]+\.\d+)/i);
+        if (m2) {
+            const v = parseFloat(m2[1].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        return null;
+    }
+
+    const minPrice = valueFor('Min Price', true);
+    const avgPrice = avgValue();
+    const qtyAvgPrice = valueFor('Qty Avg Price', true);
+    const maxPrice = valueFor('Max Price', true);
+
+    if (minPrice === null && avgPrice === null && qtyAvgPrice === null && maxPrice === null) {
+        return null;
+    }
+
+    return { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice };
+}
+
+// 通过 CORS 代理从浏览器抓取 Bricklink 价格指南页并解析 New 件价格
+async function fetchBLPriceGuide(brickLinkPart, blColorId) {
+    const cleanNum = String(brickLinkPart || '').replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) return null;
+    const blUrl = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(blUrl)}`;
+    try {
+        const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+        if (!resp.ok) return null;
+        const html = await resp.text();
+        return extractBLPriceGuide(html);
+    } catch (e) {
+        console.warn('CORS 代理 Bricklink 价格抓取失败:', e.message);
+        return null;
+    }
+}
+
+// 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
+async function resolveBLColorId(rbColorId) {
+    try {
+        const color = await getColorById(rbColorId);
+        const name = color && color.name ? String(color.name) : '';
+        if (!name) return null;
+        const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const target = norm(name);
+        if (!target) return null;
+        const colors = await getAllBLColors();
+        for (const rec of colors) {
+            if (rec && norm(rec.name) === target) return rec.id;
+        }
+        return null; // 未在 BL 颜色表命中，无法确定 BL 颜色ID
+    } catch (e) {
+        console.warn('解析 BL 颜色ID失败:', e.message);
+        return null;
+    }
+}
+
+// 将 RB 型号 + RB 颜色ID 解析为 BL 价格指南所需的 { blPartNum, blColorId }
+async function resolveBLTarget(rbPartNum, rbColorId) {
+    const blColorId = await resolveBLColorId(rbColorId);
+    if (blColorId === null) return null;
+    const blPartNum = String(rbPartNum == null ? '' : rbPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!blPartNum) return null;
+    return { blPartNum, blColorId };
+}
+
 // 分片文件命名常量（与 push_inventory_parts_to_gitee.py 保持一致）
 const INVENTORY_SHARD_BASE = 'inventory_parts_';
 const INVENTORY_SHARD_SUFFIX = '.csv';

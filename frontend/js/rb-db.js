@@ -1,5 +1,6 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 5;
+// 6: 新增 rb_bl_colors（BL 颜色表，来自 bl_colors.json）
+const RB_DB_VERSION = 6;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -14,7 +15,9 @@ const RB_STORES = {
     // 零件别名映射表（来自 Gitee part_aliases.csv，别名→RB标准型号）
     PART_ALIASES: 'rb_part_aliases',
     // 型号英文词汇表（来自 Gitee ID_Abc.json，型号输入弹窗"词库"用）
-    ID_ABC: 'rb_id_abc'
+    ID_ABC: 'rb_id_abc',
+    // BL 颜色表（来自 bl_colors.json，RB 颜色名→BL 颜色ID 的映射依据）
+    BL_COLORS: 'rb_bl_colors'
 };
 
 const RB_STORE_KEYS = {
@@ -27,7 +30,8 @@ const RB_STORE_KEYS = {
     'rb_weights': 'weights',
     'rb_bl_parts': 'bl_parts',
     'rb_part_aliases': 'part_aliases',
-    'rb_id_abc': 'id_abc'
+    'rb_id_abc': 'id_abc',
+    'rb_bl_colors': 'bl_colors'
 };
 
 let rbDbInstance = null;
@@ -81,6 +85,10 @@ function openRBDatabase() {
             // 型号英文词汇表：keyPath 为词汇（word），值列 count（出现次数）
             if (!db.objectStoreNames.contains(RB_STORES.ID_ABC)) {
                 db.createObjectStore(RB_STORES.ID_ABC, { keyPath: 'word' });
+            }
+            // BL 颜色表：keyPath 为 BL 颜色 ID（id），值列 name/rgb/type
+            if (!db.objectStoreNames.contains(RB_STORES.BL_COLORS)) {
+                db.createObjectStore(RB_STORES.BL_COLORS, { keyPath: 'id' });
             }
         };
 
@@ -199,7 +207,8 @@ async function getRBStats() {
             'rb_weights': RB_STORES.WEIGHTS,
             'rb_bl_parts': RB_STORES.BL_PARTS,
             'rb_part_aliases': RB_STORES.PART_ALIASES,
-            'rb_id_abc': RB_STORES.ID_ABC
+            'rb_id_abc': RB_STORES.ID_ABC,
+            'rb_bl_colors': RB_STORES.BL_COLORS
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -352,7 +361,8 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'weights': RB_STORES.WEIGHTS,
         'bl_parts': RB_STORES.BL_PARTS,
         'part_aliases': RB_STORES.PART_ALIASES,
-        'id_abc': RB_STORES.ID_ABC
+        'id_abc': RB_STORES.ID_ABC,
+        'bl_colors': RB_STORES.BL_COLORS
     };
     
     const results = {};
@@ -401,7 +411,8 @@ async function exportRBDatabaseToJSON() {
         'weights': RB_STORES.WEIGHTS,
         'bl_parts': RB_STORES.BL_PARTS,
         'part_aliases': RB_STORES.PART_ALIASES,
-        'id_abc': RB_STORES.ID_ABC
+        'id_abc': RB_STORES.ID_ABC,
+        'bl_colors': RB_STORES.BL_COLORS
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
@@ -1164,5 +1175,47 @@ async function clearIDAbcStore() {
     } catch (error) {
         console.error('清空型号英文词汇失败:', error);
         return false;
+    }
+}
+
+// ===== BL 颜色表（rb_bl_colors）离线缓冲区 =====
+// bl_colors.json 是 [{ id, name, rgb, type }] 数组，来自 Gitee parts-rb 仓库。
+
+// 将 BL 颜色数组写入离线缓冲区（覆盖重建）
+async function importBLColorsToRBDb(records) {
+    try {
+        const data = (records || [])
+            .filter(r => r && r.id !== undefined && r.id !== null)
+            .map(r => ({
+                id: Number(r.id),
+                name: String(r.name || ''),
+                rgb: String(r.rgb || ''),
+                type: String(r.type || '')
+            }));
+        await importRBData(RB_STORES.BL_COLORS, data);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入 BL 颜色表失败:', error);
+        return { success: false, count: 0, error: error.message };
+    }
+}
+
+// 按 BL 颜色 ID 查询颜色记录（含 name/rgb/type）
+async function getBLColorById(blColorId) {
+    try {
+        return await getByKey(RB_STORES.BL_COLORS, blColorId);
+    } catch (error) {
+        console.error('按 BL 颜色ID查询失败:', error);
+        return null;
+    }
+}
+
+// 获取全部 BL 颜色记录
+async function getAllBLColors() {
+    try {
+        return await getAll(RB_STORES.BL_COLORS);
+    } catch (error) {
+        console.error('获取全部 BL 颜色失败:', error);
+        return [];
     }
 }

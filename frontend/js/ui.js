@@ -4833,10 +4833,45 @@ function clearSearchResults() {
     updateNamePrecisionBtn();
 }
 
+// 抓取并渲染 BL 价格（右滑打开价格面板时调用）。
+// 依据 part 的 RB 型号 + RB 颜色ID，解析为 BL 目标并发起价格指南抓取。
+async function fetchAndRenderBLPrice(priceEl, part) {
+    if (!priceEl) return;
+    priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-loading">加载中...</div>';
+    try {
+        if (typeof resolveBLTarget !== 'function') {
+            priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-error">离线库未就绪</div>';
+            return;
+        }
+        const target = await resolveBLTarget(part.part_num, part.color_id);
+        if (!target) {
+            priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-error">无法解析BL型号/颜色</div>';
+            return;
+        }
+        const pricing = await fetchBLPriceGuide(target.blPartNum, target.blColorId);
+        if (!pricing) {
+            priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-error">价格获取失败或暂无数据</div>';
+            return;
+        }
+        const cur = pricing.currency ? pricing.currency + ' ' : '';
+        const rows = [];
+        if (pricing.minPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Min</span><span class="pd-price-val">${cur}${pricing.minPrice}</span></div>`);
+        if (pricing.avgPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${cur}${pricing.avgPrice}</span></div>`);
+        if (pricing.qtyAvgPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${cur}${pricing.qtyAvgPrice}</span></div>`);
+        if (pricing.maxPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${cur}${pricing.maxPrice}</span></div>`);
+        priceEl.innerHTML = `
+            <div class="pd-price-head">BL价格</div>
+            <div class="pd-price-sub">Last 6 Months · New</div>
+            ${rows.join('') || '<div class="pd-price-error">无价格数据</div>'}
+        `;
+    } catch (e) {
+        priceEl.innerHTML = `<div class="pd-price-head">BL价格</div><div class="pd-price-error">错误: ${(e && e.message) || e}</div>`;
+    }
+}
+
 async function showPartDetail(part) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
-
     const sheet = document.createElement('div');
     sheet.className = 'modal-content part-detail-modal';
 
@@ -4925,6 +4960,10 @@ async function showPartDetail(part) {
             </div>
         </div>
         <div class="pd-row pd-image-row" id="pd-image-swipe">
+            <div class="pd-image-price" id="pd-image-price">
+                <div class="pd-price-head">BL价格</div>
+                <div class="pd-price-hint">右滑显示</div>
+            </div>
             <div class="pd-image-content">
                 ${imageHtml}
             </div>
@@ -5050,30 +5089,44 @@ async function showPartDetail(part) {
     statusEl.addEventListener('touchend', cancelStatusLongPress);
     statusEl.addEventListener('touchmove', cancelStatusLongPress);
 
-    // 图片左滑显示变更按钮
+    // 图片左滑显示变更按钮 + 右滑显示 BL 价格面板（价格#pd-image-price位于图片左侧）
     const imageSwipe = sheet.querySelector('#pd-image-swipe');
     const imageContent = imageSwipe.querySelector('.pd-image-content');
     const imageAction = imageSwipe.querySelector('.pd-image-action');
+    const imagePrice = imageSwipe.querySelector('#pd-image-price');
     const actionWidth = 90;
-    let startX = 0, currentX = 0, isSwiping = false, isOpen = false;
+    const priceWidth = 160;
+    let startX = 0, currentX = 0, isSwiping = false;
+    let isActionOpen = false, isPriceOpen = false, priceFetched = false;
+
+    // 统一渲染三块的位置：内容 / 右侧操作 / 左侧价格
+    function renderSwipe() {
+        imageContent.style.transform = `translateX(${currentX}px)`;
+        imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
+        imagePrice.style.transform = `translateX(${currentX - priceWidth}px)`;
+    }
 
     imageContent.style.transition = 'transform 0.25s ease';
     imageAction.style.transition = 'transform 0.25s ease';
+    imagePrice.style.transition = 'transform 0.25s ease';
 
     imageSwipe.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
         startX = e.touches[0].clientX;
         isSwiping = true;
         imageContent.style.transition = 'none';
         imageAction.style.transition = 'none';
+        imagePrice.style.transition = 'none';
+        currentX = isActionOpen ? -actionWidth : (isPriceOpen ? priceWidth : 0);
+        renderSwipe();
     }, { passive: true });
 
     imageSwipe.addEventListener('touchmove', (e) => {
-        if (!isSwiping) return;
+        if (!isSwiping || e.touches.length !== 1) return;
         const dx = e.touches[0].clientX - startX;
-        let baseX = isOpen ? -actionWidth : 0;
-        currentX = Math.max(-actionWidth, Math.min(0, baseX + dx));
-        imageContent.style.transform = `translateX(${currentX}px)`;
-        imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
+        const baseX = isActionOpen ? -actionWidth : (isPriceOpen ? priceWidth : 0);
+        currentX = Math.max(-actionWidth, Math.min(priceWidth, baseX + dx));
+        renderSwipe();
     }, { passive: true });
 
     imageSwipe.addEventListener('touchend', () => {
@@ -5081,19 +5134,32 @@ async function showPartDetail(part) {
         isSwiping = false;
         imageContent.style.transition = 'transform 0.25s ease';
         imageAction.style.transition = 'transform 0.25s ease';
-        if (currentX < -actionWidth / 2) {
-            isOpen = true;
-            imageContent.style.transform = `translateX(-${actionWidth}px)`;
-            imageAction.style.transform = `translateX(0)`;
+        imagePrice.style.transition = 'transform 0.25s ease';
+
+        if (currentX > priceWidth / 2) {
+            isPriceOpen = true;
+            isActionOpen = false;
+            currentX = priceWidth;
+        } else if (currentX < -actionWidth / 2) {
+            isActionOpen = true;
+            isPriceOpen = false;
+            currentX = -actionWidth;
         } else {
-            isOpen = false;
-            imageContent.style.transform = 'translateX(0)';
-            imageAction.style.transform = `translateX(${actionWidth}px)`;
+            isActionOpen = false;
+            isPriceOpen = false;
+            currentX = 0;
+        }
+        renderSwipe();
+
+        // 右滑打开价格面板时，仅首次触发抓取并渲染
+        if (isPriceOpen && !priceFetched) {
+            priceFetched = true;
+            fetchAndRenderBLPrice(imagePrice, part);
         }
     }, { passive: true });
 
-    // 初始化变更按钮位置（隐藏在右侧）
-    imageAction.style.transform = `translateX(${actionWidth}px)`;
+    // 初始化位置：内容居中，右侧操作移出、左侧价格移出
+    renderSwipe();
 
     // 合并按钮点击事件
     const mergeBtn = sheet.querySelector('#pd-merge-btn');
@@ -6803,6 +6869,18 @@ async function loadRBOnStartup() {
             } catch (e) {
                 console.warn('补充加载重量数据失败:', e.message);
             }
+            // 升级场景：旧库无 BL 颜色表数据，补充加载 bl_colors.json
+            try {
+                const blColorsCount = await countRecords(RB_STORES.BL_COLORS);
+                if (blColorsCount === 0) {
+                    const blColorResult = await loadBLColorsToRBDB();
+                    if (blColorResult.success) {
+                        console.log(`补充加载 BL 颜色表: ${blColorResult.count}条`);
+                    }
+                }
+            } catch (e) {
+                console.warn('补充加载 BL 颜色表失败:', e.message);
+            }
             // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
             loadIDAbcOnStartup();
             showRBStatusHint('rb-ready');
@@ -6880,6 +6958,15 @@ async function loadRBOnStartup() {
             console.log(`零件别名映射加载成功: ${Object.keys(aliases).length} 条`);
         } catch (error) {
             console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
+        }
+
+        // 可选：加载 BL 颜色表（bl_colors.json → rb_bl_colors），供颜色映射使用。
+        // 若仓库暂无或导入失败，不阻塞 RB 主库与 ready 状态。
+        try {
+            const blColorResult = await loadBLColorsToRBDB();
+            console.log(`BL 颜色表加载成功: ${blColorResult.count} 条`);
+        } catch (error) {
+            console.warn('BL 颜色表可选加载失败（不影响RB主库）:', error.message);
         }
 
         // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
@@ -7739,6 +7826,17 @@ async function updateRB() {
         } catch (error) {
             console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
             importResults['part_aliases'] = false;
+        }
+
+        // 可选：加载 BL 颜色表（bl_colors.json → rb_bl_colors）
+        try {
+            updateProgress(0.96, '读取 BL 颜色表...', 'bl_colors.json');
+            const blColorResult = await loadBLColorsToRBDB();
+            importResults['bl_colors'] = blColorResult.success;
+            updateProgress(0.98, `BL 颜色表 - ${blColorResult.success ? '导入成功' : '导入失败'}`, `${blColorResult.count}条`);
+        } catch (error) {
+            console.warn('BL 颜色表加载失败（不影响RB主库）:', error.message);
+            importResults['bl_colors'] = false;
         }
 
         // 显示结果
