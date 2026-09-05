@@ -3449,6 +3449,66 @@ body {
     line-height: 1;
 }
 
+/* BL 价格面板（图片左侧，右滑显示） */
+.pd-image-price {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 160px;
+    height: 100%;
+    background: #f0f4f8;
+    border-right: 1px solid #e3e8ee;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+.pd-price-head {
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
+}
+
+.pd-price-sub {
+    font-size: 10px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.pd-price-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.pd-price-label {
+    color: #888;
+    flex-shrink: 0;
+}
+
+.pd-price-val {
+    color: #c62828;
+    font-weight: 700;
+    margin-left: 8px;
+    text-align: right;
+}
+
+.pd-price-loading, .pd-price-error {
+    font-size: 11px;
+    color: #999;
+    line-height: 1.5;
+}
+
+.pd-price-error {
+    color: #e53935;
+}
+
 .pd-image {
     max-height: 168px;
     max-width: 100%;

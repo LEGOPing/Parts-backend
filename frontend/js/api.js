@@ -159,6 +159,105 @@ async function loadBLColorsToRBDB() {
     return await importBLColorsToRBDb(records);
 }
 
+// ==================== Bricklink 价格指南（catalogPG.asp）====================
+// 价格数据位于“Last 6 Months Sales”下的“New”行：
+//   Min Price / Avg Price / Qty Avg Price / Max Price
+// 因该页面结构与.Product页不同、且有时带 WAF 反爬，这里采用锚定 + 正则的宽松解析，
+// 借助“Last 6 Months Sales”定位区域、以“New”标签定位新件行，避免误取“Stores搜索筛选”里的 Min/Max。
+
+// 从价格指南 HTML 中提取 New 商品的四个价格（含币种），返回 { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice }
+function extractBLPriceGuide(html) {
+    if (!html || typeof html !== 'string') return null;
+    // 币种：形如 CNY/USD/EUR 等，跟随价格的货币代码
+    const CURRENCY_RE = /(CNY|USD|EUR|GBP|HKD|RMB|JPY|AUD|CAD)\s*[\d,]+\.\d+/i;
+
+    // 1. 定位 “Last 6 Months Sales” 区域，限长 40000 字符（避免命中其他页面片段）
+    const anchor = html.indexOf('Last 6 Months Sales');
+    if (anchor < 0) return null;
+    const section = html.slice(anchor, anchor + 40000);
+
+    // 2. 定位 “New” 条件段；若存在多个 New，取第一个（其后跟价格单元格）
+    let newIdx = section.indexOf('>New<');
+    if (newIdx < 0) newIdx = section.indexOf('New Price'); // 兼容备用锚点
+    if (newIdx < 0) newIdx = section.indexOf('>New</');
+    if (newIdx < 0) return null;
+    const newSection = section.slice(newIdx, newIdx + 8000);
+
+    // 3. 用标签正则逐个提取金额。币种可选（部分页面不显示币种代码），金额必含小数。
+    //    Avg Price 须用负向后行断言排除 "Qty Avg Price"。
+    function extractValue(text, labelRe) {
+        const m = text.match(labelRe);
+        if (!m) return null;
+        const numRaw = (m[2] != null ? m[2] : m[m.length - 1]).replace(/[^\d.]/g, '');
+        const v = parseFloat(numRaw);
+        return isNaN(v) ? null : v;
+    }
+
+    const minValue = extractValue(newSection, /Min Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
+    const avgValue = extractValue(newSection, /(?<!Qty )Avg Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
+    const qtyAvgValue = extractValue(newSection, /Qty Avg Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
+    const maxValue = extractValue(newSection, /Max Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
+
+    if (minValue === null && avgValue === null && qtyAvgValue === null && maxValue === null) {
+        return null;
+    }
+
+    const curMatch = section.match(CURRENCY_RE);
+    return {
+        currency: curMatch ? String(curMatch[1]).toUpperCase() : '',
+        minPrice: minValue,
+        avgPrice: avgValue,
+        qtyAvgPrice: qtyAvgValue,
+        maxPrice: maxValue
+    };
+}
+
+// 通过 CORS 代理从浏览器抓取 Bricklink 价格指南页并解析 New 件价格
+async function fetchBLPriceGuide(brickLinkPart, blColorId) {
+    const cleanNum = String(brickLinkPart || '').replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) return null;
+    const blUrl = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(blUrl)}`;
+    try {
+        const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+        if (!resp.ok) return null;
+        const html = await resp.text();
+        return extractBLPriceGuide(html);
+    } catch (e) {
+        console.warn('CORS 代理 Bricklink 价格抓取失败:', e.message);
+        return null;
+    }
+}
+
+// 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
+async function resolveBLColorId(rbColorId) {
+    try {
+        const color = await getColorById(rbColorId);
+        const name = color && color.name ? String(color.name) : '';
+        if (!name) return null;
+        const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const target = norm(name);
+        if (!target) return null;
+        const colors = await getAllBLColors();
+        for (const rec of colors) {
+            if (rec && norm(rec.name) === target) return rec.id;
+        }
+        return null; // 未在 BL 颜色表命中，无法确定 BL 颜色ID
+    } catch (e) {
+        console.warn('解析 BL 颜色ID失败:', e.message);
+        return null;
+    }
+}
+
+// 将 RB 型号 + RB 颜色ID 解析为 BL 价格指南所需的 { blPartNum, blColorId }
+async function resolveBLTarget(rbPartNum, rbColorId) {
+    const blColorId = await resolveBLColorId(rbColorId);
+    if (blColorId === null) return null;
+    const blPartNum = String(rbPartNum == null ? '' : rbPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!blPartNum) return null;
+    return { blPartNum, blColorId };
+}
+
 // 分片文件命名常量（与 push_inventory_parts_to_gitee.py 保持一致）
 const INVENTORY_SHARD_BASE = 'inventory_parts_';
 const INVENTORY_SHARD_SUFFIX = '.csv';
