@@ -302,21 +302,35 @@ async function fetchBLPriceGuide(brickLinkPart, blColorId) {
 // 通过后端无头浏览器（Playwright+Chromium）抓取 Bricklink 价格，绕过 AWS WAF 反爬。
 // Bricklink 价格指南（catalogPG.asp）在远端 IP 直连时返回 202 + JS 挑战，需无头浏览器
 // 执行挑战脚本拿到 aws-waf-token 后才能读取真实价格，故走后端 FastAPI /api/parts/price 端点。
-// 返回 { last_6_months, current_for_sale, currency, generated_at }，失败返回 null。
+// 返回 { last_6_months, current_for_sale, currency, generated_at }；
+// 成功数据对象不含 error；失败时返回 { error: '失败原因' }（便于前端展示具体原因）。
 async function fetchBLPriceHeadless(blPartNum, blColorId) {
     const cleanNum = String(blPartNum || '').replace(/[^a-zA-Z0-9]/g, '');
     if (!cleanNum) return null;
     const url = `${BACKEND_URL}/api/parts/price?part_number=${encodeURIComponent(cleanNum)}&color_id=${encodeURIComponent(blColorId)}`;
+    let resp;
     try {
-        const resp = await fetch(url, { signal: AbortSignal.timeout(50000) });
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        if (!data || data.error) return null;
-        return data;
+        resp = await fetch(url, { signal: AbortSignal.timeout(50000) });
     } catch (e) {
-        console.warn('后端无头浏览器价格获取失败:', e.message);
-        return null;
+        return { error: `后端不可达（${BACKEND_URL}）: ${e && e.message ? e.message : e}` };
     }
+    if (!resp.ok) {
+        let msg = `后端返回 HTTP ${resp.status}`;
+        try {
+            const j = await resp.json();
+            if (j && j.error) msg += `: ${j.error}`;
+        } catch (e) { /* 忽略 */ }
+        return { error: msg };
+    }
+    let data;
+    try {
+        data = await resp.json();
+    } catch (e) {
+        return { error: '后端响应解析失败' };
+    }
+    if (!data) return { error: '后端无响应' };
+    if (data.error) return { error: `后端: ${data.error}` };
+    return data;
 }
 
 // 服务端按需抓取：调用 server_bricklink_price.py 的 /api/price 端点。

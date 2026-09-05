@@ -3568,6 +3568,19 @@ body {
     color: #e53935;
 }
 
+.pd-price-detail {
+    font-size: 10px;
+    color: #b0852e;
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.pd-price-ops {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+}
+
 .pd-price-src {
     font-size: 9px;
     color: #2e7d32;
