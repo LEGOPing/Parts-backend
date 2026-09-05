@@ -3321,14 +3321,16 @@ body {
 /* ============ 零件详情弹窗（正方形 1:1） ============ */
 .part-detail-modal {
     width: min(92vw, 380px);
-    height: min(92vw, 380px);
+    height: min(92vw, 440px);
     max-width: 380px;
+    max-height: 92vh;
     padding: 12px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .pd-row {
@@ -3400,6 +3402,7 @@ body {
     border-radius: 8px;
     overflow: hidden;
     position: relative;
+    touch-action: pan-y;
 }
 
 .pd-image-content {
@@ -3449,23 +3452,59 @@ body {
     line-height: 1;
 }
 
-/* BL 价格面板（图片左侧，右滑显示） */
+/* BL 价格面板（旧：图片左侧右滑显示，已废弃） */
 .pd-image-price {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 160px;
-    height: 100%;
-    background: #f0f4f8;
-    border-right: 1px solid #e3e8ee;
-    box-sizing: border-box;
-    padding: 10px 12px;
-    display: flex;
+    display: none;
+}
+
+/* BL 价格独立区块（图片下方） */
+.pd-bl-row {
     flex-direction: column;
-    justify-content: center;
+    align-items: stretch;
+    background: #f7f9fc;
+    border: 1px solid #e3e8ee;
+    border-radius: 8px;
+    padding: 8px 10px;
     gap: 6px;
+}
+
+.pd-bl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.pd-bl-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #34495e;
+}
+
+.pd-bl-fetch-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    background: #43a047;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    line-height: 1;
     flex-shrink: 0;
-    overflow-y: auto;
+}
+
+.pd-bl-fetch-btn:active {
+    background: #2e7d32;
+}
+
+.pd-bl-price {
+    width: 100%;
+}
+
+.pd-price-hint {
+    font-size: 11px;
+    color: #999;
+    line-height: 1.5;
 }
 
 .pd-price-head {
