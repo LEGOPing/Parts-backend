@@ -3484,12 +3484,31 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 12px;
+    font-size: 10px;
+}
+
+.pd-price-block {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #e3e8ee;
+}
+
+.pd-price-block:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.pd-price-day {
+    font-size: 9px;
+    color: #bbb;
+    margin-bottom: 4px;
 }
 
 .pd-price-label {
     color: #888;
     flex-shrink: 0;
+    font-size: 10px;
 }
 
 .pd-price-val {
@@ -3497,6 +3516,7 @@ body {
     font-weight: 700;
     margin-left: 8px;
     text-align: right;
+    font-size: 10px;
 }
 
 .pd-price-loading, .pd-price-error {

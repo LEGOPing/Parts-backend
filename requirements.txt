@@ -7,3 +7,4 @@ pydantic
 pydantic-settings
 apscheduler
 qcloud-cos-sdk-v5
+playwright

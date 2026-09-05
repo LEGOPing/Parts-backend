@@ -4835,22 +4835,53 @@ function clearSearchResults() {
 
 // 抓取并渲染 BL 价格（右滑打开价格面板时调用）。
 // 依据 part 的 RB 型号 + RB 颜色ID，解析为 BL 目标并发起价格指南抓取。
+// 优先走后端无头浏览器（绕过 WAF 返回两组价格），失败回退到 CORS 代理单块抓取。
 async function fetchAndRenderBLPrice(priceEl, part) {
     if (!priceEl) return;
     priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-loading">加载中...</div>';
+    const failMsg = (msg) => { priceEl.innerHTML = `<div class="pd-price-head">BL价格</div><div class="pd-price-error">${msg}</div>`; };
+    // 渲染单个价格块（标题 + New 的四项价格）
+    const block = (title, p) => {
+        if (!p) return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div><div class="pd-price-error">无数据</div></div>`;
+        const cur = p.currency ? p.currency + ' ' : '';
+        const rows = [];
+        if (p.min != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Min</span><span class="pd-price-val">${cur}${p.min}</span></div>`);
+        if (p.avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${cur}${p.avg}</span></div>`);
+        if (p.qty_avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${cur}${p.qty_avg}</span></div>`);
+        if (p.max != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${cur}${p.max}</span></div>`);
+        return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div>${rows.join('') || '<div class="pd-price-error">无数据</div>'}</div>`;
+    };
     try {
         if (typeof resolveBLTarget !== 'function') {
-            priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-error">离线库未就绪</div>';
+            failMsg('离线库未就绪');
             return;
         }
         const target = await resolveBLTarget(part.part_num, part.color_id);
         if (!target) {
-            priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-error">无法解析BL型号/颜色</div>';
+            failMsg('无法解析BL型号/颜色');
             return;
         }
+
+        // 1) 优先：后端无头浏览器返回两组价格（Last 6 Months / Current for Sale）
+        let data = null;
+        if (typeof fetchBLPriceHeadless === 'function') {
+            data = await fetchBLPriceHeadless(target.blPartNum, target.blColorId);
+        }
+        if (data && (data.last_6_months || data.current_for_sale)) {
+            const c = data.currency || '';
+            const day = data.generated_at ? data.generated_at.slice(0, 10) : '';
+            priceEl.innerHTML =
+                '<div class="pd-price-head">BL价格</div>' +
+                (day ? `<div class="pd-price-day">${day}</div>` : '') +
+                block('6个月销量', data.last_6_months && { ...data.last_6_months, currency: c })
+                + block('当前在售', data.current_for_sale && { ...data.current_for_sale, currency: c });
+            return;
+        }
+
+        // 2) 回退：CORS 代理单块抓取（旧方式，仅取 Last 6 Months）
         const pricing = await fetchBLPriceGuide(target.blPartNum, target.blColorId);
         if (!pricing) {
-            priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-error">价格获取失败或暂无数据</div>';
+            failMsg('价格获取失败或暂无数据');
             return;
         }
         const cur = pricing.currency ? pricing.currency + ' ' : '';
@@ -4859,13 +4890,9 @@ async function fetchAndRenderBLPrice(priceEl, part) {
         if (pricing.avgPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${cur}${pricing.avgPrice}</span></div>`);
         if (pricing.qtyAvgPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${cur}${pricing.qtyAvgPrice}</span></div>`);
         if (pricing.maxPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${cur}${pricing.maxPrice}</span></div>`);
-        priceEl.innerHTML = `
-            <div class="pd-price-head">BL价格</div>
-            <div class="pd-price-sub">Last 6 Months · New</div>
-            ${rows.join('') || '<div class="pd-price-error">无价格数据</div>'}
-        `;
+        priceEl.innerHTML = `<div class="pd-price-head">BL价格</div><div class="pd-price-sub">Last 6 Months · New</div>${rows.join('') || '<div class="pd-price-error">无价格数据</div>'}`;
     } catch (e) {
-        priceEl.innerHTML = `<div class="pd-price-head">BL价格</div><div class="pd-price-error">错误: ${(e && e.message) || e}</div>`;
+        failMsg(`错误: ${(e && e.message) || e}`);
     }
 }
 

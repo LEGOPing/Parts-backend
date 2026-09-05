@@ -99,6 +99,51 @@ def get_part_weight_from_bricklink(
 
     return {"part_number": clean_num, "weight": None, "error": last_error or "查询失败"}
 
+@router.get("/price")
+def get_part_price_from_bricklink(
+    part_number: str = Query(..., description="BL 型号，如 3001"),
+    color_id: int = Query(..., description="BL 颜色ID，如 7（Blue）"),
+):
+    """抓取 Bricklink 价格指南，返回两组 New 价格：Last 6 Months / Current for Sale。
+
+    通过无头浏览器（Playwright + Chromium）绕过 Bricklink 的 AWS WAF 反爬，
+    在价格面板右滑时由前端触发。
+
+    端点：GET /api/parts/price?part_number=3001&color_id=7
+    返回：{
+        "part_number": "3001", "color_id": 7,
+        "generated_at": "YYYY-MM-DDTHH:MM:SS",
+        "currency": "CNY",
+        "last_6_months":  {"min":..,"avg":..,"qty_avg":..,"max":..},
+        "current_for_sale": {...}
+    }
+    """
+    from datetime import datetime
+
+    clean_num = "".join(c for c in part_number if c.isalnum())
+    if not clean_num:
+        raise HTTPException(status_code=400, detail="零件型号无效")
+
+    from app.bricklink_price import fetch_price_guide
+
+    result = fetch_price_guide(clean_num, color_id)
+    if not result:
+        return {
+            "part_number": clean_num,
+            "color_id": color_id,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "error": "价格获取失败，可能被 Bricklink 反爬拦截或暂无价格数据",
+        }
+    return {
+        "part_number": clean_num,
+        "color_id": color_id,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "currency": result.get("last_6_months") and result["last_6_months"].get("currency")
+                        or (result.get("current_for_sale") and result["current_for_sale"].get("currency") or ""),
+        "last_6_months": result.get("last_6_months"),
+        "current_for_sale": result.get("current_for_sale"),
+    }
+
 @router.get("/{part_id}", response_model=PartSchema)
 def get_part(part_id: int, db: Session = Depends(get_db)):
     part = db.query(Part).filter(Part.id == part_id).first()
