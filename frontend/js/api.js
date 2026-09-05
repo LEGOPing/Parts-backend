@@ -145,6 +145,20 @@ async function fetchRBFile(fileName) {
     }
 }
 
+// 从 Gitee parts-rb 下载 bl_colors.json 并写入离线 RB 数据库 rb_bl_colors 表。
+// 用于启动补全 / 更新 RB 时加载 BL 颜色表，非阻塞（失败仅告警）。
+async function loadBLColorsToRBDB() {
+    const text = await fetchRBFile('bl_colors.json');
+    if (!text) return { success: false, count: 0, error: 'bl_colors.json 读取失败' };
+    let records;
+    try {
+        records = JSON.parse(text);
+    } catch (e) {
+        return { success: false, count: 0, error: 'bl_colors.json 解析失败: ' + e.message };
+    }
+    return await importBLColorsToRBDb(records);
+}
+
 // 分片文件命名常量（与 push_inventory_parts_to_gitee.py 保持一致）
 const INVENTORY_SHARD_BASE = 'inventory_parts_';
 const INVENTORY_SHARD_SUFFIX = '.csv';
