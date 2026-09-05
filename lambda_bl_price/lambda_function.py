@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import stat
 from datetime import datetime
 
 from app.bricklink_price import fetch_price_guide_via_browser
@@ -28,20 +29,35 @@ _CORS = {
     'Access-Control-Allow-Headers': '*',
 }
 
+# S3/控制台上传解压可能丢失可执行位及依赖共享库，这里统一准备。
+# 依赖库若打包在 zip 的 libs/ 下，则让动态链接器优先加载它们。
+_PW_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pw-browsers')
+_LIBS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'libs')
+
+
+def _prepare_runtime():
+    if os.path.isdir(_LIBS_DIR):
+        os.environ['LD_LIBRARY_PATH'] = '%s:%s' % (_LIBS_DIR, os.environ.get('LD_LIBRARY_PATH', ''))
+    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = _PW_DIR
+
 
 def _clean_part(part):
     return re.sub(r'[^A-Za-z0-9]', '', part or '')
 
 
 def _locate_headless_shell():
-    """在 zip 内的 pw-browsers 目录里定位 headless_shell 可执行文件路径。"""
-    base = os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 'pw-browsers')
+    """在 zip 内的 pw-browsers 目录里定位 headless_shell 可执行文件路径，并恢复可执行位。"""
+    base = os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or _PW_DIR
     for root, _, files in os.walk(base):
-        if 'headless_shell' in files:
-            p = os.path.join(root, 'headless_shell')
-            if os.path.exists(p):
-                return p
+        if 'headless_shell' not in files:
+            continue
+        p = os.path.join(root, 'headless_shell')
+        try:
+            st = os.stat(p)
+            os.chmod(p, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            logger.warning('无法恢复 headless_shell 可执行位: %s', p)
+        return p
     return None
 
 
@@ -54,6 +70,8 @@ def _json(code, obj):
 
 
 def lambda_handler(event, context):
+    # 冷启动：优先准备 LD_LIBRARY_PATH（libs/）和 PLAYWRIGHT_BROWSERS_PATH
+    _prepare_runtime()
     q = event.get('queryStringParameters') or {}
     part = _clean_part(q.get('P') or q.get('part') or q.get('part_number') or '')
     color = str(q.get('colorID') or q.get('color') or q.get('color_id') or '')

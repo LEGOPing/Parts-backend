@@ -153,7 +153,9 @@ def fetch_price_guide_via_browser(part_number, color_id, timeout_ms=45000):
         # 以 --headless=new 运行，等价于无头模式（向后兼容原 headless=True 路径）。
         full_chrome = os.environ.get('BL_CHROME')
         launch_kw = dict(
-            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+            # 无沙箱：容器/函数环境必须；disable-dev-shm-usage：Lambda 的 /dev/shm 很小，
+            # 避免 Chromium 因共享内存不足崩溃
+            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
         )
         if full_chrome and os.path.exists(full_chrome):
             launch_kw['executable_path'] = full_chrome
