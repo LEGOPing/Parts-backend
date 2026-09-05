@@ -13,6 +13,9 @@ const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/c
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
 const GITEE_RB_RAW_URL = 'https://gitee.com/legoping/parts-rb/raw/main';
 const CORS_PROXY = 'https://corsproxy.io/?url=';
+// 服务端按需抓取 Bricklink 价目页的地址：部署并启动 server_bricklink_price.py 后，
+// 把这里填成服务端根地址（如 http://1.2.3.4:8000）。留空则前端不调用服务端抓取。
+const BL_PRICE_SERVER = (typeof window !== 'undefined' && window.BL_PRICE_SERVER) || '';
 
 const RB_DATABASE_FILE = 'rb_database.json';
 const DEFAULT_GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0';
@@ -312,6 +315,32 @@ async function fetchBLPriceHeadless(blPartNum, blColorId) {
         return data;
     } catch (e) {
         console.warn('后端无头浏览器价格获取失败:', e.message);
+        return null;
+    }
+}
+
+// 服务端按需抓取：调用 server_bricklink_price.py 的 /api/price 端点。
+// 每次请求由服务端独立冷启动无头浏览器抓取 BL 公开价目页，返回两组价格。
+// 需先在 api.js 顶部把 BL_PRICE_SERVER 配置为服务端地址；未配置返回 null。
+async function fetchBLPriceFromServer(blPartNum, blColorId) {
+    const cleanNum = String(blPartNum == null ? '' : blPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!BL_PRICE_SERVER || !cleanNum) return null;
+    const url = `${BL_PRICE_SERVER}/api/price?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(65000) });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (!data || !data.ok) return null;
+        const c = (data.last_6_months && data.last_6_months.currency) || '';
+        return {
+            currency: c,
+            last_6_months: data.last_6_months || null,
+            current_for_sale: data.current_for_sale || null,
+            source: 'bl-server',
+            generated_at: data.updated_at || ''
+        };
+    } catch (e) {
+        console.warn('服务端价格抓取失败:', e.message);
         return null;
     }
 }

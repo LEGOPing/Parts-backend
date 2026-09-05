@@ -4874,6 +4874,17 @@ async function fetchAndRenderBLPrice(priceEl, part) {
         try {
             const target = await resolveBLTargetSafe(p);
             let auto = null;
+            // 优先服务端按需抓取（server_bricklink_price.py，每次独立冷启动浏览器）
+            if (typeof fetchBLPriceFromServer === 'function') {
+                auto = await fetchBLPriceFromServer(target.blPartNum, target.blColorId);
+            }
+            if (auto && (auto.last_6_months || auto.current_for_sale)) {
+                const rec = normalizePriceRecord(target, auto, 'bl-server');
+                if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
+                renderPriceData(rec, '已从服务端抓取');
+                return;
+            }
+            // 服务端未配置或失败：回退浏览器直抓/CORS 代理
             if (typeof tryAutoFetchBLPrice === 'function') {
                 auto = await tryAutoFetchBLPrice(target.blPartNum, target.blColorId);
             }
