@@ -4873,6 +4873,10 @@ async function fetchAndRenderBLPrice(priceEl, part) {
         el.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-loading">加载中...</div>';
         try {
             const target = await resolveBLTargetSafe(p);
+            // 服务端未配置时明确提示（便于排查：价格为何不能现抓）
+            if (typeof BL_PRICE_SERVER === 'undefined' || !BL_PRICE_SERVER) {
+                console.warn('[BL价格] 服务端未配置 BL_PRICE_SERVER，按需抓取未启用，将走离线缓存/手动回填');
+            }
             let auto = null;
             // 优先服务端按需抓取（server_bricklink_price.py，每次独立冷启动浏览器）
             if (typeof fetchBLPriceFromServer === 'function') {
