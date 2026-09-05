@@ -283,6 +283,45 @@ async function fetchBLPriceHeadless(blPartNum, blColorId) {
     }
 }
 
+// 自动抓取（尽力而为）：在设备浏览器中直接抓 Bricklink 价格页。
+// Bricklink 受 CORS + AWS WAF 保护，公共 CORS 代理通常被 401/202 拦截，成功率不稳定。
+// 这里依次尝试多种免费代理，拿到"Last 6 Months Sales"即尝试解析；全部失败返回 null，
+// 由调用方转入"新标签打官方页 + 手动回填"流程。返回 { last_6_months, currency } 或 null。
+const AUTO_PRICE_PROXIES = [
+    CORS_PROXY,                                  // corsproxy.io（现在需 API key，大概率 401）
+    'https://api.allorigins.win/raw?url='        // allorigins 免费代理（数据中心 IP，易触发 WAF）
+];
+async function tryAutoFetchBLPrice(blPartNum, blColorId) {
+    const cleanNum = String(blPartNum == null ? '' : blPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) return null;
+    const blUrl = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    for (const proxy of AUTO_PRICE_PROXIES) {
+        try {
+            const resp = await fetch(proxy + encodeURIComponent(blUrl), { signal: AbortSignal.timeout(20000) });
+            if (!resp.ok) continue;
+            const html = await resp.text();
+            if (!html || html.indexOf('Last 6 Months Sales') < 0) continue; // WAF 202 挑战页无此锚点
+            const pricing = extractBLPriceGuide(html);
+            if (pricing && (pricing.minPrice !== null || pricing.avgPrice !== null)) {
+                const c = pricing.currency || '';
+                return {
+                    currency: c,
+                    last_6_months: {
+                        currency: c,
+                        min: pricing.minPrice,
+                        avg: pricing.avgPrice,
+                        qty_avg: pricing.qtyAvgPrice,
+                        max: pricing.maxPrice
+                    }
+                };
+            }
+        } catch (e) {
+            continue;
+        }
+    }
+    return null;
+}
+
 // 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
 async function resolveBLColorId(rbColorId) {
     try {
