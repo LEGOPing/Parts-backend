@@ -208,11 +208,19 @@ def main():
         kw = {}
         if proxy:
             kw['proxy'] = {'server': proxy}
-        browser = p.chromium.launch(
-            headless=True,
+        # 沙箱无 headless-shell 组件时可设 BL_CHROME 指向完整 chromium 二进制，
+        # 以 --headless=new 运行，等价于无头模式（向后兼容原 headless=True 路径）。
+        full_chrome = os.environ.get('BL_CHROME')
+        launch_kw = dict(
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
-            **kw,
         )
+        if full_chrome and os.path.exists(full_chrome):
+            launch_kw['executable_path'] = full_chrome
+            launch_kw['headless'] = False
+            launch_kw['args'].append('--headless=new')
+        else:
+            launch_kw['headless'] = True
+        browser = p.chromium.launch(**launch_kw, **kw)
         try:
             ctx = browser.new_context(
                 user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -222,6 +230,21 @@ def main():
                 locale='en-US',
             )
             page = ctx.new_page()
+            # 预热：先访问一个稳定页完成 AWS WAF 挑战以建立 aws-waf-token，
+            # 之后同 context 内 cookie/localStorage 复用，后续零件页加载会明显更快。
+            try:
+                warm = "https://www.bricklink.com/catalogPG.asp?P=3001&colorID=7"
+                page.goto(warm, wait_until='domcontentloaded', timeout=45000)
+                try:
+                    page.wait_for_selector('text=Last 6 Months Sales', timeout=45000)
+                except Exception:
+                    pass
+                try:
+                    page.wait_for_timeout(1500)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning('预热挑战失败（继续）: %s', str(e)[:80])
             def checkpoint():
                 payload = {
                     'generated_at': generated_at,
@@ -236,12 +259,19 @@ def main():
                 url = (f"https://www.bricklink.com/catalogPG.asp"
                        f"?P={t['part_num']}&colorID={t['color_id']}")
                 try:
-                    page.goto(url, wait_until='domcontentloaded', timeout=20000)
-                    try:
-                        page.wait_for_selector('text=Last 6 Months Sales', timeout=20000)
-                    except Exception:
-                        pass
-                    data = extract_price_guide(page.content())
+                    page.goto(url, wait_until='domcontentloaded', timeout=30000)
+                    # 轮询等待价格数据真正渲染（单一锚点出现不代表挑战已结算），
+                    # 最多尝试 N 次，每次等待后解析，拿到数据即跳出。
+                    data = None
+                    for _ in range(3):
+                        try:
+                            page.wait_for_selector('text=Last 6 Months Sales', timeout=30000)
+                            page.wait_for_timeout(1200)
+                        except Exception:
+                            pass
+                        data = extract_price_guide(page.content())
+                        if data and (data.get('last_6_months') or data.get('current_for_sale')):
+                            break
                     if data and (data.get('last_6_months') or data.get('current_for_sale')):
                         records.append(build_record(t, data, generated_at))
                         succeeded += 1

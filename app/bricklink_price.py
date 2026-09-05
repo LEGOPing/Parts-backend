@@ -149,11 +149,19 @@ def fetch_price_guide_via_browser(part_number, color_id, timeout_ms=45000):
         launch_kwargs = {}
         if proxy:
             launch_kwargs['proxy'] = {'server': proxy}
-        browser = p.chromium.launch(
-            headless=True,
+        # 沙箱无 headless-shell 组件时可设 BL_CHROME 指向完整 chromium 二进制，
+        # 以 --headless=new 运行，等价于无头模式（向后兼容原 headless=True 路径）。
+        full_chrome = os.environ.get('BL_CHROME')
+        launch_kw = dict(
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
-            **launch_kwargs,
         )
+        if full_chrome and os.path.exists(full_chrome):
+            launch_kw['executable_path'] = full_chrome
+            launch_kw['headless'] = False
+            launch_kw['args'].append('--headless=new')
+        else:
+            launch_kw['headless'] = True
+        browser = p.chromium.launch(**launch_kw, **launch_kwargs)
         try:
             context = browser.new_context(
                 user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
