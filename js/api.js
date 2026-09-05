@@ -198,7 +198,9 @@ function extractBLPriceGuide(html) {
     //    直接匹配带小数金额。金额必须含小数点，属性里的整数（如 700、80）会被排除。
     function valueFor(label, allowNoCurrency) {
         const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const withCur = new RegExp(esc + '[\\s\\S]{0,500}?([A-Z]{2,3})[\\s\\u00a0]*([\\d,]+\\.[\\d]+)', 'i');
+        // 币种与金额之间的分隔需兼容空格 / 不间断空格 / HTML 实体 &nbsp;
+        const sep = '(?:[\\s\\u00a0]|&nbsp;)*';
+        const withCur = new RegExp(esc + '[\\s\\S]{0,500}?([A-Z]{2,3})' + sep + '([\\d,]+\\.[\\d]+)', 'i');
         let m = newSection.match(withCur);
         if (m) {
             const v = parseFloat(m[2].replace(/,/g, ''));
@@ -217,7 +219,9 @@ function extractBLPriceGuide(html) {
 
     // Avg Price 须用负向后行排除 "Qty Avg Price"。
     function avgValue() {
-        const m = newSection.match(/(?<!Qty )Avg Price[\s\S]{0,500}?([A-Z]{2,3})[\s\u00a0]*([\d,]+\.\d+)/i);
+        // 币种与金额之间的分隔兼容空格 / 不间断空格 / HTML 实体 &nbsp;
+        const sep = '(?:[\\s\\u00a0]|&nbsp;)*';
+        const m = newSection.match(new RegExp('(?<!Qty )Avg Price[\\s\\S]{0,500}?([A-Z]{2,3})' + sep + '([\\d,]+\\.[\\d]+)', 'i'));
         if (m) {
             const v = parseFloat(m[2].replace(/,/g, ''));
             return isNaN(v) ? null : v;
