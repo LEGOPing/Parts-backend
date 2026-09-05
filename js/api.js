@@ -159,6 +159,39 @@ async function loadBLColorsToRBDB() {
     return await importBLColorsToRBDb(records);
 }
 
+// 启动时加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
+// 只在本地还没有该 key 的价格时写入，保留设备端手动回填/抓取的结果优先。
+// 非阻塞，失败仅告警。返回 { success, added, total }。
+async function loadBLPriceLibraryToRBDb() {
+    const text = await fetchRBFile('BL-price.json');
+    if (!text) return { success: false, added: 0, total: 0, error: 'BL-price.json 读取失败' };
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        return { success: false, added: 0, total: 0, error: 'BL-price.json 解析失败: ' + e.message };
+    }
+    const records = Array.isArray(data) ? data : (data.records || []);
+    let added = 0;
+    for (const rec of records) {
+        if (!rec || !rec.key) continue;
+        try {
+            if (!rec.part_num || rec.color_id === undefined || rec.color_id === null || rec.color_id === '') continue;
+            const existing = (typeof getCachedBLPrice === 'function')
+                ? await getCachedBLPrice(rec.part_num, rec.color_id)
+                : null;
+            if (existing && (existing.last_6_months || existing.current_for_sale)) continue;
+            if (typeof saveCachedBLPrice === 'function') {
+                const ok = await saveCachedBLPrice(rec);
+                if (ok) added++;
+            }
+        } catch (e) {
+            console.warn('写入离线价格失败:', rec.key, e);
+        }
+    }
+    return { success: true, added, total: records.length, generated_at: data.generated_at || '' };
+}
+
 // ==================== Bricklink 价格指南（catalogPG.asp）====================
 // 价格数据位于“Last 6 Months Sales”下的“New”行：
 //   Min Price / Avg Price / Qty Avg Price / Max Price
