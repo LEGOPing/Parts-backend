@@ -4879,32 +4879,20 @@ async function fetchAndRenderBLPrice(priceEl, part) {
         });
     };
 
-    // 重新获取 / 首次拉取：读缓存→自动→手动
+    // 重新获取 / 首次拉取：读缓存→服务端无头浏览器→手动
     const renderAndFetchFresh = async (el, p) => {
-        el.innerHTML = '<div class="pd-price-loading">加载中（Playwright 抓取约需 10~40 秒）...</div>';
+        el.innerHTML = '<div class="pd-price-loading">请求服务端无头浏览器抓取（约 10~40 秒）...</div>';
         const errs = [];
         try {
             const target = await resolveBLTargetSafe(p);
-            let auto = null;
-            // 主路径：后端无头浏览器（Playwright+Chromium）抓取 BL 价格指南，绕过 AWS WAF。
-            if (typeof fetchBLPriceHeadless === 'function') {
-                auto = await fetchBLPriceHeadless(target.blPartNum, target.blColorId);
-            }
+            // 主路径：独立服务端（AWS Lambda，Playwright headless-shell）抓取 BL 价格，绕过 AWS WAF。
+            let auto = (typeof fetchBLPriceFromServer === 'function')
+                ? await fetchBLPriceFromServer(target.blPartNum, target.blColorId)
+                : null;
             if (auto && !auto.error && (auto.last_6_months || auto.current_for_sale)) {
-                const rec = normalizePriceRecord(target, auto, 'playwright');
+                const rec = normalizePriceRecord(target, auto, auto.source || 'bl-server');
                 if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
-                renderPriceData(rec, 'Playwright 实时抓取');
-                return;
-            }
-            if (auto && auto.error) errs.push(auto.error);
-            // 回退：若配置了独立 BL_PRICE_SERVER（server_bricklink_price.py）也尝试一次
-            if (typeof fetchBLPriceFromServer === 'function') {
-                auto = await fetchBLPriceFromServer(target.blPartNum, target.blColorId);
-            }
-            if (auto && !auto.error && (auto.last_6_months || auto.current_for_sale)) {
-                const rec = normalizePriceRecord(target, auto, 'bl-server');
-                if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
-                renderPriceData(rec, '已从服务端抓取');
+                renderPriceData(rec, '无头浏览器抓取');
                 return;
             }
             if (auto && auto.error) errs.push(auto.error);

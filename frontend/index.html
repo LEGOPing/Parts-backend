@@ -9,10 +9,18 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>乐高零件管理系统</title>
+
+    <!-- ======= BL价格服务端地址（AWS Lambda 无头浏览器）=======
+         部署 lambda_bl_price 后，把下面引号内改成它的 https 触发地址，例如：
+         https://xxxxxxxx.execute-api.ap-southeast-1.amazonaws.com/default/bl_price
+         留空时，零件的"获取价格"会提示未配置，并回退到手动回填。-->
+    <script>
+    window.BL_PRICE_SERVER = '';
+    </script>
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=2026090503">
+    <link rel="stylesheet" href="css/style.css?v=2026090504">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -40,11 +48,11 @@
     }
     </script>
 
-    <script src="js/api.js?v=2026090503"></script>
+    <script src="js/api.js?v=2026090504"></script>
     <script src="js/store.js?v=2026081811"></script>
     <script src="js/part-aliases.js?v=2026082911"></script>
     <script src="js/rb-db.js?v=2026090501"></script>
-    <script src="js/ui.js?v=2026090503"></script>
+    <script src="js/ui.js?v=2026090504"></script>
 </head>
 <body>
     <div class="container">

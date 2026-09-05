@@ -157,8 +157,13 @@ def fetch_price_guide_via_browser(part_number, color_id, timeout_ms=45000):
         )
         if full_chrome and os.path.exists(full_chrome):
             launch_kw['executable_path'] = full_chrome
-            launch_kw['headless'] = False
-            launch_kw['args'].append('--headless=new')
+            # headless-shell（Lambda 等场景）不支持 --headless=new，直接以无头方式启动；
+            # 完整 Chrome 则用 --headless=new（等价无头，兼容既有部署）。
+            if os.environ.get('BL_HEADLESS_SHELL') == '1' or 'headless_shell' in full_chrome.lower():
+                launch_kw['headless'] = True
+            else:
+                launch_kw['headless'] = False
+                launch_kw['args'].append('--headless=new')
         else:
             launch_kw['headless'] = True
         browser = p.chromium.launch(**launch_kw, **launch_kwargs)
