@@ -4840,7 +4840,18 @@ function clearSearchResults() {
 async function fetchAndRenderBLPrice(priceEl, part) {
     if (!priceEl) return;
     priceEl.innerHTML = '<div class="pd-price-loading">加载中（Playwright 抓取约需 10~40 秒）...</div>';
-    const failMsg = (msg) => { priceEl.innerHTML = `<div class="pd-price-error">${msg}</div>`; };
+    // msg 为主提示；detail 为失败具体原因；showManual=true 显示手动填价入口
+    const failMsg = (msg, detail) => {
+        const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/\n/g, ' ');
+        priceEl.innerHTML =
+            `<div class="pd-price-error">${esc(msg)}</div>` +
+            (detail ? `<div class="pd-price-detail">${esc(detail)}</div>` : '') +
+            `<div class="pd-price-ops"><span class="pd-price-refresh" id="pd-price-mretry">↻ 重试</span><span class="pd-price-refresh" id="pd-price-mmanual">✎ 手动填价</span></div>`;
+        const mr = priceEl.querySelector('#pd-price-mretry');
+        if (mr) mr.addEventListener('click', (e) => { e.stopPropagation(); renderAndFetchFresh(priceEl, part); });
+        const mm = priceEl.querySelector('#pd-price-mmanual');
+        if (mm) mm.addEventListener('click', (e) => { e.stopPropagation(); openManualPriceDialogFromFail(part); });
+    };
     // 渲染单条价格记录（两组：Last 6 Months / Current for Sale）
     const renderPriceData = (rec, sourceLabel) => {
         const c = rec && rec.currency ? rec.currency + ' ' : '';
@@ -4871,6 +4882,7 @@ async function fetchAndRenderBLPrice(priceEl, part) {
     // 重新获取 / 首次拉取：读缓存→自动→手动
     const renderAndFetchFresh = async (el, p) => {
         el.innerHTML = '<div class="pd-price-loading">加载中（Playwright 抓取约需 10~40 秒）...</div>';
+        const errs = [];
         try {
             const target = await resolveBLTargetSafe(p);
             let auto = null;
@@ -4878,22 +4890,24 @@ async function fetchAndRenderBLPrice(priceEl, part) {
             if (typeof fetchBLPriceHeadless === 'function') {
                 auto = await fetchBLPriceHeadless(target.blPartNum, target.blColorId);
             }
-            if (auto && (auto.last_6_months || auto.current_for_sale)) {
+            if (auto && !auto.error && (auto.last_6_months || auto.current_for_sale)) {
                 const rec = normalizePriceRecord(target, auto, 'playwright');
                 if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
                 renderPriceData(rec, 'Playwright 实时抓取');
                 return;
             }
+            if (auto && auto.error) errs.push(auto.error);
             // 回退：若配置了独立 BL_PRICE_SERVER（server_bricklink_price.py）也尝试一次
             if (typeof fetchBLPriceFromServer === 'function') {
                 auto = await fetchBLPriceFromServer(target.blPartNum, target.blColorId);
             }
-            if (auto && (auto.last_6_months || auto.current_for_sale)) {
+            if (auto && !auto.error && (auto.last_6_months || auto.current_for_sale)) {
                 const rec = normalizePriceRecord(target, auto, 'bl-server');
                 if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
                 renderPriceData(rec, '已从服务端抓取');
                 return;
             }
+            if (auto && auto.error) errs.push(auto.error);
             // 自动未成：新标签打官方页 + 手动回填
             openManualPriceDialog(target, p)
                 .then((rec) => {
@@ -4902,20 +4916,21 @@ async function fetchAndRenderBLPrice(priceEl, part) {
                         renderPriceData(rec, '手动回填');
                         return;
                     }
-                    renderCachedOrFail(el, p);
+                    renderCachedOrFail(el, p, errs.length ? errs.join('；') : '');
                 })
                 .catch((err) => {
                     console.error('手动填价失败:', err);
-                    renderCachedOrFail(el, p);
+                    renderCachedOrFail(el, p, errs.length ? errs.join('；') : '');
                 });
         } catch (e) {
             console.error('BL价格拉取失败:', e);
-            renderCachedOrFail(el, p);
+            errs.push((e && e.message) || String(e));
+            renderCachedOrFail(el, p, errs.join('；'));
         }
     };
 
     // 全部失败时：若有缓存读缓存，否则提示
-    const renderCachedOrFail = async (el, p) => {
+    const renderCachedOrFail = async (el, p, detail) => {
         try {
             const target = await resolveBLTargetSafe(p);
             const cached = (typeof getCachedBLPrice === 'function') ? await getCachedBLPrice(target.blPartNum, target.blColorId) : null;
@@ -4924,7 +4939,21 @@ async function fetchAndRenderBLPrice(priceEl, part) {
                 return;
             }
         } catch (e) { /* 忽略 */ }
-        failMsg('价格获取失败或暂无数据');
+        failMsg('价格获取失败或暂无数据', detail);
+    };
+
+    // 失败后手动填价入口（重新解析 target 并打开手动回填弹窗）
+    const openManualPriceDialogFromFail = async (p) => {
+        try {
+            const target = await resolveBLTargetSafe(p);
+            const rec = await openManualPriceDialog(target, p);
+            if (rec) {
+                if (typeof saveCachedBLPrice === 'function') saveCachedBLPrice(rec);
+                renderPriceData(rec, '手动回填');
+            }
+        } catch (e) {
+            failMsg('无法打开手动填价', (e && e.message) || String(e));
+        }
     };
 
     // 组装 target（解析型号/颜色）
