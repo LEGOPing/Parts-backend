@@ -299,67 +299,40 @@ async function fetchBLPriceGuide(brickLinkPart, blColorId) {
     }
 }
 
-// 通过后端无头浏览器（Playwright+Chromium）抓取 Bricklink 价格，绕过 AWS WAF 反爬。
-// Bricklink 价格指南（catalogPG.asp）在远端 IP 直连时返回 202 + JS 挑战，需无头浏览器
-// 执行挑战脚本拿到 aws-waf-token 后才能读取真实价格，故走后端 FastAPI /api/parts/price 端点。
-// 返回 { last_6_months, current_for_sale, currency, generated_at }；
-// 成功数据对象不含 error；失败时返回 { error: '失败原因' }（便于前端展示具体原因）。
-async function fetchBLPriceHeadless(blPartNum, blColorId) {
-    const cleanNum = String(blPartNum || '').replace(/[^a-zA-Z0-9]/g, '');
-    if (!cleanNum) return null;
-    const url = `${BACKEND_URL}/api/parts/price?part_number=${encodeURIComponent(cleanNum)}&color_id=${encodeURIComponent(blColorId)}`;
+// 服务端按需抓取：调用独立服务端（默认 AWS Lambda 无头浏览器，见 lambda_bl_price/）的 /api/price 端点。
+// Bricklink 价格指南（catalogPG.asp）在远端 IP 直连时返回 202 + AWS WAF JS 挑战，需无头浏览器执行挑战
+// 拿到 aws-waf-token 后才能读到真实价格，故由服务端 Playwright headless-shell 抓取。
+// 需在 api.js 顶部把 BL_PRICE_SERVER 配置为该服务端的 https 公网域名；未配置返回 {error:'…'}。
+async function fetchBLPriceFromServer(blPartNum, blColorId) {
+    const cleanNum = String(blPartNum == null ? '' : blPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!BL_PRICE_SERVER) return { error: 'BL_PRICE_SERVER 未配置，请先指向服务端地址' };
+    if (!cleanNum) return { error: '无有效 BL 型号' };
+    const url = `${BL_PRICE_SERVER}/api/price?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
     let resp;
     try {
-        resp = await fetch(url, { signal: AbortSignal.timeout(50000) });
+        resp = await fetch(url, { signal: AbortSignal.timeout(65000) });
     } catch (e) {
-        return { error: `后端不可达（${BACKEND_URL}）: ${e && e.message ? e.message : e}` };
+        return { error: `服务端不可达（${BL_PRICE_SERVER}）: ${e && e.message ? e.message : e}` };
     }
-    if (!resp.ok) {
-        let msg = `后端返回 HTTP ${resp.status}`;
-        try {
-            const j = await resp.json();
-            if (j && j.error) msg += `: ${j.error}`;
-        } catch (e) { /* 忽略 */ }
-        return { error: msg };
-    }
+    if (!resp.ok) return { error: `服务端返回 HTTP ${resp.status}` };
     let data;
     try {
         data = await resp.json();
     } catch (e) {
-        return { error: '后端响应解析失败' };
+        return { error: '服务端响应解析失败' };
     }
-    if (!data) return { error: '后端无响应' };
-    if (data.error) return { error: `后端: ${data.error}` };
-    return data;
-}
-
-// 服务端按需抓取：调用 server_bricklink_price.py 的 /api/price 端点。
-// 每次请求由服务端独立冷启动无头浏览器抓取 BL 公开价目页，返回两组价格。
-// 需先在 api.js 顶部把 BL_PRICE_SERVER 配置为服务端地址；未配置返回 null。
-async function fetchBLPriceFromServer(blPartNum, blColorId) {
-    const cleanNum = String(blPartNum == null ? '' : blPartNum).replace(/[^a-zA-Z0-9]/g, '');
-    if (!BL_PRICE_SERVER || !cleanNum) return null;
-    const url = `${BL_PRICE_SERVER}/api/price?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
-    try {
-        const resp = await fetch(url, { signal: AbortSignal.timeout(65000) });
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        if (!data || !data.ok) return null;
-        const c = (data && data.currency)
-            || (data.last_6_months && data.last_6_months.currency)
-            || (data.current_for_sale && data.current_for_sale.currency)
-            || '';
-        return {
-            currency: c,
-            last_6_months: data.last_6_months || null,
-            current_for_sale: data.current_for_sale || null,
-            source: 'bl-server',
-            generated_at: data.updated_at || data.generated_at || ''
-        };
-    } catch (e) {
-        console.warn('服务端价格抓取失败:', e.message);
-        return null;
-    }
+    if (!data || data.ok === false) return { error: (data && data.error) || '服务端未返回价格数据' };
+    const c = (data && data.currency)
+        || (data.last_6_months && data.last_6_months.currency)
+        || (data.current_for_sale && data.current_for_sale.currency)
+        || '';
+    return {
+        currency: c,
+        last_6_months: data.last_6_months || null,
+        current_for_sale: data.current_for_sale || null,
+        source: 'bl-server',
+        generated_at: data.updated_at || data.generated_at || ''
+    };
 }
 
 // 自动抓取（尽力而为）：在设备浏览器中直接抓 Bricklink 价格页。
