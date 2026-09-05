@@ -168,48 +168,78 @@ async function loadBLColorsToRBDB() {
 // 从价格指南 HTML 中提取 New 商品的四个价格（含币种），返回 { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice }
 function extractBLPriceGuide(html) {
     if (!html || typeof html !== 'string') return null;
-    // 币种：形如 CNY/USD/EUR 等，跟随价格的货币代码
-    const CURRENCY_RE = /(CNY|USD|EUR|GBP|HKD|RMB|JPY|AUD|CAD)\s*[\d,]+\.\d+/i;
 
     // 1. 定位 “Last 6 Months Sales” 区域，限长 40000 字符（避免命中其他页面片段）
     const anchor = html.indexOf('Last 6 Months Sales');
     if (anchor < 0) return null;
     const section = html.slice(anchor, anchor + 40000);
 
-    // 2. 定位 “New” 条件段；若存在多个 New，取第一个（其后跟价格单元格）
-    let newIdx = section.indexOf('>New<');
-    if (newIdx < 0) newIdx = section.indexOf('New Price'); // 兼容备用锚点
-    if (newIdx < 0) newIdx = section.indexOf('>New</');
+    // 2. 定位 “New” 条件段；页面中 New 可能包在 <a>、<span>、<div> 等标签里，
+    //    取所有候选锚点的最早一个（其后紧跟 New 条件下的价格单元格）。
+    const newCandidates = [
+        section.indexOf('>New<'),
+        section.indexOf('New</a>'),        // 常见：<a ...>New</a>
+        section.indexOf('>New</'),          // <div>New</div> / <span>New</span>
+        section.indexOf('New Price'),       // 备用锚点
+    ].filter(i => i >= 0);
+    const newIdx = newCandidates.length ? Math.min(...newCandidates) : -1;
     if (newIdx < 0) return null;
-    const newSection = section.slice(newIdx, newIdx + 8000);
+    const newSection = section.slice(newIdx, newIdx + 12000);
 
-    // 3. 用标签正则逐个提取金额。币种可选（部分页面不显示币种代码），金额必含小数。
-    //    Avg Price 须用负向后行断言排除 "Qty Avg Price"。
-    function extractValue(text, labelRe) {
-        const m = text.match(labelRe);
-        if (!m) return null;
-        const numRaw = (m[2] != null ? m[2] : m[m.length - 1]).replace(/[^\d.]/g, '');
-        const v = parseFloat(numRaw);
-        return isNaN(v) ? null : v;
-    }
+    // 币种：取 New 统计区里“货币代码 + 带小数金额”组合（两者可能分属不同 span，
+    //    允许其间有 ≤80 字符的标签/空白）。用三字母代码开头再提炼，避免误取属性里的数字。
+    let currency = '';
+    const curMatch = newSection.match(/(CNY|USD|EUR|GBP|HKD|RMB|JPY|AUD|CAD)[\s\S]{0,80}?[\d,]+\.\d+/i);
+    if (curMatch) currency = String(curMatch[1]).toUpperCase();
 
-    const minValue = extractValue(newSection, /Min Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
-    const avgValue = extractValue(newSection, /(?<!Qty )Avg Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
-    const qtyAvgValue = extractValue(newSection, /Qty Avg Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
-    const maxValue = extractValue(newSection, /Max Price\D{0,120}?(?:([A-Z]{2,3})\s*)?([\d,]+\.\d+)/i);
-
-    if (minValue === null && avgValue === null && qtyAvgValue === null && maxValue === null) {
+    // 3. 提取单个标签的价格。策略：标签后最多 500 字符内，优先匹配
+    //    “币种代码 + 带小数金额”（真实 BL 价格通常带 CNY/USD/EUR 等，且能借此避开
+    //    标签属性里出现的纯数字如 font-weight:700）；仅当标签后确实无币种时才退回
+    //    直接匹配带小数金额。金额必须含小数点，属性里的整数（如 700、80）会被排除。
+    function valueFor(label, allowNoCurrency) {
+        const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const withCur = new RegExp(esc + '[\\s\\S]{0,500}?([A-Z]{2,3})[\\s\\u00a0]*([\\d,]+\\.[\\d]+)', 'i');
+        let m = newSection.match(withCur);
+        if (m) {
+            const v = parseFloat(m[2].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        if (allowNoCurrency) {
+            const noCur = new RegExp(esc + '[\\s\\S]{0,500}?([\\d,]+\\.[\\d]+)', 'i');
+            m = newSection.match(noCur);
+            if (m) {
+                const v = parseFloat(m[1].replace(/,/g, ''));
+                return isNaN(v) ? null : v;
+            }
+        }
         return null;
     }
 
-    const curMatch = section.match(CURRENCY_RE);
-    return {
-        currency: curMatch ? String(curMatch[1]).toUpperCase() : '',
-        minPrice: minValue,
-        avgPrice: avgValue,
-        qtyAvgPrice: qtyAvgValue,
-        maxPrice: maxValue
-    };
+    // Avg Price 须用负向后行排除 "Qty Avg Price"。
+    function avgValue() {
+        const m = newSection.match(/(?<!Qty )Avg Price[\s\S]{0,500}?([A-Z]{2,3})[\s\u00a0]*([\d,]+\.\d+)/i);
+        if (m) {
+            const v = parseFloat(m[2].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        const m2 = newSection.match(/(?<!Qty )Avg Price[\s\S]{0,500}?([\d,]+\.\d+)/i);
+        if (m2) {
+            const v = parseFloat(m2[1].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        return null;
+    }
+
+    const minPrice = valueFor('Min Price', true);
+    const avgPrice = avgValue();
+    const qtyAvgPrice = valueFor('Qty Avg Price', true);
+    const maxPrice = valueFor('Max Price', true);
+
+    if (minPrice === null && avgPrice === null && qtyAvgPrice === null && maxPrice === null) {
+        return null;
+    }
+
+    return { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice };
 }
 
 // 通过 CORS 代理从浏览器抓取 Bricklink 价格指南页并解析 New 件价格
