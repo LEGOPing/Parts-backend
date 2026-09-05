@@ -51,80 +51,61 @@ function cleanPartNum(p) {
 }
 
 // ----------------------------------------------------------------------------
-// 从价格指南 HTML 中解析两组价格（移植自 app/bricklink_price.py 的正则逻辑）
+// 从价格指南 HTML 中解析两组价格（移植自 app/bricklink_price.py，输出完全一致）
 //
-// Bricklink 价格指南是一个"指标为行、条件为列"的网格，列顺序恒为：
-//   [Last6-New, Last6-Used, Current-New, Current-Used]
+// Bricklink 价格指南是一个"指标为行、条件为列"的网格，4 个数据列恒为：
+//   [Last6-New(col0), Last6-Used(col1), Current-New(col2), Current-Used(col3)]
 // 单元格形如：<td>Min Price:</td><td><b>CNY&nbsp;0.07</b></td>
+//
+// 返回（New 条件，与前端期待的结构一致）：
+//   {
+//     last_6_months:     { min, avg, qty_avg, max, currency },
+//     current_for_sale:  { min, avg, qty_avg, max, currency },
+//   }
 // ----------------------------------------------------------------------------
 function extractPriceGuide(html) {
+  if (!html || typeof html !== 'string') return null;
+  const idx = html.indexOf('Last 6 Months Sales');
+  if (idx < 0) return null;
+
+  // 从 "Last 6 Months Sales" 标题起截取足够范围（覆盖四个条件列；不含更下方的在售列表）
+  const section = html.slice(idx, idx + 20000);
+
   // 注意：Qty Avg Price 必须先于 Avg Price，避免贪婪误匹配
   const re = /<td>(Min Price|Qty Avg Price|Avg Price|Max Price):<\/td>\s*<td><b>([A-Z]{2,3})?(?:\s|&nbsp;|\u00a0)*([\d,]+\.\d+)<\/b><\/td>/gi;
-  const cols = { min: [], avg: [], qty_avg: [], max: [] };
+  const cells = { min: [], avg: [], qty_avg: [], max: [] };
   let m;
-  while ((m = re.exec(html)) !== null) {
+  while ((m = re.exec(section)) !== null) {
     const label = m[1].toLowerCase();
-    const currency = (m[2] || '');
+    const currency = (m[2] || '').toUpperCase();
     const value = parseFloat(m[3].replace(/,/g, ''));
-    cols[label].push({ currency, value });
+    const key = label === 'min price' ? 'min'
+      : label === 'qty avg price' ? 'qty_avg'
+      : label === 'avg price' ? 'avg' : 'max';
+    cells[key].push({ currency, value });
   }
 
-  // 用锚点找到两个分区，只取分区内的格子，避免误取 Stores 搜索里的范围
-  const parts = {};
-  const secRe = /(Last 6 Months Sales|Current Items for Sale)([\s\S]*?)(?=<h1|$)/gi;
-  let s;
-  while ((s = secRe.exec(html)) !== null) {
-    const bucket = [];
-    const cRe = /\b(Min Price|Qty Avg Price|Avg Price|Max Price):/gi;
-    let c;
-    let lastIdx = 0;
-    let lastLabel = '';
-    let lastRec = null;
-    while ((c = cRe.exec(s[2])) !== null) {
-      const label = c[1].toLowerCase();
-      // 取紧随其后的数字作为金额
-      const seg = s[2].slice(c.index + c[0].length, c.index + c[0].length + 200);
-      const num = seg.match(/<b>([A-Z]{2,3})?(?:\s|&nbsp;|\u00a0)*([\d,]+\.\d+)<\/b>/);
-      if (num) {
-        const kind = label === 'min price' ? 'min'
-          : label === 'qty avg price' ? 'qty_avg'
-          : label === 'avg price' ? 'avg' : 'max';
-        bucket.push({ kind, currency: num[1], value: parseFloat(num[2].replace(/,/g, '')) });
-      }
-    }
-    // bucket 顺序就是列顺序 [New,Used,New,Used...]；按列切分不在此处做，
-    // 统一交给下方对 4 列规约，这里仅标记分区原始序列。
-    parts[s[1].trim()] = bucket;
+  // 取某一条件列(c0=New 用在 Last6；c2=New 用在 Current)的四项价格，与 Python 对齐
+  function blockFromCols(col) {
+    const get = (key) => {
+      const lst = cells[key] || [];
+      return lst[col] ? lst[col].value : null;
+    };
+    const cur = (key) => {
+      const lst = cells[key] || [];
+      return lst[col] ? lst[col].currency : '';
+    };
+    const min = get('min'), avg = get('avg'), qty = get('qty_avg'), max = get('max');
+    if (min == null && avg == null && qty == null && max == null) return null;
+    return {
+      currency: cur('min') || cur('avg') || cur('qty_avg') || cur('max'),
+      min, avg, qty_avg: qty, max,
+    };
   }
-
-  // 规约出按条件的 4 列结构。每个分区下按每 2 个指标布局还原列：
-  // 列序恒为 [Last6New, Last6Used, CurrentNew, CurrentUsed]
-  // bucket 内相邻 [min,avg,min,avg...] 以 4 个指标为一组 => 一组 = 一列
-  function groupColumns(bucket) {
-    // 每列包含 4 个指标：min/avg/qty_avg/max（缺失则 null）
-    const columns = [[], [], [], []]; // last6new, last6used, curnew, curused
-    let col = 0;
-    let cur = { min: null, avg: null, qty_avg: null, max: null, currency: '' };
-    for (const r of bucket) {
-      cur[r.kind] = r.value;
-      if (r.currency) cur.currency = r.currency;
-      if (cur.min && cur.avg && (r.kind === 'max')) {
-        columns[col] = cur;
-        col = (col + 1) % 4;
-        cur = { min: null, avg: null, qty_avg: null, max: null, currency: '' };
-      }
-    }
-    return columns;
-  }
-
-  const last6 = groupColumns(parts['Last 6 Months Sales'] || []);
-  const current = groupColumns(parts['Current Items for Sale'] || []);
-  const currency = (last6[0] && last6[0].currency) || (current[0] && current[0].currency) || 'CNY';
 
   return {
-    currency,
-    last_6_months: { new: last6[0], used: last6[1] },
-    current_for_sale: { new: current[0], used: current[1] },
+    last_6_months: blockFromCols(0),   // Last6 · New
+    current_for_sale: blockFromCols(2), // Current · New
   };
 }
 
@@ -212,28 +193,33 @@ export default {
 
     // 5) 解析
     const parsed = extractPriceGuide(html);
-    const hasData =
-      (parsed.last_6_months.new && parsed.last_6_months.new.min != null) ||
-      (parsed.current_for_sale.new && parsed.current_for_sale.new.min != null);
+    if (!parsed) {
+      return json({ ok: false, error: 'no_price_data', hint: '未找到价格锚点，可能被 WAF 拦截或页面结构变化' }, 502);
+    }
+    const lm = parsed.last_6_months, cf = parsed.current_for_sale;
+    const hasData = (lm && lm.min != null) || (cf && cf.min != null);
     if (!hasData) {
       return json({ ok: false, error: 'no_price_data', hint: '页面已加载但未解析到价格，可能页面结构变化' }, 502);
     }
 
-    // 6) 写回 KV 缓存
+    // 6) 组装与后端完全一致的响应结构
+    const nowIso = new Date().toISOString();
+    const currency = (lm && lm.currency) || (cf && cf.currency) || 'CNY';
     const body = {
       ok: true,
-      P, colorID,
-      currency: parsed.currency,
-      last_6_months: parsed.last_6_months,
-      current_for_sale: parsed.current_for_sale,
+      part_num: P,
+      color_id: colorID,
+      currency,
+      last_6_months: lm,
+      current_for_sale: cf,
       source: 'bl-proxy-worker',
-      generated_at: new Date().toISOString(),
-      _t: Date.now(),
+      updated_at: nowIso,
       cached: false,
     };
-    // 去掉 _t 后缓存，读取时用 _t 判龄
-    const store = { ...body, _t: Date.now() };
-    await env.BL_CACHE.put(cacheKey, JSON.stringify(store), { expirationTtl: Math.ceil(CACHE_TTL_MS / 1000) });
+    // 缓存含内部时间戳 _t 用于 30 分钟判龄
+    await env.BL_CACHE.put(cacheKey, JSON.stringify({ ...body, _t: Date.now() }), {
+      expirationTtl: Math.ceil(CACHE_TTL_MS / 1000),
+    });
 
     return json(body);
   },

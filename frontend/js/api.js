@@ -331,13 +331,16 @@ async function fetchBLPriceFromServer(blPartNum, blColorId) {
         if (!resp.ok) return null;
         const data = await resp.json();
         if (!data || !data.ok) return null;
-        const c = (data.last_6_months && data.last_6_months.currency) || '';
+        const c = (data && data.currency)
+            || (data.last_6_months && data.last_6_months.currency)
+            || (data.current_for_sale && data.current_for_sale.currency)
+            || '';
         return {
             currency: c,
             last_6_months: data.last_6_months || null,
             current_for_sale: data.current_for_sale || null,
             source: 'bl-server',
-            generated_at: data.updated_at || ''
+            generated_at: data.updated_at || data.generated_at || ''
         };
     } catch (e) {
         console.warn('服务端价格抓取失败:', e.message);
