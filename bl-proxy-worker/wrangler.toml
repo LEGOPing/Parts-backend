@@ -1,0 +1,12 @@
+# bl-proxy-worker 部署配置
+name = "bl-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# 需要创建一个 KV 命名空间，把生成的 ID 填到下面
+# [[kv_namespaces]]
+# binding = "BL_CACHE"
+# id = "<你的KV命名空间ID>"
+
+# 也可以直接用后台创建后放到生产配置。
+# 建议用: npx wrangler kv namespace create BL_CACHE
