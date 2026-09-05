@@ -3529,6 +3529,98 @@ body {
     color: #e53935;
 }
 
+.pd-price-src {
+    font-size: 9px;
+    color: #2e7d32;
+    margin-bottom: 4px;
+}
+
+.pd-price-refresh {
+    margin-top: 6px;
+    font-size: 10px;
+    color: #1565c0;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* 手动回填 BL 价格弹窗 */
+.pd-mprice {
+    padding: 16px;
+    max-height: 88vh;
+    overflow-y: auto;
+}
+.pd-mprice-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #222;
+    margin-bottom: 8px;
+}
+.pd-mprice-tip {
+    font-size: 11px;
+    color: #666;
+    line-height: 1.6;
+    background: #f4f6fa;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+}
+.pd-mprice-currency {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+.pd-mprice-currency input {
+    width: 72px;
+}
+.pd-mprice-group {
+    background: #fafbfc;
+    border: 1px solid #e8eaed;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 10px;
+}
+.pd-mprice-gtitle {
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 6px;
+}
+.pd-mprice-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #555;
+    padding: 3px 0;
+}
+.pd-mprice-row input {
+    width: 120px;
+    text-align: right;
+}
+.pd-mprice-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+.pd-mprice-actions button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.pd-mprice-cancel {
+    background: #eee;
+    color: #333;
+}
+.pd-mprice-save {
+    background: #1565c0;
+    color: #fff;
+}
+
 .pd-image {
     max-height: 168px;
     max-width: 100%;

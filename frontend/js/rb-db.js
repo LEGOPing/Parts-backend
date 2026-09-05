@@ -1,6 +1,7 @@
 const RB_DB_NAME = 'RB_Database';
 // 6: 新增 rb_bl_colors（BL 颜色表，来自 bl_colors.json）
-const RB_DB_VERSION = 6;
+// 7: 新增 rb_prices（BL 价格缓存：设备端手动回填/自动抓取后保存在本地，右滑直接读）
+const RB_DB_VERSION = 7;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -17,7 +18,9 @@ const RB_STORES = {
     // 型号英文词汇表（来自 Gitee ID_Abc.json，型号输入弹窗"词库"用）
     ID_ABC: 'rb_id_abc',
     // BL 颜色表（来自 bl_colors.json，RB 颜色名→BL 颜色ID 的映射依据）
-    BL_COLORS: 'rb_bl_colors'
+    BL_COLORS: 'rb_bl_colors',
+    // BL 价格缓存（设备端手动回填/自动抓取后本地保存，key = part_num:color_id）
+    PRICES: 'rb_prices'
 };
 
 const RB_STORE_KEYS = {
@@ -89,6 +92,10 @@ function openRBDatabase() {
             // BL 颜色表：keyPath 为 BL 颜色 ID（id），值列 name/rgb/type
             if (!db.objectStoreNames.contains(RB_STORES.BL_COLORS)) {
                 db.createObjectStore(RB_STORES.BL_COLORS, { keyPath: 'id' });
+            }
+            // BL 价格缓存：keyPath 为 `${part_num}:${color_id}`，值落完整价格记录
+            if (!db.objectStoreNames.contains(RB_STORES.PRICES)) {
+                db.createObjectStore(RB_STORES.PRICES, { keyPath: 'key' });
             }
         };
 
@@ -1109,6 +1116,37 @@ async function getPartWeightByNum(partNum) {
     } catch (error) {
         console.error('查询离线零件重量失败:', error);
         return null;
+    }
+}
+
+// 读取设备本地缓存的 BL 价格记录（key = `${part_num}:${color_id}`），返回记录或 null
+async function getCachedBLPrice(partNum, colorId) {
+    try {
+        const cleanNum = String(partNum == null ? '' : partNum).replace(/[^a-zA-Z0-9]/g, '');
+        if (!cleanNum) return null;
+        const key = `${cleanNum}:${colorId}`;
+        return await getByKey(RB_STORES.PRICES, key) || null;
+    } catch (error) {
+        console.error('读取本地BL价格缓存失败:', error);
+        return null;
+    }
+}
+
+// 写入/更新设备本地 BL 价格缓存（upsert by key）
+async function saveCachedBLPrice(data) {
+    try {
+        const db = await openRBDatabase();
+        if (!data || !data.key) return false;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(RB_STORES.PRICES, 'readwrite');
+            const store = transaction.objectStore(RB_STORES.PRICES);
+            const req = store.put(data);
+            req.onsuccess = () => resolve(true);
+            req.onerror = (event) => reject(event.target.error);
+        });
+    } catch (error) {
+        console.error('写入本地BL价格缓存失败:', error);
+        return false;
     }
 }
 

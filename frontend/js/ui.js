@@ -4840,60 +4840,199 @@ async function fetchAndRenderBLPrice(priceEl, part) {
     if (!priceEl) return;
     priceEl.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-loading">加载中...</div>';
     const failMsg = (msg) => { priceEl.innerHTML = `<div class="pd-price-head">BL价格</div><div class="pd-price-error">${msg}</div>`; };
-    // 渲染单个价格块（标题 + New 的四项价格）
-    const block = (title, p) => {
-        if (!p) return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div><div class="pd-price-error">无数据</div></div>`;
-        const cur = p.currency ? p.currency + ' ' : '';
-        const rows = [];
-        if (p.min != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Min</span><span class="pd-price-val">${cur}${p.min}</span></div>`);
-        if (p.avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${cur}${p.avg}</span></div>`);
-        if (p.qty_avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${cur}${p.qty_avg}</span></div>`);
-        if (p.max != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${cur}${p.max}</span></div>`);
-        return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div>${rows.join('') || '<div class="pd-price-error">无数据</div>'}</div>`;
+    // 渲染单条价格记录（两组：Last 6 Months / Current for Sale）
+    const renderPriceData = (rec, sourceLabel) => {
+        const c = rec && rec.currency ? rec.currency + ' ' : '';
+        const block = (title, p) => {
+            if (!p) return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div><div class="pd-price-error">无数据</div></div>`;
+            const rows = [];
+            if (p.min != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Min</span><span class="pd-price-val">${c}${p.min}</span></div>`);
+            if (p.avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${c}${p.avg}</span></div>`);
+            if (p.qty_avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${c}${p.qty_avg}</span></div>`);
+            if (p.max != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${c}${p.max}</span></div>`);
+            return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div>${rows.join('') || '<div class="pd-price-error">无数据</div>'}</div>`;
+        };
+        const day = rec && rec.saved_at ? rec.saved_at.slice(0, 10) : '';
+        const srcTag = sourceLabel ? `<div class="pd-price-src">${sourceLabel}</div>` : '';
+        priceEl.innerHTML =
+            '<div class="pd-price-head">BL价格</div>' +
+            (day ? `<div class="pd-price-day">${day}</div>` : '') +
+            srcTag +
+            block('6个月销量', rec && rec.last_6_months)
+            + block('当前在售', rec && rec.current_for_sale) +
+            '<div class="pd-price-refresh" id="pd-price-refresh">↻ 重新获取</div>';
+        const btn = priceEl.querySelector('#pd-price-refresh');
+        if (btn) btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renderAndFetchFresh(priceEl, part);
+        });
     };
+
+    // 重新获取 / 首次拉取：读缓存→自动→手动
+    const renderAndFetchFresh = async (el, p) => {
+        el.innerHTML = '<div class="pd-price-head">BL价格</div><div class="pd-price-loading">加载中...</div>';
+        try {
+            const target = await resolveBLTargetSafe(p);
+            let auto = null;
+            if (typeof tryAutoFetchBLPrice === 'function') {
+                auto = await tryAutoFetchBLPrice(target.blPartNum, target.blColorId);
+            }
+            if (auto && (auto.last_6_months || auto.current_for_sale)) {
+                const rec = normalizePriceRecord(target, auto, 'auto');
+                if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
+                renderPriceData(rec, '已从Bricklink自动抓取');
+                return;
+            }
+            // 自动未成：新标签打官方页 + 手动回填
+            openManualPriceDialog(target, p)
+                .then((rec) => {
+                    if (rec) {
+                        if (typeof saveCachedBLPrice === 'function') saveCachedBLPrice(rec);
+                        renderPriceData(rec, '手动回填');
+                        return;
+                    }
+                    renderCachedOrFail(el, p);
+                })
+                .catch((err) => {
+                    console.error('手动填价失败:', err);
+                    renderCachedOrFail(el, p);
+                });
+        } catch (e) {
+            console.error('BL价格拉取失败:', e);
+            renderCachedOrFail(el, p);
+        }
+    };
+
+    // 全部失败时：若有缓存读缓存，否则提示
+    const renderCachedOrFail = async (el, p) => {
+        try {
+            const target = await resolveBLTargetSafe(p);
+            const cached = (typeof getCachedBLPrice === 'function') ? await getCachedBLPrice(target.blPartNum, target.blColorId) : null;
+            if (cached && (cached.last_6_months || cached.current_for_sale)) {
+                renderPriceData(cached, '本地缓存');
+                return;
+            }
+        } catch (e) { /* 忽略 */ }
+        failMsg('价格获取失败或暂无数据');
+    };
+
+    // 组装 target（解析型号/颜色）
+    const resolveBLTargetSafe = async (p) => {
+        if (typeof resolveBLTarget !== 'function') throw new Error('离线库未就绪');
+        const target = await resolveBLTarget(p.part_num, p.color_id);
+        if (!target) throw new Error('无法解析BL型号/颜色');
+        return target;
+    };
+
+    // 将抓取结果规整为本地缓存记录
+    const normalizePriceRecord = (target, data, source) => ({
+        key: `${target.blPartNum}:${target.blColorId}`,
+        part_num: target.blPartNum,
+        color_id: target.blColorId,
+        currency: (data && data.currency) || '',
+        last_6_months: (data && data.last_6_months) || null,
+        current_for_sale: (data && data.current_for_sale) || null,
+        source: source || 'manual',
+        saved_at: new Date().toISOString()
+    });
+
+    // 主流程：缓存优先
     try {
-        if (typeof resolveBLTarget !== 'function') {
-            failMsg('离线库未就绪');
-            return;
-        }
+        if (typeof resolveBLTarget !== 'function') { failMsg('离线库未就绪'); return; }
         const target = await resolveBLTarget(part.part_num, part.color_id);
-        if (!target) {
-            failMsg('无法解析BL型号/颜色');
+        if (!target) { failMsg('无法解析BL型号/颜色'); return; }
+        const cached = (typeof getCachedBLPrice === 'function') ? await getCachedBLPrice(target.blPartNum, target.blColorId) : null;
+        if (cached && (cached.last_6_months || cached.current_for_sale)) {
+            renderPriceData(cached, '本地缓存');
             return;
         }
-
-        // 1) 优先：后端无头浏览器返回两组价格（Last 6 Months / Current for Sale）
-        let data = null;
-        if (typeof fetchBLPriceHeadless === 'function') {
-            data = await fetchBLPriceHeadless(target.blPartNum, target.blColorId);
-        }
-        if (data && (data.last_6_months || data.current_for_sale)) {
-            const c = data.currency || '';
-            const day = data.generated_at ? data.generated_at.slice(0, 10) : '';
-            priceEl.innerHTML =
-                '<div class="pd-price-head">BL价格</div>' +
-                (day ? `<div class="pd-price-day">${day}</div>` : '') +
-                block('6个月销量', data.last_6_months && { ...data.last_6_months, currency: c })
-                + block('当前在售', data.current_for_sale && { ...data.current_for_sale, currency: c });
-            return;
-        }
-
-        // 2) 回退：CORS 代理单块抓取（旧方式，仅取 Last 6 Months）
-        const pricing = await fetchBLPriceGuide(target.blPartNum, target.blColorId);
-        if (!pricing) {
-            failMsg('价格获取失败或暂无数据');
-            return;
-        }
-        const cur = pricing.currency ? pricing.currency + ' ' : '';
-        const rows = [];
-        if (pricing.minPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Min</span><span class="pd-price-val">${cur}${pricing.minPrice}</span></div>`);
-        if (pricing.avgPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${cur}${pricing.avgPrice}</span></div>`);
-        if (pricing.qtyAvgPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${cur}${pricing.qtyAvgPrice}</span></div>`);
-        if (pricing.maxPrice !== null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${cur}${pricing.maxPrice}</span></div>`);
-        priceEl.innerHTML = `<div class="pd-price-head">BL价格</div><div class="pd-price-sub">Last 6 Months · New</div>${rows.join('') || '<div class="pd-price-error">无价格数据</div>'}`;
+        // 无缓存：进入 自动→手动 流程
+        renderAndFetchFresh(priceEl, part);
     } catch (e) {
         failMsg(`错误: ${(e && e.message) || e}`);
     }
+}
+
+// 手动回填价格弹窗：先新标签打开 Bricklink 官方价格页（设备真实浏览器可过 WAF 看到价），
+// 用户对照页面把 New 的 Min/Avg/Qty Avg/Max 填入，保存后 Promise resolve 一条本地价格记录。
+// resolve(rec) 成功 / resolve(null) 取消或关闭。
+function openManualPriceDialog(target, part) {
+    return new Promise((resolve) => {
+        // 打开官方价格页（同型号+颜色，方便对照填价），不阻塞本弹窗
+        const blPage = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(target.blPartNum)}&colorID=${encodeURIComponent(target.blColorId)}`;
+        window.open(blPage, '_blank');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        const sheet = document.createElement('div');
+        sheet.className = 'modal-content pd-mprice';
+        sheet.innerHTML = `
+            <div class="pd-mprice-title">手动填写 BL 价格</div>
+            <div class="pd-mprice-tip">已为你打开 <b>${target.blPartNum}</b> 官方价格页（新标签）。请对照页面 <b>"New"</b> 一列填入下列价格，留空的项目会跳过；货币按页面币种填写（如 CNY）。</div>
+            <div class="pd-mprice-currency"><label>币种</label><input id="pd-mp-cur" type="text" value="CNY" maxlength="3" placeholder="CNY"></div>
+            <div class="pd-mprice-group">
+                <div class="pd-mprice-gtitle">Last 6 Months Sales</div>
+                <div class="pd-mprice-row"><label>Min</label><input id="pd-mp-l6-min" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Avg</label><input id="pd-mp-l6-avg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Qty Avg</label><input id="pd-mp-l6-qavg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Max</label><input id="pd-mp-l6-max" type="number" step="0.01" min="0"></div>
+            </div>
+            <div class="pd-mprice-group">
+                <div class="pd-mprice-gtitle">Current Items for Sale</div>
+                <div class="pd-mprice-row"><label>Min</label><input id="pd-mp-cs-min" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Avg</label><input id="pd-mp-cs-avg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Qty Avg</label><input id="pd-mp-cs-qavg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Max</label><input id="pd-mp-cs-max" type="number" step="0.01" min="0"></div>
+            </div>
+            <div class="pd-mprice-actions">
+                <button type="button" class="pd-mprice-cancel" id="pd-mp-cancel">取消</button>
+                <button type="button" class="pd-mprice-save" id="pd-mp-save">保存</button>
+            </div>`;
+
+        const close = () => {
+            overlay.remove();
+            document.body.classList.remove('modal-open');
+        };
+        const parseNum = (id) => {
+            const raw = overlay.querySelector(id).value.trim();
+            if (raw === '') return null;
+            const v = parseFloat(raw);
+            return isNaN(v) ? null : v;
+        };
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) { close(); resolve(null); } });
+        sheet.querySelector('#pd-mp-cancel').addEventListener('click', () => { close(); resolve(null); });
+        sheet.querySelector('#pd-mp-save').addEventListener('click', () => {
+            const cur = (overlay.querySelector('#pd-mp-cur').value.trim() || 'CNY').toUpperCase();
+            const rec = {
+                key: `${target.blPartNum}:${target.blColorId}`,
+                part_num: target.blPartNum,
+                color_id: target.blColorId,
+                currency: cur,
+                last_6_months: {
+                    currency: cur,
+                    min: parseNum('#pd-mp-l6-min'),
+                    avg: parseNum('#pd-mp-l6-avg'),
+                    qty_avg: parseNum('#pd-mp-l6-qavg'),
+                    max: parseNum('#pd-mp-l6-max')
+                },
+                current_for_sale: {
+                    currency: cur,
+                    min: parseNum('#pd-mp-cs-min'),
+                    avg: parseNum('#pd-mp-cs-avg'),
+                    qty_avg: parseNum('#pd-mp-cs-qavg'),
+                    max: parseNum('#pd-mp-cs-max')
+                },
+                source: 'manual',
+                saved_at: new Date().toISOString()
+            };
+            close();
+            resolve(rec);
+        });
+
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+        document.body.classList.add('modal-open');
+    });
 }
 
 async function showPartDetail(part) {
