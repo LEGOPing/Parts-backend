@@ -3574,6 +3574,34 @@ body {
 .pd-mprice-currency input {
     width: 72px;
 }
+.pd-mprice-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.pd-mprice-import,
+.pd-mprice-copy {
+    padding: 7px 12px;
+    border: 1px solid #cfd6e0;
+    border-radius: 6px;
+    background: #f7f9fc;
+    color: #1565c0;
+    font-size: 12px;
+    cursor: pointer;
+}
+.pd-mprice-import:active,
+.pd-mprice-copy:active {
+    background: #e8eef7;
+}
+.pd-mprice-hint {
+    width: 100%;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #888;
+    min-height: 4px;
+}
 .pd-mprice-group {
     background: #fafbfc;
     border: 1px solid #e8eaed;

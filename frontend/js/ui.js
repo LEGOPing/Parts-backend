@@ -4953,6 +4953,22 @@ async function fetchAndRenderBLPrice(priceEl, part) {
     }
 }
 
+// 在 Bricklink 官方价格页运行的"取价脚本"（收藏夹脚本）。
+// 用法：官方页把地址栏改为粘贴这段脚本并回车，它会把两组价格以 JSON 复制到剪贴板，
+// 回到本弹窗点"从剪贴板导入"，无需手打。
+const BL_PRICE_BOOKMARKLET =
+    "javascript:(()=>{" +
+    "var h=document.body.innerHTML;" +
+    "var re=/<td>(Min Price|Qty Avg Price|Avg Price|Max Price):<\\/td>\\s*<td><b>([A-Z]{2,3})?(?:\\s|&nbsp;|\\u00a0)*([\\d,]+\\.\\d+)<\\/b><\\/td>/gi;" +
+    "var out={min:[],avg:[],qty_avg:[],max:[]},map={'Min Price':'min','Avg Price':'avg','Qty Avg Price':'qty_avg','Max Price':'max'},m;" +
+    "while((m=re.exec(h))!==null){var k=map[m[1]];if(k&&out[k])out[k].push([(m[2]||'').toUpperCase(),parseFloat(m[3].replace(/,/g,''))]);}" +
+    "var blk=function(col){function g(k){return out[k][col]?out[k][col][1]:null;}return {min:g('min'),avg:g('avg'),qty_avg:g('qty_avg'),max:g('max')};};" +
+    "var cur=(h.indexOf('CNY')>=0?'CNY':(h.indexOf('USD')>=0?'USD':''));" +
+    "var json=JSON.stringify({cur:cur,l6:blk(0),cs:blk(2)});" +
+    "navigator.clipboard.writeText(json).then(function(){window.alert('已复制价格，回到Rebrickable点「从剪贴板导入」');})" +
+    ".catch(function(){window.prompt('复制下面内容到app导入框：',json);});" +
+    "})();";
+
 // 手动回填价格弹窗：先新标签打开 Bricklink 官方价格页（设备真实浏览器可过 WAF 看到价），
 // 用户对照页面把 New 的 Min/Avg/Qty Avg/Max 填入，保存后 Promise resolve 一条本地价格记录。
 // resolve(rec) 成功 / resolve(null) 取消或关闭。
@@ -4961,14 +4977,18 @@ function openManualPriceDialog(target, part) {
         // 打开官方价格页（同型号+颜色，方便对照填价），不阻塞本弹窗
         const blPage = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(target.blPartNum)}&colorID=${encodeURIComponent(target.blColorId)}`;
         window.open(blPage, '_blank');
-
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay active';
         const sheet = document.createElement('div');
         sheet.className = 'modal-content pd-mprice';
         sheet.innerHTML = `
             <div class="pd-mprice-title">手动填写 BL 价格</div>
-            <div class="pd-mprice-tip">已为你打开 <b>${target.blPartNum}</b> 官方价格页（新标签）。请对照页面 <b>"New"</b> 一列填入下列价格，留空的项目会跳过；货币按页面币种填写（如 CNY）。</div>
+            <div class="pd-mprice-tip">已为你打开 <b>${target.blPartNum}</b> 官方价格页（新标签）。<b>推荐</b>：<b>①</b>先在官方页把地址改为粘贴"取价脚本"并回车（价格会自动复制）；<b>②</b>回到这里点<b>从剪贴板导入</b>自动填好，再点保存。也可直接对照页面手填。</div>
+            <div class="pd-mprice-toolbar">
+                <button type="button" class="pd-mprice-import" id="pd-mp-import">↑ 从剪贴板导入</button>
+                <button type="button" class="pd-mprice-copy" id="pd-mp-copy">📋 复制取价脚本</button>
+                <div class="pd-mprice-hint" id="pd-mp-hint"></div>
+            </div>
             <div class="pd-mprice-currency"><label>币种</label><input id="pd-mp-cur" type="text" value="CNY" maxlength="3" placeholder="CNY"></div>
             <div class="pd-mprice-group">
                 <div class="pd-mprice-gtitle">Last 6 Months Sales</div>
@@ -5027,6 +5047,43 @@ function openManualPriceDialog(target, part) {
             };
             close();
             resolve(rec);
+        });
+        const hintEl = () => overlay.querySelector('#pd-mp-hint');
+        const setHint = (text, color) => {
+            const el = hintEl();
+            if (el) {
+                el.textContent = text || '';
+                el.style.color = color || '#888';
+            }
+        };
+        overlay.querySelector('#pd-mp-import').addEventListener('click', async () => {
+            let text = '';
+            try { text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
+            let obj = null;
+            if (text) { try { obj = JSON.parse(text); } catch (e) { obj = null; } }
+            if (!obj || typeof obj !== 'object' || (!obj.l6 && !obj.cs)) {
+                setHint('剪贴板未找到取价数据。请先在官方页粘贴运行"取价脚本"，再回来导入。', '#e53935');
+                return;
+            }
+            if (obj.cur) overlay.querySelector('#pd-mp-cur').value = String(obj.cur).toUpperCase();
+            const fill = (prefix, p) => {
+                if (!p) return;
+                [['min', 'min'], ['avg', 'avg'], ['qty_avg', 'qavg'], ['max', 'max']].forEach(([k, id]) => {
+                    const v = p[k];
+                    if (v != null) { const inp = overlay.querySelector(`#pd-mp-${prefix}-${id}`); if (inp) inp.value = v; }
+                });
+            };
+            fill('l6', obj.l6);
+            fill('cs', obj.cs);
+            setHint('已从剪贴板导入，核对后点保存', '#2e7d32');
+        });
+        overlay.querySelector('#pd-mp-copy').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(BL_PRICE_BOOKMARKLET);
+                setHint('取价脚本已复制！请到已打开的官方页，把地址栏整段替换成这段脚本并回车。', '#1565c0');
+            } catch (e) {
+                setHint('复制失败，请在官方页手动粘贴脚本', '#e53935');
+            }
         });
 
         overlay.appendChild(sheet);
@@ -7049,6 +7106,12 @@ async function loadRBOnStartup() {
             }
             // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
             loadIDAbcOnStartup();
+            // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
+            if (typeof loadBLPriceLibraryToRBDb === 'function') {
+                loadBLPriceLibraryToRBDb().then(r => {
+                    if (r && r.success) console.log(`离线价格库补充加载: ${r.added}/${r.total} 条`);
+                }).catch(e => console.warn('离线价格库补充加载失败:', e));
+            }
             showRBStatusHint('rb-ready');
             return;
         }
@@ -7137,6 +7200,12 @@ async function loadRBOnStartup() {
 
         // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
         loadIDAbcOnStartup();
+        // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
+        if (typeof loadBLPriceLibraryToRBDb === 'function') {
+            loadBLPriceLibraryToRBDb().then(r => {
+                if (r && r.success) console.log(`离线价格库加载: ${r.added}/${r.total} 条`);
+            }).catch(e => console.warn('离线价格库加载失败:', e));
+        }
 
         if (successCount === csvFiles.length) {
             console.log('RB数据库建立成功');
