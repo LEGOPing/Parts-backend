@@ -263,6 +263,26 @@ async function fetchBLPriceGuide(brickLinkPart, blColorId) {
     }
 }
 
+// 通过后端无头浏览器（Playwright+Chromium）抓取 Bricklink 价格，绕过 AWS WAF 反爬。
+// Bricklink 价格指南（catalogPG.asp）在远端 IP 直连时返回 202 + JS 挑战，需无头浏览器
+// 执行挑战脚本拿到 aws-waf-token 后才能读取真实价格，故走后端 FastAPI /api/parts/price 端点。
+// 返回 { last_6_months, current_for_sale, currency, generated_at }，失败返回 null。
+async function fetchBLPriceHeadless(blPartNum, blColorId) {
+    const cleanNum = String(blPartNum || '').replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) return null;
+    const url = `${BACKEND_URL}/api/parts/price?part_number=${encodeURIComponent(cleanNum)}&color_id=${encodeURIComponent(blColorId)}`;
+    try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(50000) });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (!data || data.error) return null;
+        return data;
+    } catch (e) {
+        console.warn('后端无头浏览器价格获取失败:', e.message);
+        return null;
+    }
+}
+
 // 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
 async function resolveBLColorId(rbColorId) {
     try {
