@@ -11,7 +11,9 @@
  * 调用：GET /api/price?P=<part>&colorID=<color>
  * 响应：{ ok, last_6_months, current_for_sale, currency, updated_at, source }
  */
-import { chromium } from '@cloudflare/playwright';
+// 注意：运行期 @cloudflare/playwright 禁用了 chromium.browserType.launch()，
+// 必须用包顶层导出的 launch()，并把 Browser Rendering binding(Fetcher) 作为 endpoint 传入。
+import { launch } from '@cloudflare/playwright';
 
 interface Env {
   MYBROWSER: Fetcher;
@@ -100,9 +102,9 @@ export default {
 
     let browser;
     try {
-      // env.MYBROWSER 是 Browser Rendering 的 Fetcher；@cloudflare/playwright 的
-      // launch() 运行期接受该 Fetcher，仅类型签名不匹配，故做一次类型断言。
-      browser = await chromium.launch(env.MYBROWSER as any);
+      // env.MYBROWSER 是 Browser Rendering 的 Fetcher；launch() 运行期接受该
+      // binding，仅类型签名不匹配，故做一次类型断言。
+      browser = await launch(env.MYBROWSER as any);
       const context = await browser.newContext({
         viewport: { width: 1280, height: 900 },
         locale: 'en-US',
