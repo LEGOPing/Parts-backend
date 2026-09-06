@@ -1,36 +1,42 @@
 # coding: utf-8
 """
-pythonista_proto.py — 「外壳 + 内嵌浏览器」最小原型（形态 3：单页验证）
+pythonista_proto.py — 「外壳 + 内嵌浏览器」原型（批量版）
 
-目标：验证「Pythonista 外壳 + WKWebView」这条路，能否在 iPhone 上绕开 BL 的
-WAF，像正常浏览器一样打开价格页并抓回价格。
+目标：在 iPhone 上用 Pythonista 外壳 + WKWebView（真实 WebKit 内核）绕开 BL 的
+WAF，像正常浏览器一样逐页打开价格页、抓回价格，写成本地 result.json。
+本版是对「最小链路」的打磨：
+    - 支持多零件循环（依次打开每个价格页抓取）
+    - 抓完自动关闭界面（不用再手动退出）
+    - 带进度提示（[i/N]、成功/跳过），没抓到就跳过继续下一个，不卡死一批
 
-数据流（最小链路）：
-    1. 外壳(WKWebView) load_url 打开 BL 价格页 -> 由真实 WebKit 引擎完成 WAF 挑战
-    2. 等 webview_did_finish_load 回调（页面加载完成）
-    3. 在 @ui.in_background 后台回调里 eval_js 运行 extractPriceGuide
-    4. 解析 JSON -> 打印 / 存为同目录 result.json
-
-重要（沿用 wkwebview.py 官方 __main__ 样例的并发模型）：
-    - WKWebView 必须被全局强引用，绝不能随函数返回被回收（闪退根因之一）。
-    - webview_did_finish_load 用 @ui.in_background 装饰，让 eval_js 在后台线程跑；
-      因为 eval_js 内部是 eval_js_queue.get() 阻塞，且回调是 @on_main_thread，
-      必须在后台线程调用，主线程保持空闲以喂养回调。
-    - 主线程不要长期阻塞（不要 wait()/sleep），脚本末尾保持存活即可。
+数据流（每条）：
+    1. WKWebView load_url 打开 BL 价格页 -> 真实 WebKit 过 WAF
+    2. webview_did_finish_load 回调 -> @ui.in_background 后台线程 eval_js 轮询价格段
+    3. 提取 JSON -> 存进 _results
+    4. 全部处理完 -> 写 result.json + 自动 close() 界面
 
 运行：
-    Pythonista 打开本文件 -> 点运行三角 -> 等几秒（加载+过WAF）-> 看 console 输出，
-    或看同目录 result.json。改 PART_MONO / COLOR_BL 即可。
+    Pythonista 打开本文件 -> 点运行三角 -> 等全部抓完自动关。
+    结果在 result.json（与 BL-price.json 同构：records 数组）。
+    要抓的连接改 PARTS 即可，每项是 (part_num, BL颜色ID)。
 """
 
 # ---------------------------------------------------------------------------
-# 0) 可调参数（单页验证）
+# 0) 可调参数
 # ---------------------------------------------------------------------------
-PART_MONO = '3001'   # 零件型号
-COLOR_BL  = '86'     # BL 颜色 ID（是 BL 的 id，不是系统库 RB 的 color_id）
+# 待抓列表：(零件型号, BL 颜色 ID)。BL 颜色 ID 是 BL 的 id，需先做 RB->BL 映射。
+PARTS = [
+    ('3001', '86'),   # 1x1 Brick, Dark Bluish Gray
+    # 追加更多 ('3002', '86'), ('3001', '7'), ...
+]
+
 URL_TMPL  = 'https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color}'
 OUT_JSON  = 'result.json'
-MAX_WAIT  = 60   # 秒，最长等待价格段出现
+MAX_WAIT  = 60   # 单页最长等待价格段出现（秒），超时则标记跳过并继续下一个
+
+# 预置一个连接，方便直接测试打包后的脚本（避免空列表跑空）
+if not PARTS:
+    PARTS = [('3001', '86')]
 
 # ---------------------------------------------------------------------------
 # 1) 依赖 WKWebView 封装
@@ -51,6 +57,11 @@ from objc_util import on_main_thread
 
 # 全局引用：绝不让 WKWebView 被 GC（闪退根因）
 _webview = None
+# 批处理状态
+_queue   = list(PARTS)      # 待抓队列，pop(0) 依次处理
+_current = None             # ('part','color') 当前正在抓的组合
+_results = []               # 已成功抓取的结果记录
+_N       = len(PARTS)
 
 # ---------------------------------------------------------------------------
 # 2) 抽取函数（从 extract-price-on-safari.js 原样移植，字段与 BL-price.json 兼容）
@@ -99,62 +110,108 @@ function extractPriceGuide(page) {
 """
 
 # ---------------------------------------------------------------------------
-# 3) 抽取流程（放在 @ui.in_background 里，让 eval_js 在后台线程跑）
+# 3) 单页轮询：直到价格段出现 / 超时
 # ---------------------------------------------------------------------------
-def _fetch_and_extract(webview, part, color_bl, timeout=MAX_WAIT):
+def _fetch_and_extract(webview, timeout=MAX_WAIT):
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
         try:
             last = webview.eval_js(EXTRACT_JS)
         except Exception as e:
-            print('  eval_js 异常(稍后重试):', e, flush=True)
+            print('    eval_js 异常(稍后重试):', e, flush=True)
             time.sleep(3)
             continue
         last = '' if isinstance(last, (type(None), bool)) else str(last)
         if last.startswith('ERR:'):
-            print('  JS 错误:', last, flush=True)
+            print('    JS 错误:', last, flush=True)
             return None
         if last == 'NO_PRICE':
-            # 仍在过 WAF / 加载
-            time.sleep(3)
+            time.sleep(3)   # 仍在过 WAF / 加载，等待
             continue
         try:
             return json.loads(last)
         except Exception as e:
-            print('  解析 JSON 失败:', e, '| raw=', last[:200], flush=True)
+            print('    解析 JSON 失败:', e, '| raw=', last[:200], flush=True)
             time.sleep(3)
             continue
-    print('  超时未等到价格段（最后返回: %r）' % (last,), flush=True)
+    print('    超时未等到价格段（最后返回: %r）' % (last,), flush=True)
     return None
 
 
-def _on_done(webview, data):
-    if data:
-        now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        l6 = data.get('last_6_months') or {}
-        cs = data.get('current_for_sale') or {}
-        rec = {
-            'key': '%s:%s' % (PART_MONO, COLOR_BL),
-            'part_num': PART_MONO,
-            'color_id': str(COLOR_BL),
-            'currency': l6.get('currency') or cs.get('currency') or '',
-            'last_6_months': data.get('last_6_months'),
-            'current_for_sale': data.get('current_for_sale'),
-            'source': 'pythonista-proto',
-            'saved_at': now,
-        }
-        print('=== 抓取成功 ===', flush=True)
-        print(json.dumps(rec, ensure_ascii=False, indent=2), flush=True)
+def _build_record(part, color_bl, data):
+    now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    l6 = data.get('last_6_months') or {}
+    cs = data.get('current_for_sale') or {}
+    return {
+        'key': '%s:%s' % (part, color_bl),
+        'part_num': part,
+        'color_id': str(color_bl),
+        'currency': l6.get('currency') or cs.get('currency') or '',
+        'last_6_months': data.get('last_6_months'),
+        'current_for_sale': data.get('current_for_sale'),
+        'source': 'pythonista-proto',
+        'saved_at': now,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4) 批处理推进：抓完当前 -> 下一个 -> 全部完成则写文件并关界面
+# ---------------------------------------------------------------------------
+def _progress_part(webview, part, color_bl):
+    url = URL_TMPL.format(part=part, color=color_bl)
+    print('[%d/%d] 打开 %s:%s -> %s' % (_N - len(_queue), _N, part, color_bl, url), flush=True)
+    @on_main_thread
+    def _do_load():
         try:
-            with open(OUT_JSON, 'w', encoding='utf-8') as f:
-                json.dump(rec, f, ensure_ascii=False, indent=2)
-            print('已保存:', OUT_JSON, flush=True)
+            webview.load_url(url)
         except Exception as e:
-            print('保存失败:', e, flush=True)
+            print('    load_url 失败:', e, flush=True)
+            _advance(webview)
+    _do_load()
+
+
+def _advance(webview):
+    """处理完当前项后的推进逻辑：成功/失败都继续下一个，最后收尾。"""
+    if _queue:
+        part, color_bl = _queue.pop(0)
+        _current = (part, color_bl)
+        _progress_part(webview, part, color_bl)
     else:
-        print('未抓到价格。可能：WAF 未过 / 网络 / 该组合无价格数据。', flush=True)
-    # 抓完主动关闭界面（投递到主线程）
+        _finish(webview)
+
+
+def _handle_one(webview, part, color_bl):
+    """抓取当前项 -> 记录结果 -> 推进。"""
+    print('  [%d/%d] 抓取 %s:%s ...' % (_N - len(_queue), _N, part, color_bl), flush=True)
+    data = _fetch_and_extract(webview)
+    if data:
+        rec = _build_record(part, color_bl, data)
+        _results.append(rec)
+        print('  [%d/%d] 成功 %s:%s  avg=%s %s' % (
+            _N - len(_queue), _N, part, color_bl,
+            (data.get('last_6_months') or {}).get('avg'),
+            (data.get('last_6_months') or {}).get('currency', '')), flush=True)
+    else:
+        print('  [%d/%d] 跳过 %s:%s（未抓到，下次重试）' % (
+            _N - len(_queue), _N, part, color_bl), flush=True)
+    _advance(webview)
+
+
+def _finish(webview):
+    print('=== 全部处理完成，共 %d 条，成功 %d 条 ===' % (_N, len(_results)), flush=True)
+    payload = {
+        'generated_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'count': len(_results),
+        'records': _results,
+    }
+    try:
+        with open(OUT_JSON, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        print('已保存:', OUT_JSON, flush=True)
+    except Exception as e:
+        print('保存失败:', e, flush=True)
+    # 抓完自动关闭界面
     @on_main_thread
     def close_ui():
         try:
@@ -165,45 +222,37 @@ def _on_done(webview, data):
 
 
 # ---------------------------------------------------------------------------
-# 4) delegate 类：通过 delegate=... kwargs 传给 WKWebView（官方样例模式）
-#    @ui.in_background 让 eval_js 在后台线程跑（eval_js 内部阻塞等主线程回调）
+# 5) delegate：@ui.in_background 让 eval_js 在后台线程跑；load_url 回到主线程
 # ---------------------------------------------------------------------------
 class LoaderDelegate:
-    """实现 WKWebView 的加载回调。用 @ui.in_background 包装让 eval_js 在后台线程跑。"""
 
     @ui.in_background
     def webview_did_finish_load(self, webview):
-        print('[info] 页面加载完成，开始提取...', flush=True)
-        data = _fetch_and_extract(webview, PART_MONO, COLOR_BL)
-        _on_done(webview, data)
+        _handle_one(webview, _current[0], _current[1])
 
     @ui.in_background
     def webview_did_fail_load(self, webview, error_code, error_msg):
         print('[warn] 加载失败(%s): %s' % (error_code, error_msg), flush=True)
-        # 失败也尝试提取一次（BL 可能已部分渲染 / 挑战已完成）
-        data = _fetch_and_extract(webview, PART_MONO, COLOR_BL)
-        _on_done(webview, data)
+        _handle_one(webview, _current[0], _current[1])
 
 
 # ---------------------------------------------------------------------------
-# 5) 主流程
+# 6) 主流程
 # ---------------------------------------------------------------------------
 def main():
-    global _webview
-    url = URL_TMPL.format(part=PART_MONO, color=COLOR_BL)
-    print('打开:', url, flush=True)
-
-    # 官方样例：delegate 作为 kwargs 传入（会经 super().__init__(**kwargs) 赋成 self.delegate）
+    global _webview, _current
+    print('共 %d 组待抓：%s' % (_N, [(p, c) for p, c in PARTS]), flush=True)
     _webview = WKWebView(name='BLP', delegate=LoaderDelegate())
     _webview.present('full_modal')
-    _webview.load_url(url)
-
-    # 到此不 return：脚本保持存活（@ui.in_background 非 daemon 线程）让抽取完成。
+    if _queue:
+        part, color_bl = _queue.pop(0)
+        _current = (part, color_bl)
+        _progress_part(_webview, part, color_bl)
 
 if __name__ == '__main__':
     try:
         main()
-        # 保持进程存活，同时把控制权交还主线程事件循环
+        # 保持进程存活（@ui.in_background 后台线程完成抽取），并把控制权交还主线程事件循环
         while True:
             time.sleep(60)
     except Exception:
