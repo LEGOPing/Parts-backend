@@ -46,6 +46,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
@@ -84,8 +85,12 @@ def _supabase_ref_from_jwt(token):
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or (
     "https://%s.supabase.co" % (_supabase_ref_from_jwt(SUPABASE_ANON) or "missing-ref"))
 
+# ---- BrickOwl（价格来源，JSON 接口，无 JS 挑战，无需网页抓取）----
+BRICKOWL_KEY  = os.environ.get("BRICKOWL_KEY", "20949d340ace4dda2b48174c0cb341f5c40ba4e394867e3779246225b342cb42")
+BRICKOWL_API  = "https://api.brickowl.com/v1"
+
 FETCH_TIMEOUT  = 30                        # 抓价格的单页超时（秒）
-REQUEST_DELAY  = 4.0                       # 抓取间隔（秒），避免触发 BL 429
+REQUEST_DELAY  = 0.5                       # 抓取间隔（秒）；price_history 600 次/分钟，1秒内足够缓冲
 UA           = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
                 "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari/604.1")
 
@@ -266,84 +271,110 @@ def load_existing_price():
 
 
 # ---------------------------------------------------------------------------
-# 价格抓取与解析（移植自 app/bricklink_price.py，纯正则）
+# BrickOwl 价格抓取（JSON 接口，无 JS 挑战，替代 Bricklink 网页抓取）
+# 三种调用：id_lookup(部件号->BOID)、color_list(颜色映射)、price_history(价格)
 # ---------------------------------------------------------------------------
-def extract_price_guide(html):
-    idx = html.find("Last 6 Months Sales")
-    if idx < 0:
-        return None
-    section = html[idx:idx + 20000]
-    pat = re.compile(
-        r"<td>(Min Price|Qty Avg Price|Avg Price|Max Price):</td>\s*"
-        r"<td><b>([A-Z]{2,3})?(?:\s|&nbsp;|\u00a0)*([\d,]+\.\d+)</b></td>",
-        re.I,
-    )
-    cells = {"min": [], "avg": [], "qty_avg": [], "max": []}
-    gmap = {"min price": "min", "avg price": "avg",
-            "qty avg price": "qty_avg", "max price": "max"}
-    for m in pat.finditer(section):
-        key = gmap.get(m.group(1).lower())
-        if not key:
-            continue
-        try:
-            val = float(m.group(3).replace(",", ""))
-        except ValueError:
-            continue
-        cells[key].append((m.group(2) or "").upper(), val)
-
-    def block(col):
-        def get(k):
-            return cells[k][col][1] if col < len(cells[k]) else None
-        def cur(k):
-            return cells[k][col][0] if col < len(cells[k]) else ""
-        vals = [get(k) for k in ("min", "avg", "qty_avg", "max")]
-        if all(v is None for v in vals):
-            return None
-        return {"currency": cur("min") or cur("avg") or cur("qty_avg") or cur("max"),
-                "min": get("min"), "avg": get("avg"),
-                "qty_avg": get("qty_avg"), "max": get("max")}
-
-    return {"last_6_months": block(0), "current_for_sale": block(2)}
-
-
-def fetch_bl_price(part, color_id):
-    """直连 Bricklink 价格页，返回解析结果；被 WAF 拦截或解析失败返回 None。"""
-    clean = re.sub(r'[^a-zA-Z0-9]', '', part)
-    url = f"https://www.bricklink.com/catalogPG.asp?P={clean}&colorID={color_id}"
+def brickowl_get(path):
+    """调用 BrickOwl API，返回 JSON 对象；统一处理 HTTP 错误为 None。"""
+    url = f"{BRICKOWL_API}/{path}"
+    url += "&" if "?" in url else "?"
+    url += "key=" + urllib.parse.quote(BRICKOWL_KEY)
     req = urllib.request.Request(url, headers={"User-Agent": UA,
-                                               "Accept-Language": "en-US,en;q=0.9"})
+                                               "Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-            if resp.status == 202:
-                return None
-            raw = resp.read()
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        log(f"  BrickOwl {path} HTTP:{e.code} {body[:120]}")
+        return None
     except Exception as e:
-        log(f"  抓取 {clean}/{color_id} 连接失败: {e}")
+        log(f"  BrickOwl {path} 连接失败: {e}")
         return None
-    try:
-        html = raw.decode("utf-8")
-    except Exception:
+
+
+def load_brickowl_colors():
+    """catalog/color_list -> {BO颜色名(归一化): BO颜色ID} 与 {BL颜色ID: BO颜色ID}"""
+    data = brickowl_get("catalog/color_list")
+    if not isinstance(data, dict):
+        raise SystemExit("BrickOwl color_list 获取失败")
+    by_name = {}
+    by_bl = {}
+    for rec in data.values():
+        if not isinstance(rec, dict):
+            continue
+        cid = rec.get("id")
+        if cid is None:
+            continue
+        if rec.get("name") is not None:
+            by_name[norm(rec["name"])] = str(cid)
+        for bl in rec.get("bl_ids") or []:
+            if bl:
+                by_bl[str(bl)] = str(cid)
+    return by_name, by_bl
+
+
+BOID_CACHE = {}
+
+
+def resolve_boid(part):
+    """id_lookup: BL 部件号 -> BrickOwl 设计号(取第一个)。加缓存，同一部件只查一次。失败返回 None。"""
+    clean = re.sub(r'[^a-zA-Z0-9]', '', part or '')
+    if not clean:
+        return None
+    if clean in BOID_CACHE:
+        return BOID_CACHE[clean]
+    data = brickowl_get(f"catalog/id_lookup?id={urllib.parse.quote(clean)}&id_type=bl_item_no&type=Part")
+    boid = None
+    if isinstance(data, dict):
+        boids = data.get("boids") or []
+        boid = str(boids[0]) if boids else None
+    BOID_CACHE[clean] = boid
+    return boid
+
+
+def fetch_brickowl_price(boid, bo_color_id):
+    """price_history: BOID+颜色 -> 解析价格数据(GBP)。被限制或失败返回 None。"""
+    data = brickowl_get(
+        f"catalog/price_history?boid={urllib.parse.quote(str(boid))}&color_id={urllib.parse.quote(str(bo_color_id))}")
+    if not isinstance(data, dict) or "error" in data:
+        return None
+    return data
+
+
+def brickowl_blocks(d):
+    """把 price_history 的扁平字段映射成 last_6_months / current_for_sale 结构（沿用原 schema）。"""
+    def num(k):
+        v = d.get(k)
         try:
-            html = raw.decode("latin-1")
-        except Exception:
+            return float(v)
+        except (TypeError, ValueError):
             return None
-    if "aws-waf-token" in html or ("challenge" in html and len(html) < 5000):
+
+    def block(prefix):
+        # 注意颜色/新旧口径：统一用 *_all；currency 固定为 GBP（BrickOwl 官网价格均 GBP）
+        vals = [num(f"{prefix}_min_all"), num(f"{prefix}_average_all"), num(f"{prefix}_max_all")]
+        if all(v is None for v in vals):
+            return None
+        return {"currency": "GBP",
+                "min": vals[0], "avg": vals[1], "qty_avg": None, "max": vals[2]}
+
+    l6 = block("6months")
+    cur = block("current")
+    if l6 is None and cur is None:
         return None
-    return extract_price_guide(html)
+    return {"last_6_months": l6, "current_for_sale": cur}
 
 
-def build_record(part, color_id, data):
-    l6 = data.get("last_6_months") or {}
-    cs = data.get("current_for_sale") or {}
-    currency = l6.get("currency") or cs.get("currency") or ""
+def build_record(part, bl_cid, blocks):
     return {
-        "key": f"{re.sub(r'[^a-zA-Z0-9]', '', part)}:{color_id}",
+        "key": f"{re.sub(r'[^a-zA-Z0-9]', '', part)}:{bl_cid}",
         "part_num": re.sub(r'[^a-zA-Z0-9]', '', part),
-        "color_id": color_id,
-        "currency": currency,
-        "last_6_months": l6,
-        "current_for_sale": cs,
-        "source": "pythonista",
+        "color_id": str(bl_cid),
+        "currency": "GBP",
+        "last_6_months": (blocks or {}).get("last_6_months"),
+        "current_for_sale": (blocks or {}).get("current_for_sale"),
+        "source": "brickowl",
         "saved_at": datetime.now().replace(microsecond=0).isoformat(),
     }
 
@@ -352,13 +383,14 @@ def build_record(part, color_id, data):
 # 主流程
 # ---------------------------------------------------------------------------
 def run_once(args):
-    log("=== 开始增量同步 ===")
+    log("=== 开始增量同步(BrickOwl) ===")
     bl_cid_map = load_bl_colors()
     rb_cname_map = load_rb_color_names()
+    bo_name, bo_by_bl = load_brickowl_colors()
     inv_keys = load_system_parts()   # 直连 Supabase 读系统数据库的零件
     log(f"系统数据库去重零件组合: {len(inv_keys)}")
 
-    # RB color_id -> BL color_id
+    # RB color_id -> BL color_id（沿用原逻辑）
     rb2bl = {}
     for rb_id, rb_name in rb_cname_map.items():
         bl_id = bl_cid_map.get(norm(rb_name))
@@ -369,7 +401,6 @@ def run_once(args):
     log(f"现有价格 key: {len(existing_keys)}")
 
     # 计算增量
-    from collections import OrderedDict
     todo = []
     seen = set()
     for rb_part, rb_color in inv_keys:
@@ -379,16 +410,21 @@ def run_once(args):
         bl_cid = rb2bl.get(rb_color)
         if bl_cid is None:
             continue
+        bl_cid = str(bl_cid)
         key = f"{bl_part}:{bl_cid}"
         if key in existing_keys or key in seen:
             continue
         seen.add(key)
-        todo.append((bl_part, bl_cid, key))
+        boid = resolve_boid(bl_part)            # part_num -> BOID
+        bo_cid = bo_by_bl.get(bl_cid)           # BL颜色 -> BO颜色
+        if boid is None or bo_cid is None:
+            continue
+        todo.append((bl_part, bl_cid, boid, bo_cid, key))
     log(f"新增待抓组合: {len(todo)}")
 
     if args.dry_run:
-        for bl_part, bl_cid, key in todo[:20]:
-            log(f"  [dry] {key}")
+        for bl_part, bl_cid, boid, bo_cid, key in todo[:20]:
+            log(f"  [dry] {key} boid={boid} bo_color={bo_cid}")
         log("dry-run 退出，未抓取未推送")
         return
 
@@ -402,13 +438,14 @@ def run_once(args):
         log(f"本轮仅处理前 {len(todo)} 条（其余下次继续）")
 
     ok = fail = 0
-    for i, (bl_part, bl_cid, key) in enumerate(todo, 1):
-        data = fetch_bl_price(bl_part, bl_cid)
-        if data and (data.get("last_6_months") or data.get("current_for_sale")):
-            records.append(build_record(bl_part, bl_cid, data))
+    for i, (bl_part, bl_cid, boid, bo_cid, key) in enumerate(todo, 1):
+        data = fetch_brickowl_price(boid, bo_cid)
+        blocks = brickowl_blocks(data) if data else None
+        if blocks is not None:
+            records.append(build_record(bl_part, bl_cid, blocks))
             existing_keys.add(key)
             ok += 1
-            l6 = data.get("last_6_months") or {}
+            l6 = blocks.get("last_6_months") or {}
             log(f"  [{i}/{len(todo)}] {key} avg={l6.get('avg')}")
         else:
             fail += 1
