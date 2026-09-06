@@ -85,7 +85,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL") or (
 FETCH_TIMEOUT = 30
 REQUEST_DELAY = 2.0                       # 直连 BL 网页的请求间隔，避免触发反爬/限速
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+      "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -253,25 +253,28 @@ def extract_price_guide(html):
 
 
 def open_browser():
-    """启动 Playwright Chromium，返回 (page, context, browser, p)。
+    """启动 Playwright 浏览器，返回 (page, context, browser, p)。
 
-    默认无头(headless)；设 BLP_HEADED=1 可用有头模式（Mac 上弹真实窗口，最不易被识别）。
-    已做反自动化检测：移除 webdriver 标记、隐藏 headless 特征（对 AWS-WAF/Cloudflare 有用）。
+    引擎选择：
+      - 默认 WebKit（Safari 内核），对 AWS-WAF 指纹伪装较好（你 Safari 能正常看价格页）。
+      - 设 BLP_ENGINE=chromium|firefox 可切换（常用于排查）。
+    默认无头；设 BLP_HEADED=1 弹真实窗口（最不易被识别）。
     """
     from playwright.sync_api import sync_playwright
+    engine = os.getenv("BLP_ENGINE", "webkit")
     headed = os.getenv("BLP_HEADED") == "1"
+    args = ['--no-sandbox', '--disable-blink-features=AutomationControlled']
+    if engine == "chromium":
+        args.append("--disable-dev-shm-usage")
     p = sync_playwright().start()
-    browser = p.chromium.launch(
-        headless=not headed,
-        args=['--no-sandbox',
-              '--disable-blink-features=AutomationControlled',
-              '--disable-dev-shm-usage'])
+    browser_cls = {"chromium": p.chromium, "firefox": p.firefox, "webkit": p.webkit}[engine]
+    browser = browser_cls.launch(headless=not headed, args=args if engine == "chromium" else None)
     context = browser.new_context(
         user_agent=UA,
         viewport={'width': 1366, 'height': 850},
         locale='en-US',
         timezone_id='America/New_York')
-    # 反自动化特征清理（切换 webdriver 标记）
+    # 反自动化特征清理
     try:
         context.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
