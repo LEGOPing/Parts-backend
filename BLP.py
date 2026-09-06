@@ -39,6 +39,7 @@ BLP.py — 本地用 Playwright 无头浏览器直连 Bricklink 网页爬取零�
 """
 
 import argparse
+import base64
 import json
 import os
 import re
