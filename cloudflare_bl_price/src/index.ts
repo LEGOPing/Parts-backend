@@ -83,7 +83,7 @@ function buildUrl(part: string, color: string) {
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS },
   });
 }
 
@@ -112,19 +112,35 @@ export default {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
       });
       const page = await context.newPage();
-      await page.goto(buildUrl(part, color), { waitUntil: 'domcontentloaded', timeout: 30000 });
-      // 等待 AWS WAF 挑战执行完成并渲染出价格锚点
-      try {
-        await page.waitForSelector('text=Last 6 Months Sales', { timeout: 25000 });
-      } catch {
-        /* 锚点未出现也会尝试解析，解析失败会返回无数据 */
+      await page.goto(buildUrl(part, color), { waitUntil: 'domcontentloaded', timeout: 40000 });
+      // AWS WAF 挑战通过后浏览器会自动 reload。轮询等待价格锚点出现，
+      // 避免"挑战页已 load、价格还没渲染"时过早取 content。
+      const deadline = Date.now() + 30000;
+      let html = await page.content();
+      while (Date.now() < deadline && !html.includes('Last 6 Months Sales')) {
+        try {
+          await page.waitForTimeout(800);
+        } catch { /* 忽略 */ }
+        html = await page.content();
       }
-      try {
-        await page.waitForTimeout(1500);
-      } catch { /* 忽略 */ }
-      const html = await page.content();
       const data = parsePriceGuide(html);
-      if (!data) return json(200, { ok: false, error: 'bricklink 解析无数据(可能被风控拦截)' });
+      if (!data) {
+        // debug=1 时把去标签后的可见文本前部吐出来，便于排查是被 WAF 拦截还是布局变化
+        if (new URL(request.url).searchParams.get('debug') === '1') {
+          const text = html
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          return json(200, {
+            ok: false,
+            error: 'bricklink 解析无数据(可能被风控拦截)',
+            page_text: text.slice(0, 4000),
+          });
+        }
+        return json(200, { ok: false, error: 'bricklink 解析无数据(可能被风控拦截)' });
+      }
       const currency = (data.last_6_months && data.last_6_months.currency)
         || (data.current_for_sale && data.current_for_sale.currency)
         || '';
