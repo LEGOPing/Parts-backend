@@ -55,11 +55,29 @@ GITEE_RAW      = f"https://gitee.com/{GITEE_OWNER}/{GITEE_REPO}/raw/{GITEE_BRANC
 GITEE_API      = f"https://gitee.com/api/v5/repos/{GITEE_OWNER}/{GITEE_REPO}/contents"
 
 PRICE_JSON     = "BL-price.json"           # 价格库（本地工作副本 + 推送到 Gitee）
-INV_SHARD_HEAD = "inventory_parts_"       # 库存分片前缀（与前端 api.js 一致）
-INV_SHARD_TAIL = ".csv"
-INV_MANIFEST   = "inventory_parts_shards.json"
 COLORS_CSV     = "colors.csv"              # RB 颜色表 id,name
 BL_COLORS_JSON = "bl_colors.json"          # BL 颜色表 id,name
+
+# ---- Supabase（直连系统数据库的 parts 表）----
+SUPABASE_ANON  = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmeHlkbGtweGtkcHh5b3Fya2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMTA2NzQsImV4cCI6MjEwMDc4NjY3NH0.kNMlT3YXyXVV5Y_JHmDd-0vj1o_xFUFpV_uuWTVh-JI")
+
+
+def _supabase_ref_from_jwt(token):
+    """从 anon key(JWT) 中解码出 project ref，避免手抄出错。"""
+    part = token.split('.')
+    if len(part) < 2:
+        return None
+    b = part[1] + '=' * (-len(part[1]) % 4)
+    try:
+        import base64 as _b64
+        data = json.loads(_b64.urlsafe_b64decode(b.encode("ascii")).decode("utf-8"))
+        return data.get("ref")
+    except Exception:
+        return None
+
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or (
+    "https://%s.supabase.co" % (_supabase_ref_from_jwt(SUPABASE_ANON) or "missing-ref"))
 
 FETCH_TIMEOUT  = 30                        # 抓价格的单页超时（秒）
 REQUEST_DELAY  = 4.0                       # 抓取间隔（秒），避免触发 BL 429
@@ -195,40 +213,35 @@ def load_rb_color_names():
     return m
 
 
-def load_inventory_keys():
-    """从 Gitee 分片读取全部 (part_num, RB_color_id) 去重集合。"""
-    urls = []
-    files = []
-    ok, out = _http_read(f"{GITEE_RAW}/{INV_MANIFEST}")
-    if ok:
-        try:
-            files = json.loads(out.decode("utf-8")).get("files", [])
-        except Exception:
-            files = []
-    if not files:
-        # 退化：没有分片清单则读取单个完整文件
-        log("未找到分片清单，回退到单个 inventory_parts.csv")
-        files = ["inventory_parts.csv"]
+def supabase_query(table, columns="*", filters=None):
+    """调用 Supabase PostgREST，返回 JSON 列表。filters 形如 [("k","v"), ...] 作为查询参数。"""
+    url = f"{SUPABASE_URL}/rest/v1/{table}?select={columns or '*'}"
+    if filters:
+        for k, v in filters:
+            url += f"&{k}={v}"
+    req = urllib.request.Request(url, headers={
+        "apikey": SUPABASE_ANON,
+        "Authorization": f"Bearer {SUPABASE_ANON}",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"Supabase 查询 {table} 失败: HTTP {e.code} {e.read().decode('utf-8', errors='ignore')[:200]}")
+    except Exception as e:
+        raise SystemExit(f"Supabase 查询 {table} 失败: {e}")
+
+
+def load_system_parts():
+    """直连 Supabase 读取系统数据库 parts 表，返回去重后的 (part_num, RB_color_id) 集合。"""
+    rows = supabase_query("parts", columns="part_num,color_id")
     keys = set()
-    for fname in files:
-        try:
-            text = gitee_raw(fname).decode("utf-8")
-        except Exception as e:
-            log(f"拉取 {fname} 失败: {e}")
-            continue
-        lines = text.splitlines()
-        if not lines:
-            continue
-        header = lines[0].split(",")
-        p_col = next((i for i, h in enumerate(header) if h.strip() == "part_num"), None)
-        c_col = next((i for i, h in enumerate(header) if h.strip() == "color_id"), None)
-        if p_col is None or c_col is None:
-            continue
-        for line in lines[1:]:
-            cells = line.split(",")
-            if len(cells) <= max(p_col, c_col):
-                continue
-            keys.add((cells[p_col].strip(), cells[c_col].strip()))
+    for r in rows:
+        pn = str(r.get("part_num") or "").strip()
+        cid = str(r.get("color_id") or "").strip()
+        if pn and cid:
+            keys.add((pn, cid))
     return keys
 
 
@@ -337,8 +350,8 @@ def run_once(args):
     log("=== 开始增量同步 ===")
     bl_cid_map = load_bl_colors()
     rb_cname_map = load_rb_color_names()
-    inv_keys = load_inventory_keys()
-    log(f"库存去重组合: {len(inv_keys)}")
+    inv_keys = load_system_parts()   # 直连 Supabase 读系统数据库的零件
+    log(f"系统数据库去重零件组合: {len(inv_keys)}")
 
     # RB color_id -> BL color_id
     rb2bl = {}
