@@ -278,11 +278,11 @@ def fetch_bl_price(page, part, color_id):
         return None
     url = f"https://www.bricklink.com/catalogPG.asp?P={clean}&colorID={color_id}"
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        resp = page.goto(url, wait_until='domcontentloaded', timeout=60000)
     except Exception as e:
         log(f"  {clean}/{color_id}: 跳转失败 {e}")
         return None
-    # 等待 WAF 挑战执行并渲染出价格锚点
+    # 等 WAF 挑战执行并渲染出价格锚点
     try:
         page.wait_for_selector('text=Last 6 Months Sales', timeout=60000)
     except Exception:
@@ -292,6 +292,30 @@ def fetch_bl_price(page, part, color_id):
     except Exception:
         pass
     html = page.content()
+    title = ""
+    try:
+        title = page.title()
+    except Exception:
+        pass
+
+    # ---- 诊断输出（供排障）----
+    status = resp.status if resp else "?"
+    blob = None
+    for probe in ("aws-waf-token", "Last 6 Months Sales", "Just Arrived",
+                  "Access Denied", "challenge", "CAPTCHA", "Sorry, you have been blocked"):
+        if probe in html:
+            blob = probe
+            break
+    log(f"  诊断: HTTP={status} 标题=\"{title}\" 命中标记={blob or '无'} 页面长度={len(html)}")
+    dbg_path = os.getenv("BLP_DEBUG_HTML")
+    if dbg_path:
+        try:
+            with open(dbg_path, "w", encoding="utf-8") as f:
+                f.write(f"# status={status} title={title}\n{html}")
+            log(f"  已保存调试HTML: {dbg_path}")
+        except Exception as e:
+            log(f"  保存调试HTML失败: {e}")
+
     if "aws-waf-token" in html:
         log(f"  {clean}/{color_id}: 页面仍含 WAF token 未通过")
         return None
