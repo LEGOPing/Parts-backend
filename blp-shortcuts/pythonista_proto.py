@@ -110,10 +110,10 @@ def _poll_price(webview, timeout=MAX_WAIT):
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
-        try:
-            last = webview.eval_js(EXTRACT_JS)
-        except Exception as e:
-            print('    轮询异常(继续等):', e, flush=True)
+        last = _eval_js_timed(webview, EXTRACT_JS, timeout=8)
+        if last is None:
+            # 单次 JS 调用超时未返回（WAF/页面挂起迹象），打印后继续等
+            print('    JS 调用超时未返回（可能 WAF/页面挂起），继续等待...', flush=True)
             time.sleep(POLL_STEP)
             continue
         last = '' if isinstance(last, (type(None), bool)) else str(last)
@@ -131,6 +131,25 @@ def _poll_price(webview, timeout=MAX_WAIT):
             continue
     print('    超时未等到价格段（最后返回: %r）' % (last,), flush=True)
     return None
+
+
+def _eval_js_timed(webview, js, timeout=8):
+    """eval_js 的带超时版本：避免同步版永久阻塞（WKWebView 回调不返回时会卡死线程）。"""
+    box = {}
+    def cb(value):
+        box['set'] = True
+        box['val'] = value
+    try:
+        webview.eval_js_async(js, cb)
+    except Exception as e:
+        box['set'] = True
+        box['val'] = ('', None)
+    deadline = time.time() + timeout
+    while time.time() < deadline and not box.get('set'):
+        time.sleep(0.2)
+    if box.get('set'):
+        return box.get('val')
+    return None    # 超时未返回
 
 
 def _build_record(part, color_bl, data):
