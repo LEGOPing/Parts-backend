@@ -5045,7 +5045,7 @@ function openManualPriceDialog(target, part) {
             close();
             resolve(rec);
         });
-        const hintEl = () => overlay.querySelector('#pd-mp-hint');
+        const hintEl = () => sheet.querySelector('#pd-mp-hint');
         const setHint = (text, color) => {
             const el = hintEl();
             if (el) {
@@ -5053,7 +5053,7 @@ function openManualPriceDialog(target, part) {
                 el.style.color = color || '#888';
             }
         };
-        overlay.querySelector('#pd-mp-import').addEventListener('click', async () => {
+        sheet.querySelector('#pd-mp-import').addEventListener('click', async () => {
             let text = '';
             try { text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
             let obj = null;
@@ -5074,7 +5074,7 @@ function openManualPriceDialog(target, part) {
             fill('cs', obj.cs);
             setHint('已从剪贴板导入，核对后点保存', '#2e7d32');
         });
-        overlay.querySelector('#pd-mp-copy').addEventListener('click', async () => {
+        sheet.querySelector('#pd-mp-copy').addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(BL_PRICE_BOOKMARKLET);
                 setHint('取价脚本已复制！请到已打开的官方页，把地址栏整段替换成这段脚本并回车。', '#1565c0');
