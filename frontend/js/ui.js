@@ -4834,12 +4834,13 @@ function clearSearchResults() {
 }
 
 // 抓取并渲染 BL 价格（零件详情页 BL价格 区块调用）。
-// 依据 part 的 RB 型号 + RB 颜色ID，解析为 BL 目标并发起价格指南抓取。
-// 主路径：后端 Playwright 无头浏览器（/api/parts/price）绕过 WAF 返回两组价格；
-// 失败回退独立 BL_PRICE_SERVER，再失败则打开手动回填弹窗。
+// 依据 part 的 RB 型号 + RB 颜色ID，解析为 BL 目标并打开 Bricklink 官方价格页。
+// 说明：Bricklink 受 AWS WAF 保护，云端无头浏览器/数据中心 IP 一律被拦，
+//       故采用人工方案——新标签打开官方价格页（设备真实浏览器可过 WAF 看到价），
+//       用户对照页面手动填价（或粘贴取价脚本自动导入）。此路径不再走服务端抓取。
 async function fetchAndRenderBLPrice(priceEl, part) {
     if (!priceEl) return;
-    priceEl.innerHTML = '<div class="pd-price-loading">加载中（Playwright 抓取约需 10~40 秒）...</div>';
+    priceEl.innerHTML = '<div class="pd-price-loading">正在准备打开 Bricklink 官方价格页...</div>';
     // msg 为主提示；detail 为失败具体原因；showManual=true 显示手动填价入口
     const failMsg = (msg, detail) => {
         const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/\n/g, ' ');
@@ -4879,41 +4880,21 @@ async function fetchAndRenderBLPrice(priceEl, part) {
         });
     };
 
-    // 重新获取 / 首次拉取：读缓存→服务端无头浏览器→手动
+    // 重新获取 / 首次拉取：打开官方价格页 → 手动回填（人工方案，不再试服务端抓取）
     const renderAndFetchFresh = async (el, p) => {
-        el.innerHTML = '<div class="pd-price-loading">请求服务端无头浏览器抓取（约 10~40 秒）...</div>';
-        const errs = [];
         try {
+            el.innerHTML = '<div class="pd-price-loading">正在打开 Bricklink 官方价格页...<br>请在新标签对照价格手动填写（可用「取价脚本」快速导入）。</div>';
             const target = await resolveBLTargetSafe(p);
-            // 主路径：独立服务端（AWS Lambda，Playwright headless-shell）抓取 BL 价格，绕过 AWS WAF。
-            let auto = (typeof fetchBLPriceFromServer === 'function')
-                ? await fetchBLPriceFromServer(target.blPartNum, target.blColorId)
-                : null;
-            if (auto && !auto.error && (auto.last_6_months || auto.current_for_sale)) {
-                const rec = normalizePriceRecord(target, auto, auto.source || 'bl-server');
+            const rec = await openManualPriceDialog(target, p);
+            if (rec) {
                 if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
-                renderPriceData(rec, '无头浏览器抓取');
+                renderPriceData(rec, '手动回填');
                 return;
             }
-            if (auto && auto.error) errs.push(auto.error);
-            // 自动未成：新标签打官方页 + 手动回填
-            openManualPriceDialog(target, p)
-                .then((rec) => {
-                    if (rec) {
-                        if (typeof saveCachedBLPrice === 'function') saveCachedBLPrice(rec);
-                        renderPriceData(rec, '手动回填');
-                        return;
-                    }
-                    renderCachedOrFail(el, p, errs.length ? errs.join('；') : '');
-                })
-                .catch((err) => {
-                    console.error('手动填价失败:', err);
-                    renderCachedOrFail(el, p, errs.length ? errs.join('；') : '');
-                });
+            renderCachedOrFail(el, p, '');
         } catch (e) {
-            console.error('BL价格拉取失败:', e);
-            errs.push((e && e.message) || String(e));
-            renderCachedOrFail(el, p, errs.join('；'));
+            console.error('BL价格手动获取失败:', e);
+            renderCachedOrFail(el, p, (e && e.message) || String(e));
         }
     };
 
@@ -4951,18 +4932,6 @@ async function fetchAndRenderBLPrice(priceEl, part) {
         if (!target) throw new Error('无法解析BL型号/颜色');
         return target;
     };
-
-    // 将抓取结果规整为本地缓存记录
-    const normalizePriceRecord = (target, data, source) => ({
-        key: `${target.blPartNum}:${target.blColorId}`,
-        part_num: target.blPartNum,
-        color_id: target.blColorId,
-        currency: (data && data.currency) || '',
-        last_6_months: (data && data.last_6_months) || null,
-        current_for_sale: (data && data.current_for_sale) || null,
-        source: source || 'manual',
-        saved_at: new Date().toISOString()
-    });
 
     // 主流程：缓存优先
     try {
@@ -5223,10 +5192,10 @@ async function showPartDetail(part) {
         <div class="pd-row pd-bl-row">
             <div class="pd-bl-head">
                 <span class="pd-bl-title">BL价格</span>
-                <button class="pd-bl-fetch-btn" id="pd-bl-fetch-btn">获取价格</button>
+                <button class="pd-bl-fetch-btn" id="pd-bl-fetch-btn">在BL打开</button>
             </div>
             <div class="pd-bl-price" id="pd-bl-price">
-                <div class="pd-price-hint">点击"获取价格"通过 Playwright 抓取 Bricklink 实时价格</div>
+                <div class="pd-price-hint">点击"在BL打开"在新标签打开 Bricklink 价格页，对照后手动填价</div>
             </div>
         </div>
         <div class="pd-row pd-model-row">
@@ -5398,7 +5367,7 @@ async function showPartDetail(part) {
     // 初始化位置：内容居中，右侧操作移出
     renderSwipe();
 
-    // BL 价格：点击"获取价格"通过后端 Playwright 抓取 Bricklink 实时价格
+    // BL 价格：点击"在BL打开"→ 新标签打开官方价格页，光标对照后手动填价
     const blPriceEl = sheet.querySelector('#pd-bl-price');
     const blFetchBtn = sheet.querySelector('#pd-bl-fetch-btn');
     if (blFetchBtn) {
