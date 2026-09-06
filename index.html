@@ -10,10 +10,11 @@
     <meta http-equiv="Expires" content="0">
     <title>乐高零件管理系统</title>
 
-    <!-- ======= BL价格服务端地址（Cloudflare Workers 无头浏览器 @cloudflare/playwright）=======
-         部署 cloudflare_bl_price 后，把下面引号内改成它的 https 地址，例如：
-         https://bl-price-worker.你的账号.workers.dev
-         留空时，零件的"获取价格"会提示未配置，并回退到手动回填。-->
+    <!-- ======= BL价格获取方式 =======
+         当前采用人工方案（推荐）：Bricklink 受 AWS WAF 保护，云端/无头浏览器一律被拦，
+         所以"在BL打开"会新标签打开官方价格页，对照后手动填价。
+         下面 BL_PRICE_SERVER 保持为空即可；仅当未来接入合规接口（如 Bricklink 官方
+         API / 自建服务端）时，才把它指向该 https 地址。 -->
     <script>
     window.BL_PRICE_SERVER = '';
     </script>
