@@ -253,20 +253,33 @@ def extract_price_guide(html):
 
 
 def open_browser():
-    """启动 Playwright 浏览器，返回 (page, context, browser, p)。
+    """启动/连接浏览器，返回 (page, context, browser, p)。
 
-    引擎选择：
-      - 默认 WebKit（Safari 内核），对 AWS-WAF 指纹伪装较好（你 Safari 能正常看价格页）。
-      - 设 BLP_ENGINE=chromium|firefox 可切换（常用于排查）。
-    默认无头；设 BLP_HEADED=1 弹真实窗口（最不易被识别）。
+    模式选择（优先级）：
+      - BLP_CDP=1（推荐）：CDP 连接你手动打开的真实 Chrome（需带 --remote-debugging-port）。
+        复用它已通过 AWS-WAF 挑战、已登录的会话，最不易被识别。见文件头部说明。
+      - BLP_ENGINE=chromium|webkit|firefox：Playwright 自建浏览器（默认 webkit，见下）。
+    默认无头；设 BLP_HEADED=1 弹真实窗口。
     """
     from playwright.sync_api import sync_playwright
+    p = sync_playwright().start()
+
+    if os.getenv("BLP_CDP") == "1":
+        # CDP 连接真实 Chrome：BLP_CDP_URL 默认 http://localhost:9222
+        cdp_url = os.getenv("BLP_CDP_URL", "http://localhost:9222")
+        browser = p.chromium.connect_over_cdp(cdp_url)
+        # 复用已存在的 context（手动打开的标签页所在会话）
+        contexts = browser.contexts
+        context = contexts[0] if contexts else browser.new_context()
+        page = context.pages[0] if context.pages else context.new_page()
+        # 注意：CDP 模式不要关闭浏览器，只返回连接对象；外部用 p.stop() 断开即可
+        return page, context, browser, p
+
     engine = os.getenv("BLP_ENGINE", "webkit")
     headed = os.getenv("BLP_HEADED") == "1"
     args = ['--no-sandbox', '--disable-blink-features=AutomationControlled']
     if engine == "chromium":
         args.append("--disable-dev-shm-usage")
-    p = sync_playwright().start()
     browser_cls = {"chromium": p.chromium, "firefox": p.firefox, "webkit": p.webkit}[engine]
     browser = browser_cls.launch(headless=not headed, args=args if engine == "chromium" else None)
     context = browser.new_context(
