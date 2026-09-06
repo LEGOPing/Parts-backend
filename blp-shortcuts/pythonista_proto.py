@@ -271,15 +271,27 @@ def main():
     except Exception:
         pass
     log('共 %d 组待抓：%s' % (_N, [(p, c) for p, c in PARTS]))
+    log('提示：full_modal 挡屏时请到文件 App 看 progress.log / result.json 实时进度。')
     _webview = WKWebView(name='BLP')
     _webview.present('full_modal')
     _worker()
 
+
 if __name__ == '__main__':
     try:
         main()
-        while True:
-            time.sleep(60)
+        # 一定不能在 main() 之后 while True + time.sleep：那样会阻塞 iOS 主线程，
+        # 使主 run loop 停止泵动，@ui.in_background 的后台任务和 on_main_thread
+        # 回调全部得不到执行——网页不导航、进度停在启动两行、脚本永不结束。
+        #
+        # main() 返回后主线程交给 Pythonista 的主 run loop 空转（跑 run loop），
+        # full_modal 视图 + 后台 _worker() 让脚本持续存活、run loop 正常泵动，
+        # _start_load / eval_js_async 的投递都能执行。
+        #
+        # worker 正常跑完或后台异常时，会：
+        #   1) 调用 _webview.close() 关闭最后一个视图；
+        #   2) 后台线程随脚本消亡。
+        # 此时已无任何视图存活，脚本自然结束，无需手动强关。
     except Exception:
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
