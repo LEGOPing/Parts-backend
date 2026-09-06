@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BLP.py — 本地直连 Bricklink 网页爬取零件价格的命令行工具（纯标准库，无第三方依赖）。
+BLP.py — 本地用 Playwright 无头浏览器直连 Bricklink 网页爬取零件价格的命令行工具。
 
 特点：
     - 直接访问 Bricklink 价格指南页 https://www.bricklink.com/catalogPG.asp?P=<型号>&colorID=<颜色ID>
-    - 纯 urllib，无 Playwright/浏览器依赖，可在 Mac 本地终端直接运行
-    - 在你家/店铺的"住宅 IP"上，有机会绕过 Bricklink 的 AWS-WAF 挑战（数据中心 IP 常被 202 拦截）
+    - 用 Playwright + Chromium 无头浏览器执行 AWS-WAF 挑战，拿到真实价格页后解析
+      （BL 价格页在 AWS-WAF 之后，纯 urllib/reqeusts 只能收到 202 挑战页，无法执行 JS，
+       因此必须用真浏览器过挑战。住宅 IP 更易通过，但前提是执行挑战脚本。）
+    - 每个批次复用同一个浏览器，不重复启停，速度更快
     - 价格解析算法与前端 ui.js 的 extractBLPriceGuide 及 app/bricklink_price.py 一致
+
+环境准备（一次性）：
+    python3 -m pip install playwright
+    python3 -m playwright install chromium
 
 三种用法：
     1. 查单个零件价格：
@@ -246,35 +252,48 @@ def extract_price_guide(html):
     return {'last_6_months': block(0), 'current_for_sale': block(2)}
 
 
-def fetch_bl_price(part, color_id):
-    """直连 Bricklink 价格指南页抓取并解析。被 WAF 拦截 / 解析失败返回 None。"""
+def open_browser():
+    """启动 Playwright 无头 Chromium，返回 (page, context, browser)。批量抓取可复用浏览器。"""
+    from playwright.sync_api import sync_playwright
+    p = sync_playwright().start()
+    browser = p.chromium.launch(
+        headless=True,
+        args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
+    context = browser.new_context(
+        user_agent=UA,
+        viewport={'width': 1280, 'height': 900},
+        locale='en-US')
+    page = context.new_page()
+    return page, context, browser, p
+
+
+def fetch_bl_price(page, part, color_id):
+    """在已打开的页面里抓取单个 Bricklink 价格指南页并解析。
+
+    背景：BL 价格页在 AWS-WAF 之后，纯 urllib 只会收到 202 挑战页（无法执行 JS）。
+    页面需由 Playwright 触发 WAF 挑战、渲染出价格后再调用本函数取 HTML。
+    """
     clean = re.sub(r'[^a-zA-Z0-9]', '', part or '')
     if not clean:
         return None
     url = f"https://www.bricklink.com/catalogPG.asp?P={clean}&colorID={color_id}"
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA,
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://www.bricklink.com/catalogList.asp"})
     try:
-        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-            if resp.status == 202:
-                log(f"  {clean}/{color_id}: HTTP 202(AWS-WAF 挑战) 被拦截")
-                return None
-            raw = resp.read()
-    except urllib.error.HTTPError as e:
-        log(f"  {clean}/{color_id}: HTTP {e.code} 被拦截")
-        return None
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
     except Exception as e:
-        log(f"  {clean}/{color_id}: 连接失败 {e}")
+        log(f"  {clean}/{color_id}: 跳转失败 {e}")
         return None
+    # 等待 WAF 挑战执行并渲染出价格锚点
     try:
-        html = raw.decode("utf-8")
+        page.wait_for_selector('text=Last 6 Months Sales', timeout=60000)
     except Exception:
-        html = raw.decode("latin-1", errors="ignore")
+        pass
+    try:
+        page.wait_for_timeout(1500)
+    except Exception:
+        pass
+    html = page.content()
     if "aws-waf-token" in html:
-        log(f"  {clean}/{color_id}: 页面含 WAF token 未通过")
+        log(f"  {clean}/{color_id}: 页面仍含 WAF token 未通过")
         return None
     return extract_price_guide(html)
 
@@ -319,7 +338,11 @@ def query_single(args, bl_cid_map):
         log(f"无法解析颜色: {color_arg}")
         return
     log(f"抓取 {part} / color {cid} ...")
-    data = fetch_bl_price(part, cid)
+    page, context, browser, p = open_browser()
+    try:
+        data = fetch_bl_price(page, part, cid)
+    finally:
+        p.stop()
     if not data:
         log("未获取到价格（被 WAF 拦截或解析失败）。")
         return
@@ -384,21 +407,26 @@ def run_once(args):
         todo = todo[:args.max_fetch]
         log(f"本轮仅处理前 {len(todo)} 条（其余下次继续）")
 
-    ok = fail = waf = 0
-    for i, (bl_part, bl_cid, key) in enumerate(todo, 1):
-        data = fetch_bl_price(bl_part, bl_cid)
-        if data and (data.get('last_6_months') or data.get('current_for_sale')):
-            records.append(build_record(bl_part, bl_cid, data))
-            existing_keys.add(key)
-            ok += 1
-            l6 = data.get('last_6_months') or {}
-            log(f"  [{i}/{len(todo)}] {key} avg={l6.get('avg')}")
-        else:
-            fail += 1
-            log(f"  [{i}/{len(todo)}] {key} 无数据(跳过，下次重试)")
-        if i % 10 == 0:
-            _save_local(records)
-        time.sleep(REQUEST_DELAY)
+    ok = fail = 0
+    log("启动 Chromium 浏览器...")
+    page, context, browser, p = open_browser()
+    try:
+        for i, (bl_part, bl_cid, key) in enumerate(todo, 1):
+            data = fetch_bl_price(page, bl_part, bl_cid)
+            if data and (data.get('last_6_months') or data.get('current_for_sale')):
+                records.append(build_record(bl_part, bl_cid, data))
+                existing_keys.add(key)
+                ok += 1
+                l6 = data.get('last_6_months') or {}
+                log(f"  [{i}/{len(todo)}] {key} avg={l6.get('avg')}")
+            else:
+                fail += 1
+                log(f"  [{i}/{len(todo)}] {key} 无数据(跳过，下次重试)")
+            if i % 10 == 0:
+                _save_local(records)
+            time.sleep(REQUEST_DELAY)
+    finally:
+        p.stop()
 
     _save_local(records)
     log(f"本轮：成功 {ok} / 跳过 {fail}，共 {len(records)} 条")
