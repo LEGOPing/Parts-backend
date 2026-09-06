@@ -112,16 +112,21 @@ export default {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
       });
       const page = await context.newPage();
-      await page.goto(buildUrl(part, color), { waitUntil: 'domcontentloaded', timeout: 40000 });
-      // AWS WAF 挑战通过后浏览器会自动 reload。轮询等待价格锚点出现，
-      // 避免"挑战页已 load、价格还没渲染"时过早取 content。
-      const deadline = Date.now() + 30000;
-      let html = await page.content();
-      while (Date.now() < deadline && !html.includes('Last 6 Months Sales')) {
+      // 首次加载多数会命中 AWS WAF challenge，随后浏览器自动 reload。
+      // 用 'load' + 较长超时，留出挑战执行时间。
+      await page.goto(buildUrl(part, color), { waitUntil: 'load', timeout: 45000 });
+      // 稳定轮询：取 content 时若页面正在导航（WAF reload）会抛异常，此时跳过等待，
+      // 只在页面稳定时读取，直到价格锚点出现。
+      const deadline = Date.now() + 40000;
+      let html = '';
+      while (Date.now() < deadline) {
         try {
-          await page.waitForTimeout(800);
-        } catch { /* 忽略 */ }
-        html = await page.content();
+          html = await page.content();
+          if (html.includes('Last 6 Months Sales')) break;
+        } catch {
+          // 页面正在导航，忽略本次读取，等待稳定
+        }
+        await new Promise((r) => setTimeout(r, 700));
       }
       const data = parsePriceGuide(html);
       if (!data) {
