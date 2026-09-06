@@ -254,7 +254,7 @@ def save_local(records):
     payload = full_payload(records)
     try:
         with open(os.path.join(_BASE, OUT_JSON), 'w', encoding='utf-8') as f:
-            json.dump(payload, f, ensure_ascii=False, separators=(',', ':'))
+            json.dump(payload, f, ensure_ascii=False, indent=2)
         log('  已写 result.json（当前 %d 条）' % len(records))
     except Exception as e:
         log('  写 result.json 失败: %s' % e)
