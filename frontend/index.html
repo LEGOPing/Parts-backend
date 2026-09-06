@@ -10,9 +10,9 @@
     <meta http-equiv="Expires" content="0">
     <title>乐高零件管理系统</title>
 
-    <!-- ======= BL价格服务端地址（AWS Lambda 无头浏览器）=======
-         部署 lambda_bl_price 后，把下面引号内改成它的 https 触发地址，例如：
-         https://xxxxxxxx.execute-api.ap-southeast-1.amazonaws.com/default/bl_price
+    <!-- ======= BL价格服务端地址（Cloudflare Workers 无头浏览器 @cloudflare/playwright）=======
+         部署 cloudflare_bl_price 后，把下面引号内改成它的 https 地址，例如：
+         https://bl-price-worker.你的账号.workers.dev
          留空时，零件的"获取价格"会提示未配置，并回退到手动回填。-->
     <script>
     window.BL_PRICE_SERVER = '';

@@ -1,0 +1,13 @@
+name = "bl-price-worker"
+main = "src/index.ts"
+compatibility_date = "2026-08-04"
+
+# Browser Rendering 绑定：环境变量中通过 env.MYBROWSER 访问托管 Chromium
+browser = { binding = "MYBROWSER" }
+
+# 部署前：npx wrangler login
+# 本地调试：npx wrangler dev --remote
+# 发布：npx wrangler deploy
+
+# 部署完成后拿到 https://bl-price-worker.<你的账号>.workers.dev
+# 填回前端 index.html 的 window.BL_PRICE_SERVER（形如 https://bl-price-worker.<账号>.workers.dev）
