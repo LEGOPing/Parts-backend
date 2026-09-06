@@ -4980,7 +4980,7 @@ function openManualPriceDialog(target, part) {
         sheet.className = 'modal-content pd-mprice';
         sheet.innerHTML = `
             <div class="pd-mprice-title">手动填写 BL 价格</div>
-            <div class="pd-mprice-tip">已为你打开 <b>${target.blPartNum}</b> 官方价格页（新标签）。<b>推荐</b>：<b>①</b>先在官方页把地址改为粘贴"取价脚本"并回车（价格会自动复制）；<b>②</b>回到这里点<b>从剪贴板导入</b>自动填好，再点保存。也可直接对照页面手填。</div>
+            <div class="pd-mprice-tip">已为你打开 <b>${target.blPartNum}</b> 官方价格页（新标签）。请对照页面 <b>New</b> 一列的 <b>Min / Avg / Qty Avg / Max</b> 数字，手动填到下方两组并点保存。<br><b>提示</b>：「取价脚本」仅桌面浏览器可用；iOS/Safari 无法从地址栏运行 <code>javascript:</code>，请直接对照数字手填。</div>
             <div class="pd-mprice-toolbar">
                 <button type="button" class="pd-mprice-import" id="pd-mp-import">↑ 从剪贴板导入</button>
                 <button type="button" class="pd-mprice-copy" id="pd-mp-copy">📋 复制取价脚本</button>
