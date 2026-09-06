@@ -558,6 +558,11 @@ def main():
     log('=== 启动：增量价格闭环（独立 B / iPhone）===')
     log('提示：full_modal 挡屏时到文件 App 看 progress.log / result.json 实时进度。')
     _webview = WKWebView(name='BLP')
+    # 先导航到空白页，跳过 WKWebView 内置的 Pythonista 首页，启动直接进入抓取
+    try:
+        _webview.load_url('about:blank')
+    except Exception:
+        pass
     _webview.present('full_modal')
     _worker()
 
