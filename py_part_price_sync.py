@@ -8,11 +8,16 @@ Pythonista 可运行的 Bricklink 增量价格同步脚本（纯标准库，无�
     只对"新增零件"(part_num,color_id) 增量抓取价格，合并回 BL-price.json 并推送，
     前端继续读取 Gitee 上的 BL-price.json 作为价格参考。
 
-数据流：
-    1. 从 Gitee 拉取最新的 inventory_parts 分片（PWA 新增零件会同步进来）
-    2. 下载当前 BL-price.json，计算其中缺失的组合（增量）
-    3. 用 urllib 直连 Bricklink 价格页（catalogPG.asp）抓增量价格（住宅 IP 通常可绕过 WAF）
-    4. 合并写回 BL-price.json，推送到 Gitee
+数据流（增量，非全量）：
+    1. 直连 Supabase 系统数据库，读取 parts 表（约 500 种零件）的 part_num+color_id，去重成组合集合
+    2. 从 Gitee 拉取当前 BL-price.json，取出已有的价格 key
+    3. 用系统零件集合减去已有价格 key，只得到"新增待抓组合"（已存在的组合永不重抓，天然断点续跑）
+    4. 用 urllib 直连 Bricklink 价格页（catalogPG.asp）逐个抓新增组合的价格（住宅 IP 通常可绕过 WAF）
+    5. 把新价格合并写回 BL-price.json（可用 --max-fetch 限制本轮数量，剩下的下次继续）
+    6. 推送到 Gitee，前端继续读取该文件作为价格参考
+
+    所以它"不全量重抓"：每次只补系统库里、价格库中还缺失的新增零件组合。
+    系统里约 500 种零件在运行时全读，但只有新增的部分才去爬价格。
 
 关键增量化：
     - 已存在的 key 永不重新抓取，天然断点续跑
