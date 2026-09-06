@@ -208,6 +208,28 @@ def _start_load(webview, url):
 @ui.in_background
 def _worker():
     global _results
+    try:
+        _batch()
+    except Exception:
+        log('=== 后台线程异常 ===')
+        tb = traceback.format_exc()
+        log(tb)
+        try:
+            with open(os.path.join(_BASE, LOG_FILE), 'a', encoding='utf-8') as f:
+                f.write('\nBACKTRACE:\n%s\n' % tb)
+        except Exception:
+            pass
+        # 即使后台崩了也尝试关界面，避免一直挡着
+        @on_main_thread
+        def close_ui():
+            try:
+                _webview.close()
+            except Exception:
+                pass
+        close_ui()
+
+
+def _batch():
     for idx, (part, color_bl) in enumerate(PARTS, start=1):
         url = URL_TMPL.format(part=part, color=color_bl)
         log('=== [%d/%d] 打开 %s:%s -> %s' % (idx, _N, part, color_bl, url))
