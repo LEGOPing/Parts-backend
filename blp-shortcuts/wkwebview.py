@@ -397,9 +397,9 @@ class WKWebView(ui.View):
     });'''
 
     def on_javascript_console_message(self, message):
-        log_message = json.loads(message)
-        #self.console.message(log_message)
-        self._message(log_message)
+        # 我们不消费网页 JS console，直接忽略，避免 Bricklink 页面自身的
+        # console 输出（含 dict 内容）刷屏并触发无害的 TypeError 噪音。
+        pass
 
     def _message(self, message):
         level, content = message['level'], message['content']
