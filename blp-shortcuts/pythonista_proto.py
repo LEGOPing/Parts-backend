@@ -223,6 +223,7 @@ def gitee_push_file(path, payload_b64):
     body = {
         "access_token": GITEE_TOKEN,
         "content": payload_b64,
+        "message": "feat: 增量更新 Bricklink 价格库 [skip ci]",
         "branch": GITEE_BRANCH,
     }
     if got_sha:
@@ -365,10 +366,37 @@ def _start_load(webview, url):
     do()
 
 
+NAV_JS = ("(function(){try{return (document.readyState||'')+'|'"
+          "+(window.location.href||'');}catch(e){return 'ERR:'+e;}})();")
+
+
+def _wait_nav(webview, part, bl_cid, timeout=MAX_WAIT):
+    """触发 load 后等新页面真正就绪（readyState=complete 且 URL 指向该零件），
+    避免加载未完成就从上一页残留 DOM 提取到错误价格。返回是否确认导航。"""
+    want_part = 'P=' + part.upper()
+    want_cid = 'colorID=' + str(bl_cid)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        val = _eval_js_timed(webview, NAV_JS, timeout=JS_TO)
+        if val:
+            s = str(val)
+            if s.startswith('ERR:'):
+                time.sleep(POLL_STEP)
+                continue
+            state, _, url = s.partition('|')
+            if state == 'complete' and url:
+                if want_part in url.upper() and want_cid in url:
+                    return True
+        time.sleep(POLL_STEP)
+    return False
+
+
 def _fetch_one(webview, part, bl_cid, idx, total):
     url = f"https://www.bricklink.com/catalogPG.asp?P={urllib.parse.quote(part)}&colorID={bl_cid}"
     log('=== [%d/%d] 打开 %s:%s -> %s' % (idx, total, part, bl_cid, url))
     _start_load(webview, url)
+    if not _wait_nav(webview, part, bl_cid):
+        log('    [%d/%d] 导航未确认（仍尝试），%s:%s' % (idx, total, part, bl_cid))
     data = _poll_price(webview)
     if not data:
         return None
