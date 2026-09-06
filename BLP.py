@@ -253,16 +253,32 @@ def extract_price_guide(html):
 
 
 def open_browser():
-    """启动 Playwright 无头 Chromium，返回 (page, context, browser)。批量抓取可复用浏览器。"""
+    """启动 Playwright Chromium，返回 (page, context, browser, p)。
+
+    默认无头(headless)；设 BLP_HEADED=1 可用有头模式（Mac 上弹真实窗口，最不易被识别）。
+    已做反自动化检测：移除 webdriver 标记、隐藏 headless 特征（对 AWS-WAF/Cloudflare 有用）。
+    """
     from playwright.sync_api import sync_playwright
+    headed = os.getenv("BLP_HEADED") == "1"
     p = sync_playwright().start()
     browser = p.chromium.launch(
-        headless=True,
-        args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
+        headless=not headed,
+        args=['--no-sandbox',
+              '--disable-blink-features=AutomationControlled',
+              '--disable-dev-shm-usage'])
     context = browser.new_context(
         user_agent=UA,
-        viewport={'width': 1280, 'height': 900},
-        locale='en-US')
+        viewport={'width': 1366, 'height': 850},
+        locale='en-US',
+        timezone_id='America/New_York')
+    # 反自动化特征清理（切换 webdriver 标记）
+    try:
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.chrome = window.chrome || { runtime: {} };
+        """)
+    except Exception:
+        pass
     page = context.new_page()
     return page, context, browser, p
 
@@ -282,24 +298,29 @@ def fetch_bl_price(page, part, color_id):
     except Exception as e:
         log(f"  {clean}/{color_id}: 跳转失败 {e}")
         return None
-    # 等 WAF 挑战执行并渲染出价格锚点
-    try:
-        page.wait_for_selector('text=Last 6 Months Sales', timeout=60000)
-    except Exception:
-        pass
-    try:
-        page.wait_for_timeout(1500)
-    except Exception:
-        pass
-    html = page.content()
-    title = ""
+    # 轮询等待：出现价格锚点即停；出现明确拦截标记则提前退出（避免空等 60s）
+    blocked_markers = ("aws-waf-token", "Access Denied", "Sorry, you have been blocked",
+                       "Just a moment...", "Attention Required", "CAPTCHA")
+    html, title, status = "", "", (resp.status if resp else "?")
+    for _ in range(40):               # 40 * 1.5s = 60s 上限
+        try:
+            html = page.content()
+        except Exception:
+            html = ""
+        if "Last 6 Months Sales" in html:
+            break
+        if any(mk in html for mk in blocked_markers):
+            break
+        try:
+            page.wait_for_timeout(1500)
+        except Exception:
+            break
     try:
         title = page.title()
     except Exception:
         pass
 
     # ---- 诊断输出（供排障）----
-    status = resp.status if resp else "?"
     blob = None
     for probe in ("aws-waf-token", "Last 6 Months Sales", "Just Arrived",
                   "Access Denied", "challenge", "CAPTCHA", "Sorry, you have been blocked"):
