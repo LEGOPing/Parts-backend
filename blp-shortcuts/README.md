@@ -69,14 +69,59 @@ runExtract();
 
 `extract-price-on-safari.js` 返回的 `last_6_months` / `current_for_sale` 结构，
 和 `BLP.py` 的 `build_record()` 写入 `BL-price.json` 的字段完全一致
-（`currency/min/avg/qty_avg/max`）。因此快捷指令得到的 JSON 可直接并入主价格库。
+（`currency/min/avg/qty_avg/max`）。因此提取结果可直接并入主价格库。
 
 ---
 
-## 尚未实现（原型边界）
+## 完整独立 B：端到端流程
 
-- ❌ 快捷指令与 Gitee 的双向读写（需「获取 URL 内容」+ 手动鉴权，做法可行但此处不展开）。
-- ❌ 批量逐页自动循环（快捷指令支持「重复」动作，可扩展）。
-- ❌ PWA «A» 侧如何消费这些数据（与既有 `BL-price.json` 读取流程一致，无新增）。
+目录里的文件共同构成一套可独立运行的抓价闭环（不依赖展示 PWA «A»）：
 
-本原型聚焦**单个可验证的可行性核心**：浏览器内 JS 提取价格。
+```
+┌───────────────┐  ①读清单   ┌────────────────────┐
+│ Supabase 系统库 │ ────────▶ │                    │
+└───────────────┘            │  run-batch.mjs (Node主控)   │
+                            │   ②逐个抓价格页      │
+┌───────────────┐  ①合并    │   ③extract 提取      │
+│ Gitee 价格表   │ ◀──────── │   ④写回+推送Gitee    │
+│ BL-price.json│            └────────────────────┘
+└───────────────┘
+```
+
+### 文件组成
+| 文件 | 作用 | 状态 |
+|---|---|---|
+| `extract-price-on-safari.js` | 价格页→`min/avg/qty_avg/max` 提取器 | ✅ 已验证 |
+| `run-batch.mjs` | 端到端主控：读Supabase+颜色映射→增量→抓价→合并→推送 | ✅ 逻辑可用（网络段须你本机验）|
+| `README.md` | 本说明 | — |
+
+### 用 run-batch.mjs（推荐，Mac/PC 一次跑完）
+```bash
+cd blp-shortcuts
+node run-batch.mjs --dry-run    # 先看增量（读Supabase+颜色映射，标色正确性）
+node run-batch.mjs --max 20     # 小批量试跑
+node run-batch.mjs --max 370    # 全量
+```
+- 它会：读 Supabase `parts` 表 → 用 `colors.csv`+`bl_colors.json` 把 RB颜色ID映射成 BL颜色ID → 与 `BL-price.json` 求差集得待抓 → 逐个 `fetch` 价格页 → `extract` 提取 → 合并写回并推 Gitee。
+- **WAF 兜底**：`fetch` 直连大概率遇到 HTTP 202（BL 挑战）。此时脚本暂停并提示用浏览器打开 URL 手动过挑战，回车后继续；或 `SKIP_BLOCKED=1` 跳过错败。
+  > 提示：若想少遇到 202，建议用 `BLP.py`（Playwright 持久化，已验证能过挑战拿到价）作为抓取引擎，`run-batch` 或样式类似即可。run-batch 是"无浏览器依赖"的轻量参考实现。
+
+### 用快捷指令（纯手机 Safari，单页/小批量）
+1. 新建快捷指令，依次加：**打开URL** → **运行 JavaScript on Safari Web Page**（粘贴 `extract-price-on-safari.js`）→ **获取文本→存储到文件**。
+2. Safari 打开价格页 → 分享 → 运行该快捷指令 → 得到当前页价格 JSON。
+3. 适合抽查/少量；批量需「重复」动作或逐页。
+
+### 颜色映射（关键，务必正确）
+系统库 `parts.color_id` 是 **RB 内部颜色ID**，而价格页 `colorID` 是 **BL 颜色ID**。
+`run-batch.mjs` 已实现 `RB颜色ID → RB颜色名(colors.csv) → BL颜色ID(bl_colors.json)`，
+和 `BLP.py` 的 `rb2bl` 完全一致。**别跳过这步**，否则价格会挂错颜色。
+
+---
+
+## 建议的落地顺序（完整独立 B）
+1. 在 Mac/PC 上 `node run-batch.mjs --dry-run`——确认能读到 Supabase 系统库、颜色映射正确、增量数量合理。
+2. `--max 20` 小批量试，核对 `BL-price.json` 里新增记录的颜色与价格是否正确。
+3. 全量 `--max 370`（或分几轮），最终 `BL-price.json` 补齐，推送 Gitee。
+4. «A»（展示 PWA）照旧读该 JSON 即可，无需改动。
+
+> 若 `run-batch` 在 Mac 直连 Supabase/BL 仍有网络问题（如沙箱 TLS 限制），用 `BLP.py`（Playwright）抓取引擎更稳——两者只是"抓取引擎"不同，提取/合并/推送逻辑共用同一套。
