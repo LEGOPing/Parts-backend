@@ -235,7 +235,7 @@ def extract_price_guide(html):
             val = float(m.group(3).replace(',', ''))
         except ValueError:
             continue
-        cells[key].append((m.group(2) or '').upper(), val)
+        cells[key].append(((m.group(2) or '').upper(), val))
 
     def block(col):
         def get(k):
