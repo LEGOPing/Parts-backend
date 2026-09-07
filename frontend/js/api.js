@@ -376,16 +376,40 @@ async function tryAutoFetchBLPrice(blPartNum, blColorId) {
 
 // 边角颜色校准：RB 与 BL 对同一物理颜色命名不同，按颜色名匹配会漏掉。
 // 这里先命中 RB id -> BL id 的覆盖表，再回退到按名匹配。
-// 权威对照见仓库根目录 rb_bl_color_alias.json（有人工校准的 aliases 可同步）。
+// 权威对照见仓库根目录 rb_bl_color_alias.json；前端优先用远端该文件，
+// 拉取失败时回退到内联常量，保证边角色也能稳定解析。
 const RB_BL_COLOR_ALIAS = {
     23: 109, // Dark Blue-Violet -> Dark Royal Blue（同 RGB #2032B0）
     112: 73, // Medium Bluish Violet -> Medium Violet
 };
+let cachedRBColorAliasMap = null;
+async function getRBColorAliasMap() {
+    if (cachedRBColorAliasMap) return cachedRBColorAliasMap;
+    let map = {};
+    try {
+        const text = await fetchRBFile('rb_bl_color_alias.json');
+        if (text) {
+            const data = JSON.parse(text);
+            for (const [rbId, info] of Object.entries(data.aliases || {})) {
+                if (info && info.bl_id != null) map[Number(rbId)] = Number(info.bl_id);
+            }
+            cachedRBColorAliasMap = map;
+        } else {
+            cachedRBColorAliasMap = { ...RB_BL_COLOR_ALIAS };
+        }
+    } catch (e) {
+        console.warn('加载 RB↔BL 颜色别名失败，使用内联校准:', e.message);
+        cachedRBColorAliasMap = { ...RB_BL_COLOR_ALIAS };
+    }
+    return cachedRBColorAliasMap;
+}
 
 // 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
 async function resolveBLColorId(rbColorId) {
     try {
-        const aliasId = RB_BL_COLOR_ALIAS[Number(rbColorId)];
+        const n = Number(rbColorId);
+        const aliasMap = await getRBColorAliasMap();
+        const aliasId = aliasMap[n] !== undefined ? aliasMap[n] : RB_BL_COLOR_ALIAS[n];
         if (aliasId !== undefined) return aliasId;
         const color = await getColorById(rbColorId);
         const name = color && color.name ? String(color.name) : '';
