@@ -3406,13 +3406,16 @@ body {
 }
 
 .pd-image-content {
+    position: absolute;           /* 由 JS 按滑动手势控制位置（居中/右对齐/左对齐） */
+    left: 0;
+    top: 0;
     width: 168px;
     height: 168px;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-shrink: 0;
-    margin: auto;                 /* 正方形图片在图片行内居中 */
+    margin: 0;
 }
 
 .pd-image-action {
@@ -3547,6 +3550,36 @@ body {
 .pp-wavg .pp-val {
     color: #c0392b;
     font-weight: 700;             /* 红色粗体 */
+}
+/* 3 列 × 5 行价格表：行 = 最低价/平均价/加权价/最高价；列 = 空 / 近6月 / 现在 */
+.pp-grid {
+    width: 100%;
+    border-collapse: collapse;
+    flex: 1;
+    min-height: 0;
+}
+.pp-grid th,
+.pp-grid td {
+    padding: 2px 4px;
+    text-align: left;
+    font-size: 8px;
+    vertical-align: middle;
+}
+.pp-grid th {
+    color: #1565c0;
+    font-weight: bold;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+}
+.pp-grid td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pp-row-label {
+    color: #888;
+    padding-right: 6px;
+    white-space: nowrap;
 }
 .pp-muted {
     color: #bbb;
