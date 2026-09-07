@@ -4841,15 +4841,17 @@ async function renderBLPricePanel(panelEl, part) {
     panelEl.innerHTML = '<div class="pd-price-loading">价格加载中...</div>';
     const esc = (s) => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/&/g, '&amp;');
     const col = (title, p) => {
-        const row = (label, value) => (value != null)
-            ? `<div class="pp-row"><span class="pp-label">${label}</span><span class="pp-val">${value}</span></div>`
+        const row = (cls, label, value) => (value != null)
+            ? `<div class="pp-row ${cls}"><span class="pp-label">${label}</span><span class="pp-val">${value}</span></div>`
             : '';
-        const body = row('均', p && p.avg) || row('平', p && p.qty_avg) || '<div class="pp-row pp-muted">—</div>';
+        const rowsHtml =
+            row('pp-low', '低', p && p.min) +
+            row('pp-avg', '平均', p && p.avg) +
+            row('pp-wavg', '加权', p && p.qty_avg) +
+            row('pp-high', '高', p && p.max);
         return `<div class="pp-col">` +
             `<div class="pp-title">${title}</div>` +
-            body +
-            row('低', p && p.min) +
-            row('高', p && p.max) +
+            (rowsHtml || '<div class="pp-row pp-muted">—</div>') +
             `</div>`;
     };
     try {
@@ -5351,24 +5353,31 @@ async function showPartDetail(part) {
     statusEl.addEventListener('touchend', cancelStatusLongPress);
     statusEl.addEventListener('touchmove', cancelStatusLongPress);
 
-    // 图片滑动手势：左滑显示右侧"变更图片"按钮；右滑显示左侧"BL价格"面板（右滑图片查询价格）
+    // 图片滑动手势：左滑显示右侧"变更图片"按钮（图片左对齐页面）；右滑显示左侧"BL价格"面板（图片右对齐页面，右滑图片查询价格）
     // 价格数据源：离线 BL-price.json 已由系统启动时加载到本地 rb_prices。
+    // 零件图片为正方形并居中，可移动距离 = (行宽 - 正方形边长)/2，左右面板宽度取此距离，
+    // 保证右滑后图片右对齐页面、左滑后图片左对齐页面，同时价格区域更窄、图片保持可见。
     const imageSwipe = sheet.querySelector('#pd-image-swipe');
     const imageContent = imageSwipe.querySelector('.pd-image-content');
     const imageAction = imageSwipe.querySelector('.pd-image-action');
     const pricePanel = imageSwipe.querySelector('#pd-price-panel');
-    const actionWidth = 90;      // 右侧操作区宽度
-    const panelWidth = 200;      // 左侧价格面板宽度
+    const IMG_SIDE = 168;                     // 正方形图片边长(px)
+    const rowWidth = imageSwipe.clientWidth || 356;
+    const swipeWidth = Math.max(80, Math.round((rowWidth - IMG_SIDE) / 2)); // 移动距离/面板宽度(px)
     let startX = 0, currentX = 0, isSwiping = false;
     let isActionOpen = false;    // 右侧操作区是否打开（左滑）
     let isPanelOpen = false;     // 左侧价格面板是否打开（右滑）
     let panelRendered = false;
 
+    // 左右面板宽度 = 图片可移动对齐距离，保证对齐且图片不被完全遮住
+    pricePanel.style.width = swipeWidth + 'px';
+    imageAction.style.width = swipeWidth + 'px';
+
     function renderSwipe() {
-        // currentX 区间：[-actionWidth, +panelWidth]
+        // currentX 区间：[-swipeWidth, +swipeWidth]
         imageContent.style.transform = `translateX(${currentX}px)`;
-        imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
-        pricePanel.style.transform = `translateX(${currentX - panelWidth}px)`;
+        imageAction.style.transform = `translateX(${currentX + swipeWidth}px)`;
+        pricePanel.style.transform = `translateX(${currentX - swipeWidth}px)`;
     }
 
     imageContent.style.transition = 'transform 0.25s ease';
@@ -5382,15 +5391,15 @@ async function showPartDetail(part) {
         imageContent.style.transition = 'none';
         imageAction.style.transition = 'none';
         pricePanel.style.transition = 'none';
-        currentX = isPanelOpen ? panelWidth : (isActionOpen ? -actionWidth : 0);
+        currentX = isPanelOpen ? swipeWidth : (isActionOpen ? -swipeWidth : 0);
         renderSwipe();
     }, { passive: true });
 
     imageSwipe.addEventListener('touchmove', (e) => {
         if (!isSwiping || e.touches.length !== 1) return;
         const dx = e.touches[0].clientX - startX;
-        const baseX = isPanelOpen ? panelWidth : (isActionOpen ? -actionWidth : 0);
-        currentX = Math.max(-actionWidth, Math.min(panelWidth, baseX + dx));
+        const baseX = isPanelOpen ? swipeWidth : (isActionOpen ? -swipeWidth : 0);
+        currentX = Math.max(-swipeWidth, Math.min(swipeWidth, baseX + dx));
         renderSwipe();
     }, { passive: true });
 
@@ -5401,17 +5410,17 @@ async function showPartDetail(part) {
         imageAction.style.transition = 'transform 0.25s ease';
         pricePanel.style.transition = 'transform 0.25s ease';
 
-        if (currentX > panelWidth / 2) {
-            // 右滑：打开左侧价格面板
+        if (currentX > swipeWidth / 2) {
+            // 右滑：打开左侧价格面板，图片右对齐页面
             isPanelOpen = true;
             isActionOpen = false;
-            currentX = panelWidth;
+            currentX = swipeWidth;
             if (!panelRendered) renderBLPricePanel(pricePanel, part).finally(() => { panelRendered = true; });
-        } else if (currentX < -actionWidth / 2) {
-            // 左滑：打开右侧操作区
+        } else if (currentX < -swipeWidth / 2) {
+            // 左滑：打开右侧操作区，图片左对齐页面
             isPanelOpen = false;
             isActionOpen = true;
-            currentX = -actionWidth;
+            currentX = -swipeWidth;
         } else {
             isPanelOpen = false;
             isActionOpen = false;
@@ -5420,7 +5429,7 @@ async function showPartDetail(part) {
         renderSwipe();
     }, { passive: true });
 
-    // 初始化位置：内容居中，右侧操作移出、左侧价格面板隐藏
+    // 初始化位置：图片居中，右侧操作移出、左侧价格面板隐藏
     renderSwipe();
 
     // 合并按钮点击事件
