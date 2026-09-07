@@ -4833,6 +4833,49 @@ function clearSearchResults() {
     updateNamePrecisionBtn();
 }
 
+// 渲染右滑图片后出现在图片左侧的 BL 价格面板（零件详情页）。
+// 数据源：离线 BL-price.json，系统启动时已加载到本地 rb_prices（设备端手动回填/抓取的结果优先保留）。
+// 8px 小字，分左右两栏：左 = 近6个月销量价（last_6_months），右 = 当前在售价（current_for_sale）。
+async function renderBLPricePanel(panelEl, part) {
+    if (!panelEl) return;
+    panelEl.innerHTML = '<div class="pd-price-loading">价格加载中...</div>';
+    const esc = (s) => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/&/g, '&amp;');
+    const col = (title, p) => {
+        const row = (label, value) => (value != null)
+            ? `<div class="pp-row"><span class="pp-label">${label}</span><span class="pp-val">${value}</span></div>`
+            : '';
+        const body = row('均', p && p.avg) || row('平', p && p.qty_avg) || '<div class="pp-row pp-muted">—</div>';
+        return `<div class="pp-col">` +
+            `<div class="pp-title">${title}</div>` +
+            body +
+            row('低', p && p.min) +
+            row('高', p && p.max) +
+            `</div>`;
+    };
+    try {
+        let target = null;
+        if (typeof resolveBLTarget === 'function') {
+            target = await resolveBLTarget(part.part_num, part.color_id);
+        }
+        let rec = null;
+        if (target && typeof getCachedBLPrice === 'function') {
+            rec = await getCachedBLPrice(target.blPartNum, target.blColorId);
+        }
+        if (rec && (rec.last_6_months || rec.current_for_sale)) {
+            const cur = rec.currency ? ' · ' + esc(rec.currency) : '';
+            const day = rec.saved_at ? `<span class="pp-day">${esc(rec.saved_at.slice(0, 10))}</span>` : '';
+            panelEl.innerHTML =
+                `<div class="pp-top">BL价格${cur}${day}</div>` +
+                `<div class="pp-cols">${col('6个月', rec.last_6_months)}${col('现在', rec.current_for_sale)}</div>`;
+        } else {
+            panelEl.innerHTML = '<div class="pp-empty">暂无离线价格<span class="pp-muted">（更新Gitee BL-price.json后重启加载）</span></div>';
+        }
+    } catch (e) {
+        console.error('渲染BL价格面板失败:', e);
+        panelEl.innerHTML = '<div class="pp-empty">暂无离线价格</div>';
+    }
+}
+
 // 抓取并渲染 BL 价格（零件详情页 BL价格 区块调用）。
 // 依据 part 的 RB 型号 + RB 颜色ID，解析为 BL 目标并打开 Bricklink 官方价格页。
 // 说明：Bricklink 受 AWS WAF 保护，云端无头浏览器/数据中心 IP 一律被拦，
@@ -5180,6 +5223,9 @@ async function showPartDetail(part) {
             </div>
         </div>
         <div class="pd-row pd-image-row" id="pd-image-swipe">
+            <div class="pd-price-panel" id="pd-price-panel">
+                <div class="pd-price-loading">价格加载中...</div>
+            </div>
             <div class="pd-image-content">
                 ${imageHtml}
             </div>
@@ -5187,15 +5233,6 @@ async function showPartDetail(part) {
                 <button class="pd-img-change-btn" onclick="changePartImage('${part.part_num}', ${part.color_id})">${imgBtnText}</button>
                 <button class="pd-img-url-btn" onclick="showPartImageUrl('${part.part_num}', ${part.color_id})">图片URL</button>
                 <button class="pd-img-url-btn pd-bl-match-btn" onclick="blReconfigurePartById(${part.id})">BL重配</button>
-            </div>
-        </div>
-        <div class="pd-row pd-bl-row">
-            <div class="pd-bl-head">
-                <span class="pd-bl-title">BL价格</span>
-                <button class="pd-bl-fetch-btn" id="pd-bl-fetch-btn">在BL打开</button>
-            </div>
-            <div class="pd-bl-price" id="pd-bl-price">
-                <div class="pd-price-hint">点击"在BL打开"在新标签打开 Bricklink 价格页，对照后手动填价</div>
             </div>
         </div>
         <div class="pd-row pd-model-row">
@@ -5314,21 +5351,29 @@ async function showPartDetail(part) {
     statusEl.addEventListener('touchend', cancelStatusLongPress);
     statusEl.addEventListener('touchmove', cancelStatusLongPress);
 
-    // 图片左滑显示变更按钮（BL价格已改为下方独立区块，不再用右滑）
+    // 图片滑动手势：左滑显示右侧"变更图片"按钮；右滑显示左侧"BL价格"面板（右滑图片查询价格）
+    // 价格数据源：离线 BL-price.json 已由系统启动时加载到本地 rb_prices。
     const imageSwipe = sheet.querySelector('#pd-image-swipe');
     const imageContent = imageSwipe.querySelector('.pd-image-content');
     const imageAction = imageSwipe.querySelector('.pd-image-action');
-    const actionWidth = 90;
+    const pricePanel = imageSwipe.querySelector('#pd-price-panel');
+    const actionWidth = 90;      // 右侧操作区宽度
+    const panelWidth = 200;      // 左侧价格面板宽度
     let startX = 0, currentX = 0, isSwiping = false;
-    let isActionOpen = false;
+    let isActionOpen = false;    // 右侧操作区是否打开（左滑）
+    let isPanelOpen = false;     // 左侧价格面板是否打开（右滑）
+    let panelRendered = false;
 
     function renderSwipe() {
+        // currentX 区间：[-actionWidth, +panelWidth]
         imageContent.style.transform = `translateX(${currentX}px)`;
         imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
+        pricePanel.style.transform = `translateX(${currentX - panelWidth}px)`;
     }
 
     imageContent.style.transition = 'transform 0.25s ease';
     imageAction.style.transition = 'transform 0.25s ease';
+    pricePanel.style.transition = 'transform 0.25s ease';
 
     imageSwipe.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
@@ -5336,15 +5381,16 @@ async function showPartDetail(part) {
         isSwiping = true;
         imageContent.style.transition = 'none';
         imageAction.style.transition = 'none';
-        currentX = isActionOpen ? -actionWidth : 0;
+        pricePanel.style.transition = 'none';
+        currentX = isPanelOpen ? panelWidth : (isActionOpen ? -actionWidth : 0);
         renderSwipe();
     }, { passive: true });
 
     imageSwipe.addEventListener('touchmove', (e) => {
         if (!isSwiping || e.touches.length !== 1) return;
         const dx = e.touches[0].clientX - startX;
-        const baseX = isActionOpen ? -actionWidth : 0;
-        currentX = Math.max(-actionWidth, Math.min(0, baseX + dx));
+        const baseX = isPanelOpen ? panelWidth : (isActionOpen ? -actionWidth : 0);
+        currentX = Math.max(-actionWidth, Math.min(panelWidth, baseX + dx));
         renderSwipe();
     }, { passive: true });
 
@@ -5353,28 +5399,29 @@ async function showPartDetail(part) {
         isSwiping = false;
         imageContent.style.transition = 'transform 0.25s ease';
         imageAction.style.transition = 'transform 0.25s ease';
+        pricePanel.style.transition = 'transform 0.25s ease';
 
-        if (currentX < -actionWidth / 2) {
+        if (currentX > panelWidth / 2) {
+            // 右滑：打开左侧价格面板
+            isPanelOpen = true;
+            isActionOpen = false;
+            currentX = panelWidth;
+            if (!panelRendered) renderBLPricePanel(pricePanel, part).finally(() => { panelRendered = true; });
+        } else if (currentX < -actionWidth / 2) {
+            // 左滑：打开右侧操作区
+            isPanelOpen = false;
             isActionOpen = true;
             currentX = -actionWidth;
         } else {
+            isPanelOpen = false;
             isActionOpen = false;
             currentX = 0;
         }
         renderSwipe();
     }, { passive: true });
 
-    // 初始化位置：内容居中，右侧操作移出
+    // 初始化位置：内容居中，右侧操作移出、左侧价格面板隐藏
     renderSwipe();
-
-    // BL 价格：点击"在BL打开"→ 新标签打开官方价格页，光标对照后手动填价
-    const blPriceEl = sheet.querySelector('#pd-bl-price');
-    const blFetchBtn = sheet.querySelector('#pd-bl-fetch-btn');
-    if (blFetchBtn) {
-        blFetchBtn.addEventListener('click', () => {
-            fetchAndRenderBLPrice(blPriceEl, part);
-        });
-    }
 
     // 合并按钮点击事件
     const mergeBtn = sheet.querySelector('#pd-merge-btn');

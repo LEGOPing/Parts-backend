@@ -3452,6 +3452,98 @@ body {
     line-height: 1;
 }
 
+/* BL 价格面板（右滑零件图片后显示在图片左侧，数据源：离线 BL-price.json → rb_prices） */
+.pd-price-panel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 200px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 6px 8px;
+    gap: 4px;
+    font-size: 8px;
+    line-height: 1.4;
+    color: #333;
+    background: #fff;
+    border-right: 1px solid #e3e8ee;
+    border-radius: 8px 0 0 8px;
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.08);
+}
+.pd-price-panel .pd-price-loading,
+.pd-price-panel .pd-price-error,
+.pd-price-panel .pp-empty {
+    font-size: 8px;
+    color: #999;
+}
+.pp-top {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-weight: bold;
+    font-size: 8px;
+    color: #34495e;
+    white-space: nowrap;
+}
+.pp-day {
+    font-weight: normal;
+    color: #aaa;
+}
+.pp-cols {
+    display: flex;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+}
+.pp-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.pp-title {
+    font-weight: bold;
+    color: #1565c0;
+    font-size: 8px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 2px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+}
+.pp-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 8px;
+}
+.pp-label {
+    color: #888;
+    flex-shrink: 0;
+}
+.pp-val {
+    font-weight: bold;
+    color: #c0392b;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pp-muted {
+    color: #bbb;
+    font-size: 8px;
+    line-height: 1.6;
+}
+.pp-empty {
+    text-align: center;
+    padding-top: 12px;
+    line-height: 1.6;
+}
+
 /* BL 价格面板（旧：图片左侧右滑显示，已废弃） */
 .pd-image-price {
     display: none;
