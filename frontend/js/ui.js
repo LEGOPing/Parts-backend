@@ -4835,25 +4835,14 @@ function clearSearchResults() {
 
 // 渲染右滑图片后出现在图片左侧的 BL 价格面板（零件详情页）。
 // 数据源：离线 BL-price.json，系统启动时已加载到本地 rb_prices（设备端手动回填/抓取的结果优先保留）。
-// 8px 小字，分左右两栏：左 = 近6个月销量价（last_6_months），右 = 当前在售价（current_for_sale）。
+// 8px 小字，3 列 5 行价格表：行 = 最低价/平均价/加权价/最高价，列 = 空/近6月/现在。
 async function renderBLPricePanel(panelEl, part) {
     if (!panelEl) return;
     panelEl.innerHTML = '<div class="pd-price-loading">价格加载中...</div>';
     const esc = (s) => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/&/g, '&amp;');
-    const col = (title, p) => {
-        const row = (cls, label, value) => (value != null)
-            ? `<div class="pp-row ${cls}"><span class="pp-label">${label}</span><span class="pp-val">${value}</span></div>`
-            : '';
-        const rowsHtml =
-            row('pp-low', '低', p && p.min) +
-            row('pp-avg', '平均', p && p.avg) +
-            row('pp-wavg', '加权', p && p.qty_avg) +
-            row('pp-high', '高', p && p.max);
-        return `<div class="pp-col">` +
-            `<div class="pp-title">${title}</div>` +
-            (rowsHtml || '<div class="pp-row pp-muted">—</div>') +
-            `</div>`;
-    };
+    const cell = (v) => v == null ? '' : esc(String(v));
+    const row3 = (cls, label, l6v, curV) =>
+        `<tr class="${cls}"><td class="pp-row-label">${label}</td><td class="pp-val">${cell(l6v)}</td><td class="pp-val">${cell(curV)}</td></tr>`;
     try {
         let target = null;
         if (typeof resolveBLTarget === 'function') {
@@ -4864,11 +4853,18 @@ async function renderBLPricePanel(panelEl, part) {
             rec = await getCachedBLPrice(target.blPartNum, target.blColorId);
         }
         if (rec && (rec.last_6_months || rec.current_for_sale)) {
+            const l6 = rec.last_6_months || {};
+            const now = rec.current_for_sale || {};
             const cur = rec.currency ? ' · ' + esc(rec.currency) : '';
             const day = rec.saved_at ? `<span class="pp-day">${esc(rec.saved_at.slice(0, 10))}</span>` : '';
             panelEl.innerHTML =
                 `<div class="pp-top">BL价格${cur}${day}</div>` +
-                `<div class="pp-cols">${col('6个月', rec.last_6_months)}${col('现在', rec.current_for_sale)}</div>`;
+                `<table class="pp-grid"><thead><tr><th></th><th>近6月</th><th>现在</th></tr></thead><tbody>` +
+                row3('pp-low', '最低价', l6.min, now.min) +
+                row3('pp-avg', '平均价', l6.avg, now.avg) +
+                row3('pp-wavg', '加权价', l6.qty_avg, now.qty_avg) +
+                row3('pp-high', '最高价', l6.max, now.max) +
+                `</tbody></table>`;
         } else {
             panelEl.innerHTML = '<div class="pp-empty">暂无离线价格<span class="pp-muted">（更新Gitee BL-price.json后重启加载）</span></div>';
         }
@@ -5369,15 +5365,20 @@ async function showPartDetail(part) {
     let isPanelOpen = false;     // 左侧价格面板是否打开（右滑）
     let panelRendered = false;
 
-    // 左右面板宽度 = 图片可移动对齐距离，保证对齐且图片不被完全遮住
-    pricePanel.style.width = swipeWidth + 'px';
-    imageAction.style.width = swipeWidth + 'px';
+    // 左右面板宽度 = 图片可移动对齐距离的 2 倍（即整行扣除图片边长后的全部余下空间）。
+    // 这样右滑打开价格区时，价格区占满余下空间并左对齐页面，图片紧贴页面右侧、不留空隙。
+    const panelWidth = swipeWidth * 2;
+    pricePanel.style.width = panelWidth + 'px';
+    imageAction.style.width = panelWidth + 'px';
 
     function renderSwipe() {
         // currentX 区间：[-swipeWidth, +swipeWidth]
-        imageContent.style.transform = `translateX(${currentX}px)`;
-        imageAction.style.transform = `translateX(${currentX + swipeWidth}px)`;
-        pricePanel.style.transform = `translateX(${currentX - swipeWidth}px)`;
+        // 图片左边缘   = swipeWidth + currentX（居中→左对齐 / 右对齐 随滑动线性过渡）
+        // 价格面板左边缘 = 2*currentX - panelWidth（关闭时整体移出左侧，打开时左对齐页面）
+        // 操作面板左边缘 = 2*currentX + panelWidth（关闭时整体移出右侧，打开时贴图片右侧）
+        imageContent.style.transform = `translateX(${swipeWidth + currentX}px)`;
+        imageAction.style.transform = `translateX(${2 * currentX + panelWidth}px)`;
+        pricePanel.style.transform = `translateX(${2 * currentX - panelWidth}px)`;
     }
 
     imageContent.style.transition = 'transform 0.25s ease';
