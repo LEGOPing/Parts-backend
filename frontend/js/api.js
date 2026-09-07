@@ -374,9 +374,19 @@ async function tryAutoFetchBLPrice(blPartNum, blColorId) {
     return null;
 }
 
+// 边角颜色校准：RB 与 BL 对同一物理颜色命名不同，按颜色名匹配会漏掉。
+// 这里先命中 RB id -> BL id 的覆盖表，再回退到按名匹配。
+// 权威对照见仓库根目录 rb_bl_color_alias.json（有人工校准的 aliases 可同步）。
+const RB_BL_COLOR_ALIAS = {
+    23: 109, // Dark Blue-Violet -> Dark Royal Blue（同 RGB #2032B0）
+    112: 73, // Medium Bluish Violet -> Medium Violet
+};
+
 // 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
 async function resolveBLColorId(rbColorId) {
     try {
+        const aliasId = RB_BL_COLOR_ALIAS[Number(rbColorId)];
+        if (aliasId !== undefined) return aliasId;
         const color = await getColorById(rbColorId);
         const name = color && color.name ? String(color.name) : '';
         if (!name) return null;

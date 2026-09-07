@@ -1,0 +1,817 @@
+{
+ "generated_at": "2026-09-07T16:31:41",
+ "source_rb": "raw_colors.csv",
+ "source_bl": "raw_bl_colors.json",
+ "summary": {
+  "rb_colors": 275,
+  "bl_colors": 216,
+  "by_name_matched": 147,
+  "aliases": 2,
+  "unmatched": 128
+ },
+ "mapping_by_name": {
+  "0": 11,
+  "1": 7,
+  "2": 6,
+  "3": 39,
+  "4": 5,
+  "5": 47,
+  "6": 8,
+  "7": 9,
+  "8": 10,
+  "9": 62,
+  "10": 36,
+  "11": 40,
+  "12": 25,
+  "13": 23,
+  "14": 3,
+  "15": 1,
+  "17": 38,
+  "18": 33,
+  "19": 2,
+  "20": 44,
+  "21": 46,
+  "22": 24,
+  "25": 4,
+  "26": 71,
+  "27": 34,
+  "28": 69,
+  "29": 104,
+  "30": 157,
+  "31": 154,
+  "33": 14,
+  "34": 20,
+  "35": 108,
+  "36": 17,
+  "40": 13,
+  "41": 15,
+  "42": 16,
+  "45": 50,
+  "46": 19,
+  "47": 12,
+  "52": 51,
+  "54": 121,
+  "57": 18,
+  "60": 57,
+  "61": 52,
+  "62": 64,
+  "63": 82,
+  "64": 122,
+  "68": 96,
+  "69": 93,
+  "70": 88,
+  "71": 86,
+  "72": 85,
+  "73": 42,
+  "74": 37,
+  "76": 117,
+  "78": 90,
+  "79": 60,
+  "80": 67,
+  "81": 70,
+  "82": 65,
+  "84": 150,
+  "85": 89,
+  "86": 91,
+  "89": 97,
+  "92": 28,
+  "100": 26,
+  "110": 43,
+  "114": 100,
+  "115": 76,
+  "117": 101,
+  "118": 41,
+  "120": 35,
+  "125": 32,
+  "129": 102,
+  "134": 84,
+  "135": 66,
+  "137": 78,
+  "142": 61,
+  "143": 74,
+  "148": 77,
+  "150": 119,
+  "151": 99,
+  "158": 158,
+  "178": 81,
+  "179": 95,
+  "182": 98,
+  "183": 83,
+  "191": 110,
+  "212": 105,
+  "216": 27,
+  "226": 103,
+  "230": 107,
+  "232": 87,
+  "236": 114,
+  "272": 63,
+  "288": 80,
+  "294": 118,
+  "297": 115,
+  "308": 120,
+  "313": 72,
+  "320": 59,
+  "321": 153,
+  "322": 156,
+  "323": 152,
+  "326": 155,
+  "334": 21,
+  "335": 58,
+  "351": 94,
+  "366": 29,
+  "373": 54,
+  "378": 48,
+  "379": 55,
+  "383": 22,
+  "450": 106,
+  "462": 31,
+  "484": 68,
+  "503": 49,
+  "1000": 159,
+  "1001": 73,
+  "1002": 163,
+  "1003": 162,
+  "1012": 160,
+  "1050": 220,
+  "1052": 222,
+  "1057": 226,
+  "1058": 221,
+  "1065": 235,
+  "1067": 225,
+  "1069": 252,
+  "1070": 254,
+  "1071": 253,
+  "1072": 255,
+  "1073": 244,
+  "1077": 248,
+  "1088": 240,
+  "1091": 172,
+  "1092": 250,
+  "1093": 246,
+  "1094": 234,
+  "1095": 251,
+  "1136": 167,
+  "1140": 165,
+  "1141": 166,
+  "1142": 242,
+  "1145": 173,
+  "1146": 175,
+  "1147": 174
+ },
+ "aliases": {
+  "23": {
+   "bl_id": 109,
+   "rb_name": "Dark Blue-Violet",
+   "bl_name": "Dark Royal Blue",
+   "note": "RGBA #2032B0 完全相同"
+  },
+  "112": {
+   "bl_id": 73,
+   "rb_name": "Medium Bluish Violet",
+   "bl_name": "Medium Violet",
+   "note": "BL 的 Medium Violet 与 RB 的 Medium Bluish Violet 同色"
+  }
+ },
+ "unmatched": [
+  {
+   "rb_id": -1,
+   "rb_name": "[Unknown]",
+   "rgb": "0033B2"
+  },
+  {
+   "rb_id": 23,
+   "rb_name": "Dark Blue-Violet",
+   "rgb": "2032B0"
+  },
+  {
+   "rb_id": 32,
+   "rb_name": "Trans-Black IR Lens",
+   "rgb": "635F52"
+  },
+  {
+   "rb_id": 43,
+   "rb_name": "Trans-Very Lt Blue",
+   "rgb": "C1DFF0"
+  },
+  {
+   "rb_id": 75,
+   "rb_name": "Speckle Black-Copper",
+   "rgb": "05131D"
+  },
+  {
+   "rb_id": 77,
+   "rb_name": "Light Pink",
+   "rgb": "FECCCF"
+  },
+  {
+   "rb_id": 112,
+   "rb_name": "Medium Bluish Violet",
+   "rgb": "6874CA"
+  },
+  {
+   "rb_id": 132,
+   "rb_name": "Speckle Black-Silver",
+   "rgb": "05131D"
+  },
+  {
+   "rb_id": 133,
+   "rb_name": "Speckle Black-Gold",
+   "rgb": "05131D"
+  },
+  {
+   "rb_id": 1004,
+   "rb_name": "Trans-Flame Yellowish Orange",
+   "rgb": "FCB76D"
+  },
+  {
+   "rb_id": 1005,
+   "rb_name": "Trans-Fire Yellow",
+   "rgb": "FBE890"
+  },
+  {
+   "rb_id": 1006,
+   "rb_name": "Trans-Light Royal Blue",
+   "rgb": "B4D4F7"
+  },
+  {
+   "rb_id": 1007,
+   "rb_name": "Reddish Lilac",
+   "rgb": "8E5597"
+  },
+  {
+   "rb_id": 1008,
+   "rb_name": "Vintage Blue",
+   "rgb": "039CBD"
+  },
+  {
+   "rb_id": 1009,
+   "rb_name": "Vintage Green",
+   "rgb": "1E601E"
+  },
+  {
+   "rb_id": 1010,
+   "rb_name": "Vintage Red",
+   "rgb": "CA1F08"
+  },
+  {
+   "rb_id": 1011,
+   "rb_name": "Vintage Yellow",
+   "rgb": "F3C305"
+  },
+  {
+   "rb_id": 1013,
+   "rb_name": "Modulex White",
+   "rgb": "F4F4F4"
+  },
+  {
+   "rb_id": 1014,
+   "rb_name": "Modulex Light Bluish Gray",
+   "rgb": "AFB5C7"
+  },
+  {
+   "rb_id": 1015,
+   "rb_name": "Modulex Light Gray",
+   "rgb": "9C9C9C"
+  },
+  {
+   "rb_id": 1016,
+   "rb_name": "Modulex Charcoal Gray",
+   "rgb": "595D60"
+  },
+  {
+   "rb_id": 1017,
+   "rb_name": "Modulex Tile Gray",
+   "rgb": "6B5A5A"
+  },
+  {
+   "rb_id": 1018,
+   "rb_name": "Modulex Black",
+   "rgb": "4D4C52"
+  },
+  {
+   "rb_id": 1019,
+   "rb_name": "Modulex Tile Brown",
+   "rgb": "330000"
+  },
+  {
+   "rb_id": 1020,
+   "rb_name": "Modulex Terracotta",
+   "rgb": "5C5030"
+  },
+  {
+   "rb_id": 1021,
+   "rb_name": "Modulex Brown",
+   "rgb": "907450"
+  },
+  {
+   "rb_id": 1022,
+   "rb_name": "Modulex Buff",
+   "rgb": "DEC69C"
+  },
+  {
+   "rb_id": 1023,
+   "rb_name": "Modulex Red",
+   "rgb": "B52C20"
+  },
+  {
+   "rb_id": 1024,
+   "rb_name": "Modulex Pink Red",
+   "rgb": "F45C40"
+  },
+  {
+   "rb_id": 1025,
+   "rb_name": "Modulex Orange",
+   "rgb": "F47B30"
+  },
+  {
+   "rb_id": 1026,
+   "rb_name": "Modulex Light Orange",
+   "rgb": "F7AD63"
+  },
+  {
+   "rb_id": 1027,
+   "rb_name": "Modulex Light Yellow",
+   "rgb": "FFE371"
+  },
+  {
+   "rb_id": 1028,
+   "rb_name": "Modulex Ochre Yellow",
+   "rgb": "FED557"
+  },
+  {
+   "rb_id": 1029,
+   "rb_name": "Modulex Lemon",
+   "rgb": "BDC618"
+  },
+  {
+   "rb_id": 1030,
+   "rb_name": "Modulex Pastel Green",
+   "rgb": "7DB538"
+  },
+  {
+   "rb_id": 1031,
+   "rb_name": "Modulex Olive Green",
+   "rgb": "7C9051"
+  },
+  {
+   "rb_id": 1032,
+   "rb_name": "Modulex Aqua Green",
+   "rgb": "27867E"
+  },
+  {
+   "rb_id": 1033,
+   "rb_name": "Modulex Teal Blue",
+   "rgb": "467083"
+  },
+  {
+   "rb_id": 1034,
+   "rb_name": "Modulex Tile Blue",
+   "rgb": "0057A6"
+  },
+  {
+   "rb_id": 1035,
+   "rb_name": "Modulex Medium Blue",
+   "rgb": "61AFFF"
+  },
+  {
+   "rb_id": 1036,
+   "rb_name": "Modulex Pastel Blue",
+   "rgb": "68AECE"
+  },
+  {
+   "rb_id": 1037,
+   "rb_name": "Modulex Violet",
+   "rgb": "BD7D85"
+  },
+  {
+   "rb_id": 1038,
+   "rb_name": "Modulex Pink",
+   "rgb": "F785B1"
+  },
+  {
+   "rb_id": 1039,
+   "rb_name": "Modulex Clear",
+   "rgb": "FFFFFF"
+  },
+  {
+   "rb_id": 1040,
+   "rb_name": "Modulex Foil Dark Gray",
+   "rgb": "595D60"
+  },
+  {
+   "rb_id": 1041,
+   "rb_name": "Modulex Foil Light Gray",
+   "rgb": "9C9C9C"
+  },
+  {
+   "rb_id": 1042,
+   "rb_name": "Modulex Foil Dark Green",
+   "rgb": "006400"
+  },
+  {
+   "rb_id": 1043,
+   "rb_name": "Modulex Foil Light Green",
+   "rgb": "7DB538"
+  },
+  {
+   "rb_id": 1044,
+   "rb_name": "Modulex Foil Dark Blue",
+   "rgb": "0057A6"
+  },
+  {
+   "rb_id": 1045,
+   "rb_name": "Modulex Foil Light Blue",
+   "rgb": "68AECE"
+  },
+  {
+   "rb_id": 1046,
+   "rb_name": "Modulex Foil Violet",
+   "rgb": "4B0082"
+  },
+  {
+   "rb_id": 1047,
+   "rb_name": "Modulex Foil Red",
+   "rgb": "8B0000"
+  },
+  {
+   "rb_id": 1048,
+   "rb_name": "Modulex Foil Yellow",
+   "rgb": "FED557"
+  },
+  {
+   "rb_id": 1049,
+   "rb_name": "Modulex Foil Orange",
+   "rgb": "F7AD63"
+  },
+  {
+   "rb_id": 1051,
+   "rb_name": "Pastel Blue",
+   "rgb": "5AC4DA"
+  },
+  {
+   "rb_id": 1053,
+   "rb_name": "Opal Trans-Light Blue",
+   "rgb": "68BCC5"
+  },
+  {
+   "rb_id": 1054,
+   "rb_name": "Opal Trans-Dark Pink",
+   "rgb": "CE1D9B"
+  },
+  {
+   "rb_id": 1055,
+   "rb_name": "Opal Trans-Clear",
+   "rgb": "FCFCFC"
+  },
+  {
+   "rb_id": 1056,
+   "rb_name": "Opal Trans-Brown",
+   "rgb": "583927"
+  },
+  {
+   "rb_id": 1059,
+   "rb_name": "Opal Trans-Purple",
+   "rgb": "8320B7"
+  },
+  {
+   "rb_id": 1060,
+   "rb_name": "Opal Trans-Bright Green",
+   "rgb": "84B68D"
+  },
+  {
+   "rb_id": 1061,
+   "rb_name": "Opal Trans-Dark Blue",
+   "rgb": "0020A0"
+  },
+  {
+   "rb_id": 1062,
+   "rb_name": "Vibrant Yellow",
+   "rgb": "EBD800"
+  },
+  {
+   "rb_id": 1063,
+   "rb_name": "Pearl Copper",
+   "rgb": "B46A00"
+  },
+  {
+   "rb_id": 1064,
+   "rb_name": "Fabuland Red",
+   "rgb": "FF8014"
+  },
+  {
+   "rb_id": 1066,
+   "rb_name": "Curry",
+   "rgb": "DD982E"
+  },
+  {
+   "rb_id": 1068,
+   "rb_name": "Bright Reddish Orange",
+   "rgb": "EE5434"
+  },
+  {
+   "rb_id": 1074,
+   "rb_name": "Duplo Blue",
+   "rgb": "009ECE"
+  },
+  {
+   "rb_id": 1075,
+   "rb_name": "Duplo Medium Blue",
+   "rgb": "3E95B6"
+  },
+  {
+   "rb_id": 1076,
+   "rb_name": "Duplo Lime",
+   "rgb": "FFF230"
+  },
+  {
+   "rb_id": 1078,
+   "rb_name": "Duplo Medium Green",
+   "rgb": "468A5F"
+  },
+  {
+   "rb_id": 1079,
+   "rb_name": "Duplo Light Green",
+   "rgb": "60BA76"
+  },
+  {
+   "rb_id": 1080,
+   "rb_name": "Light Tan",
+   "rgb": "F3C988"
+  },
+  {
+   "rb_id": 1081,
+   "rb_name": "Rust Orange",
+   "rgb": "872B17"
+  },
+  {
+   "rb_id": 1082,
+   "rb_name": "Clikits Pink",
+   "rgb": "FE78B0"
+  },
+  {
+   "rb_id": 1083,
+   "rb_name": "Two-tone Copper",
+   "rgb": "945148"
+  },
+  {
+   "rb_id": 1084,
+   "rb_name": "Two-tone Gold",
+   "rgb": "AB673A"
+  },
+  {
+   "rb_id": 1085,
+   "rb_name": "Two-tone Silver",
+   "rgb": "737271"
+  },
+  {
+   "rb_id": 1086,
+   "rb_name": "Pearl Lime",
+   "rgb": "6A7944"
+  },
+  {
+   "rb_id": 1087,
+   "rb_name": "Duplo Pink",
+   "rgb": "FF879C"
+  },
+  {
+   "rb_id": 1089,
+   "rb_name": "Warm Tan",
+   "rgb": "CCA373"
+  },
+  {
+   "rb_id": 1090,
+   "rb_name": "Duplo Turquoise",
+   "rgb": "3FB69E"
+  },
+  {
+   "rb_id": 1096,
+   "rb_name": "Glitter Trans-Bright Green",
+   "rgb": "D9E4A7"
+  },
+  {
+   "rb_id": 1097,
+   "rb_name": "Glitter Trans-Medium Purple",
+   "rgb": "8D73B3"
+  },
+  {
+   "rb_id": 1098,
+   "rb_name": "Glitter Trans-Green",
+   "rgb": "84B68D"
+  },
+  {
+   "rb_id": 1099,
+   "rb_name": "Glitter Trans-Pink",
+   "rgb": "E4ADC8"
+  },
+  {
+   "rb_id": 1100,
+   "rb_name": "Clikits Yellow",
+   "rgb": "FFCF0B"
+  },
+  {
+   "rb_id": 1101,
+   "rb_name": "Duplo Dark Purple",
+   "rgb": "5F27AA"
+  },
+  {
+   "rb_id": 1102,
+   "rb_name": "Trans-Neon Red",
+   "rgb": "FF0040"
+  },
+  {
+   "rb_id": 1103,
+   "rb_name": "Pearl Titanium",
+   "rgb": "3E3C39"
+  },
+  {
+   "rb_id": 1104,
+   "rb_name": "HO Aqua",
+   "rgb": "B3D7D1"
+  },
+  {
+   "rb_id": 1105,
+   "rb_name": "HO Azure",
+   "rgb": "1591CB"
+  },
+  {
+   "rb_id": 1106,
+   "rb_name": "HO Blue-gray",
+   "rgb": "354E5A"
+  },
+  {
+   "rb_id": 1107,
+   "rb_name": "HO Cyan",
+   "rgb": "5B98B3"
+  },
+  {
+   "rb_id": 1108,
+   "rb_name": "HO Dark Aqua",
+   "rgb": "A7DCCF"
+  },
+  {
+   "rb_id": 1109,
+   "rb_name": "HO Dark Blue",
+   "rgb": "0A3463"
+  },
+  {
+   "rb_id": 1110,
+   "rb_name": "HO Dark Gray",
+   "rgb": "6D6E5C"
+  },
+  {
+   "rb_id": 1111,
+   "rb_name": "HO Dark Green",
+   "rgb": "184632"
+  },
+  {
+   "rb_id": 1112,
+   "rb_name": "HO Dark Lime",
+   "rgb": "B2B955"
+  },
+  {
+   "rb_id": 1113,
+   "rb_name": "HO Dark Red",
+   "rgb": "631314"
+  },
+  {
+   "rb_id": 1114,
+   "rb_name": "HO Dark Sand Green",
+   "rgb": "627A62"
+  },
+  {
+   "rb_id": 1115,
+   "rb_name": "HO Dark Turquoise",
+   "rgb": "10929D"
+  },
+  {
+   "rb_id": 1116,
+   "rb_name": "HO Earth Orange",
+   "rgb": "BB771B"
+  },
+  {
+   "rb_id": 1117,
+   "rb_name": "HO Gold",
+   "rgb": "B4A774"
+  },
+  {
+   "rb_id": 1118,
+   "rb_name": "HO Light Aqua",
+   "rgb": "A3D1C0"
+  },
+  {
+   "rb_id": 1119,
+   "rb_name": "HO Light Brown",
+   "rgb": "965336"
+  },
+  {
+   "rb_id": 1120,
+   "rb_name": "HO Light Gold",
+   "rgb": "CDC298"
+  },
+  {
+   "rb_id": 1121,
+   "rb_name": "HO Light Tan",
+   "rgb": "F9F1C7"
+  },
+  {
+   "rb_id": 1122,
+   "rb_name": "HO Light Yellow",
+   "rgb": "F5FAB7"
+  },
+  {
+   "rb_id": 1123,
+   "rb_name": "HO Medium Blue",
+   "rgb": "7396C8"
+  },
+  {
+   "rb_id": 1124,
+   "rb_name": "HO Medium Red",
+   "rgb": "C01111"
+  },
+  {
+   "rb_id": 1125,
+   "rb_name": "HO Metallic Blue",
+   "rgb": "0D4763"
+  },
+  {
+   "rb_id": 1126,
+   "rb_name": "HO Metallic Dark Gray",
+   "rgb": "5E5E5E"
+  },
+  {
+   "rb_id": 1127,
+   "rb_name": "HO Metallic Green",
+   "rgb": "879867"
+  },
+  {
+   "rb_id": 1128,
+   "rb_name": "HO Metallic Sand Blue",
+   "rgb": "5F7D8C"
+  },
+  {
+   "rb_id": 1129,
+   "rb_name": "HO Olive Green",
+   "rgb": "9B9A5A"
+  },
+  {
+   "rb_id": 1130,
+   "rb_name": "HO Rose",
+   "rgb": "D06262"
+  },
+  {
+   "rb_id": 1131,
+   "rb_name": "HO Sand Blue",
+   "rgb": "6E8AA6"
+  },
+  {
+   "rb_id": 1132,
+   "rb_name": "HO Sand Green",
+   "rgb": "A0BCAC"
+  },
+  {
+   "rb_id": 1133,
+   "rb_name": "HO Tan",
+   "rgb": "E4CD9E"
+  },
+  {
+   "rb_id": 1134,
+   "rb_name": "HO Titanium",
+   "rgb": "616161"
+  },
+  {
+   "rb_id": 1135,
+   "rb_name": "Metal",
+   "rgb": "A5ADB4"
+  },
+  {
+   "rb_id": 1137,
+   "rb_name": "Sienna Brown",
+   "rgb": "915C3C"
+  },
+  {
+   "rb_id": 1138,
+   "rb_name": "Umber Brown",
+   "rgb": "5E3F33"
+  },
+  {
+   "rb_id": 1139,
+   "rb_name": "Opal Trans-Yellow",
+   "rgb": "F5CD2F"
+  },
+  {
+   "rb_id": 1143,
+   "rb_name": "Glitter Milky White",
+   "rgb": "FFFFFF"
+  },
+  {
+   "rb_id": 1144,
+   "rb_name": "Chrome Red",
+   "rgb": "CE3021"
+  },
+  {
+   "rb_id": 9999,
+   "rb_name": "[No Color/Any Color]",
+   "rgb": "05131D"
+  }
+ ]
+}
