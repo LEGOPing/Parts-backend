@@ -167,15 +167,11 @@ async function loadRepositories() {
         const boxCounts = {};
         await Promise.all(uniqueRepos.map(async repo => {
             const boxes = await getBoxes(repo.id);
-            // 去重：与 loadBoxes() 保持一致
+            // 去重：与 loadBoxes() 保持一致，仅按 id 去重
             const seenIds = new Set();
-            const seenBoxNums = new Set();
             const uniqueBoxes = boxes.filter(box => {
                 if (seenIds.has(box.id)) return false;
-                const key = `${box.box_number}_${box.name}`;
-                if (seenBoxNums.has(key)) return false;
                 seenIds.add(box.id);
-                seenBoxNums.add(key);
                 return true;
             });
             boxCounts[repo.id] = uniqueBoxes.length;
@@ -411,15 +407,12 @@ async function loadBoxes(repoId) {
     let boxes = await getBoxes(repoId);
     const grid = document.getElementById('boxes-list');
     
-    // 去重：按id去重，同时按box_number+name去重
+    // 去重：仅按 id 去重。不得按 box_number+name 合并，否则同名盒子（如多个「临时盒子」）
+    // 会被静默隐藏，导致盒子内的零件在盒子视图中看不到、却在零件搜索中能搜到。
     const seenIds = new Set();
-    const seenBoxNums = new Set();
     const uniqueBoxes = boxes.filter(box => {
         if (seenIds.has(box.id)) return false;
-        const key = `${box.box_number}_${box.name}`;
-        if (seenBoxNums.has(key)) return false;
         seenIds.add(box.id);
-        seenBoxNums.add(key);
         return true;
     });
     
@@ -1158,15 +1151,11 @@ function closePartTransferModal() {
 async function getSortedBoxes() {
     if (!selectedRepository) return [];
     const boxes = await getBoxes(selectedRepository.id);
-    // 去重：与 loadBoxes() 保持一致
+    // 去重：与 loadBoxes() 保持一致，仅按 id 去重
     const seenIds = new Set();
-    const seenBoxNums = new Set();
     const uniqueBoxes = boxes.filter(box => {
         if (seenIds.has(box.id)) return false;
-        const key = `${box.box_number}_${box.name}`;
-        if (seenBoxNums.has(key)) return false;
         seenIds.add(box.id);
-        seenBoxNums.add(key);
         return true;
     });
     uniqueBoxes.sort((a, b) => (a.box_number || 0) - (b.box_number || 0));
