@@ -6,11 +6,11 @@ pythonista_proto.py — 端到端增量价格闭环（v6，独立 B 跑在 iPhon
     1. 直连 Supabase 系统库 parts 表 -> 去重的 (part_num, RB_color_id) 组合集合
     2. RB 颜色名 -> BL 颜色 id（colors.csv + bl_colors.json，可从 Gitee parts-rb 拉取）
     3. 拉取 Gitee 上现有 BL-price.json，得到已有价格 key
-    4. 系统零件集合 - 已有 key = 新增待抓组合（已存在永不重抓，天然断点续跑）
-    5. 用 WKWebView（真实 WebKit，绕 Bricklink WAF）逐页打开剩余组合抓价格
-    6. 合并进 BL-price.json，回写 Gitee，前端继续读它做价格参考
+    4. 系统零件集合 - 已有 key = 新增待抓组合；saved_at 超过 MAX_AGE_DAYS 的已有记录列为过期，进入重抓
+    5. 用 WKWebView（真实 WebKit，绕 Bricklink WAF）逐页打开组合抓价格
+    6. 合并（新增追加 / 过期覆盖）进 BL-price.json，回写 Gitee，前端继续读它做价格参考
 
-    每轮只跑 max_len 条，多的下次继续，适合 iOS 短会话。
+    MAX_FETCH_PER_RUN 控制本轮条数（0 = 不限量，一次全量补齐）；适合 iOS 短会话。
     * 界面为 full_modal：挡屏时到文件 App 看 progress.log / result.json 实时进度。
 
 运行：Pythonista 打开本文件 -> 运行三角 -> 自动跑完并自动关界面。
@@ -34,7 +34,8 @@ from objc_util import on_main_thread
 # 0) 可调参数
 # ---------------------------------------------------------------------------
 # ---- 抓取参数 ----
-MAX_FETCH_PER_RUN = 30    # 本轮最多抓多少条（其余下次继续）
+MAX_FETCH_PER_RUN = 0     # 本轮最多抓多少条；0 = 不限量（全量补齐，一次抓完所有待抓）
+MAX_AGE_DAYS     = 30     # 已有价格超过该天数即视为过期，列入重新抓取
 MAX_WAIT  = 90            # 单页最长等待价格段出现（秒）
 POLL_STEP = 3             # 每次轮询间隔（秒）
 JS_TO     = 8             # 单次 JS 调用超时（秒）
@@ -420,6 +421,21 @@ def _fetch_one(webview, part, bl_cid, idx, total):
 # ---------------------------------------------------------------------------
 # 5) 后台工作线程：数据准备 + 逐页抓取 + 合并 + 回写
 # ---------------------------------------------------------------------------
+def _is_stale(rec, days=MAX_AGE_DAYS):
+    """按记录的 saved_at 判断是否超过 days 天。无时间戳则视为过期。"""
+    s = rec.get('saved_at')
+    if not s:
+        return True
+    try:
+        t = datetime.fromisoformat(str(s).replace('Z', '+00:00'))
+        if t.tzinfo is not None:   # 带时区 -> 转本地对齐
+            t = t.astimezone()
+        t = t.replace(tzinfo=None)
+        return (datetime.now() - t).days >= days
+    except Exception:
+        return True
+
+
 def _build_todo():
     """计算增量待抓列表。返回 [(part, bl_cid, key), ...]"""
     log('=== 数据准备 ===')
@@ -450,11 +466,16 @@ def _build_todo():
         if bl_cid is None:
             continue
         key = f'{bl_part}:{bl_cid}'
-        if key in by_key or key in seen:
+        if key in seen:
             continue
+        if key in by_key:
+            existing = by_key[key]
+            if not _is_stale(existing):
+                continue                       # 未过期，保留已有，跳过
+            log('  [过期]>%d天 重抓 %s' % (MAX_AGE_DAYS, key))
         seen.add(key)
         todo.append((bl_part, bl_cid, key))
-    log('新增待抓组合 %d 条' % len(todo))
+    log('待抓组合合计 %d 条（新增 + 过期重抓）' % len(todo))
 
     if MAX_FETCH_PER_RUN and len(todo) > MAX_FETCH_PER_RUN:
         todo = todo[:MAX_FETCH_PER_RUN]
@@ -462,11 +483,21 @@ def _build_todo():
     return todo
 
 
+def _upsert(rec):
+    """按 key 插入或覆盖 _results 中的记录，避免重抓已有 key 时重复追加。"""
+    key = rec['key']
+    for i, r in enumerate(_results):
+        if r.get('key') == key:
+            _results[i] = rec
+            return
+    _results.append(rec)
+
+
 def _run_closed_loop():
     global _results
     todo = _build_todo()
     if not todo:
-        log('=== 无新增零件，最多只写一份本地副本 ===')
+        log('=== 无待抓零件（无新增且无过期），最多只写一份本地副本 ===')
         save_local(_results)
         return
 
@@ -474,7 +505,7 @@ def _run_closed_loop():
     for idx, (part, bl_cid, key) in enumerate(todo, start=1):
         rec = _fetch_one(_webview, part, bl_cid, idx, len(todo))
         if rec:
-            _results.append(rec)
+            _upsert(rec)
             ok += 1
         else:
             fail += 1
