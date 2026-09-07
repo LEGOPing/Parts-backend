@@ -23,8 +23,11 @@
 | 数据类型 | 存储位置 | 数据来源 | 原因 |
 |---------|---------|---------|------|
 | 仓库/盒子/零件库存 | Supabase PostgreSQL | 用户录入 | 多设备同步、数据安全 |
-| Rebrickable 基础信息(7表) | IndexedDB (`RB_Database`) | Gitee parts-rb 仓库 (CSV) | 离线查询、数据量大 |
+| Rebrickable 基础信息(多表) | IndexedDB (`RB_Database` v7) | Gitee parts-rb 仓库 (CSV/分片) | 离线查询、数据量大 |
 | 零件重量 (Bricklink) | 三级缓存 (rb_weights → part_weights → FastAPI) | Bricklink 抓取 | 离线可用、避免反爬 |
+| **Bricklink 价格库** | IndexedDB `rb_prices`（离线 BL-price.json） | 本机 `generate_bl_price.py` 离线抓取 | 右滑秒出价格，离线可用 |
+| 零件别名映射 (BG型号→RB型号) | IndexedDB `rb_part_aliases` + Gitee `part_aliases.csv` | Gitee parts-rb 仓库 (CSV) | 拍照识别兜底匹配 |
+| BL 颜色映射 | IndexedDB `rb_bl_colors` | Gitee parts-rb (`bl_colors.json`) | RB 颜色名→BL 颜色ID |
 | 颜色定义 (前端用) | 内存缓存 + Gitee JSON | Gitee Parts-json 仓库 | 轻量、带1小时缓存 |
 | 零件目录 (前端用) | 内存 + Gitee JSON | Gitee Parts-json 仓库 | 轻量、按需加载 |
 | 零件图片 | Gitee Parts-img 仓库 | Rebrickable 图片 | CDN 加速 |
@@ -69,7 +72,7 @@
     │    动态数据层           │    │    静态数据层           │
     │   (Supabase REST)     │    │   (本地 IndexedDB)     │
     │                       │    │                       │
-    │  repositories         │    │  RB_Database (7表)     │
+    │  repositories         │    │  RB_Database (v7)      │
     │  - id, name           │    │  - rb_colors           │
     │                       │    │  - rb_parts            │
     │  boxes                │    │  - rb_part_categories  │
@@ -77,14 +80,14 @@
     │  - name, repository_id│    │  - rb_inventory_parts  │
     │                       │    │  - rb_part_relationships│
     │  parts                │    │  - rb_weights          │
-    │  - id, part_num, name │    │                       │
-    │  - color_id, is_new   │    │  原生 IndexedDB API    │
-    │  - quantity, box_id   │    │  (rb-db.js)           │
-    │                       │    │                       │
-    │  colors               │    │                       │
+    │  - id, part_num, name │    │  - rb_bl_parts         │
+    │  - color_id, is_new   │    │  - rb_part_aliases     │
+    │  - quantity, box_id   │    │  - rb_id_abc           │
+    │                       │    │  - rb_bl_colors        │
+    │  colors               │    │  - rb_prices           │
     │  - id, color_name     │    │                       │
-    │  - rgb, bricklink_id  │    │                       │
-    │                       │    │                       │
+    │  - rgb, bricklink_id  │    │  原生 IndexedDB API    │
+    │                       │    │  (rb-db.js)           │
     │  part_weights         │    │                       │
     │  - part_num (PK)      │    │                       │
     │  - weight, updated_at │    │                       │
@@ -100,7 +103,7 @@
                      └──────┬──────┘
                             │
                      ┌──────▼──────┐
-                     │   ui.js     │ ← UI 交互 (56个函数)
+                     │   ui.js     │ ← UI 交互 (250+个函数)
                      └─────────────┘
                             │
                ┌────────────┴────────────┐
@@ -296,6 +299,43 @@ ASSETS_TO_CACHE = [
 // SW 更新机制：skipWaiting + clients.claim，配合 index.html 中的
 // controllerchange 监听强制刷新页面
 ```
+> 注：当前 Service Worker 版本为 **v82**（前端 JS/CSS 均带 `?v=2026090504` 版本参数）。
+
+### 2.9 Bricklink 价格库数据流向（离线 BL-price.json）
+
+Bricklink 价格指南页（`catalogPG.asp`）位于 **AWS WAF** 之后，数据中心/云端 IP 直连会返回 HTTP 202 + JS 挑战页。系统采用"**离线预抓取价格库 + 右滑展示**"方案规避反爬：
+
+```
+generate_bl_price.py (本机 Playwright + Chromium 执行 WAF 挑战)
+    │  从 inventory_parts.csv 统计去重 (part_num, color_id) 及累计数量
+    │  按 RB 颜色名 → BL 颜色ID 解析，顺序导航 catalogPG.asp 抓两组价
+    │  增量写入 BL-price.json（断点续跑 --resume / --top / --max）
+    ▼
+BL-price.json (records: key, part_num, color_id, currency,
+    │            last_6_months{min,avg,qty_avg,max}, current_for_sale)
+    │
+push_bl_price_to_gitee.py ──► Gitee parts-rb 仓库 (BL-price.json)
+    │
+    ▼
+前端启动 loadBLPriceLibraryToRBDb() → 写入本地 IndexedDB rb_prices
+    │   (已有该 key 价格时保留设备端手动回填/抓取结果优先)
+    ▼
+零件详情页右滑 → renderBLPricePanel 读取 rb_prices 秒出价格（离线）
+    │  无缓存时可选：fetchAndRenderBLPrice 打开官方页对照手动填价
+    │   SaveCachedBLPrice() 回写 rb_prices
+```
+
+**相关组件**：
+
+| 组件 | 作用 |
+|------|------|
+| `generate_bl_price.py` | 本机离线抓取 Bricklink 价格并生成 BL-price.json（Playwright 执行 WAF 挑战、断点续跑） |
+| `push_bl_price_to_gitee.py` | 将 BL-price.json 推送到 Gitee parts-rb 仓库 |
+| `app/bricklink_price.py` | 后端价格抓取/解析模块（`fetch_price_guide` / `extract_price_guide`，与前端算法对齐） |
+| `GET /api/parts/price` | FastAPI 按需抓取端点（`?part_number=&color_id=`） |
+| `bl-proxy-worker/` | Cloudflare Worker 价格代理（KV 30 分钟缓存，普通 Worker 无法执行 WAF challenge） |
+| `cloudflare_bl_price/` | Cloudflare Workers + Browser Rendering 无头抓取（Browser Rendering 付费方案） |
+| `rb_prices` store | IndexedDB 价格缓存表，key = `part_num:color_id` |
 
 ---
 
@@ -373,8 +413,8 @@ CREATE INDEX idx_colors_color_name ON colors(color_name);
 ### 3.3 本地 IndexedDB - RB_Database
 
 数据库名称：`RB_Database`
-版本号：`3`（v1 为 6 表，v2 新增 `rb_weights`，v3 新增 `rb_bl_parts`）
-数据来源：Gitee parts-rb 仓库（6 个 CSV 文件 + weights.json + 可选 BL-parts.csv，需 Token 访问）
+版本号：`7`（v1=6 表 → v2 `rb_weights` → v3 `rb_bl_parts` → … → v7 `rb_bl_colors`/`rb_prices`）
+数据来源：Gitee parts-rb 仓库（CSV / weights.json / BL-parts.csv / bl_colors.json / BL-price.json / part_aliases.csv / ID_Abc.json，需 Token）支撑 **RB 分片下载**（`fetchRBShardsManifest` + 分片 CSV）。
 
 | Object Store | 主键 | 对应 CSV/JSON | 说明 |
 |--------------|------|---------|------|
@@ -386,6 +426,10 @@ CREATE INDEX idx_colors_color_name ON colors(color_name);
 | rb_part_relationships | 自增 | part_relationships.csv | 零件关系 |
 | rb_weights | `part_num` | weights.json | 零件重量缓存（Bricklink 数据源） |
 | rb_bl_parts | 自增 | BL-parts.csv | Bricklink 目录桥接表（方法一号型匹配用，可选） |
+| rb_part_aliases | `part_num`（别名） | part_aliases.csv | 零件别名映射（BG型号→RB型号） |
+| rb_id_abc | `key` | ID_Abc.json | 型号英文词汇表（输入弹窗"词库"用） |
+| rb_bl_colors | `id` | bl_colors.json | BL 颜色表（RB 颜色名→BL 颜色ID） |
+| rb_prices | `key`（part_num:color_id） | BL-price.json | Bricklink 离线价格缓存 |
 
 > **BL-parts.csv（可选）**：文件名为 `BL-parts.csv`（带连字符），字段 `ITEMTYPE,ITEMID,COLOR,CODENAME`，约 11 万行。`CODENAME` 为**数字**（对应 `rb_elements.element_id`），`ITEMID` 为文本（可含字母如 `14pb10`）。系统在读入 RB / 更新 RB 时会**可选加载**，仓库缺失或导入失败不影响 RB 主库与就绪状态；该表用于"添加零件"兜底匹配的**方法一**。
 
@@ -434,7 +478,7 @@ const RB_SCHEMAS = {
 ```text
 ① BG(型号 + 颜色名) ──匹配──> BL-parts 表(ITEMID + COLOR) ──> CODENAME
 ② CODENAME ──匹配──> rb_elements 表(element_id) ──> part_num + color_id
-③ 成功 → 继续后续保存流程，保存时将 BG型号 与 RB型号 建立别名映射（写 Supabase part_aliases 表 + 刷新本地缓存）
+③ 成功 → 继续后续保存流程，保存时将 BG型号 与 RB型号 建立别名映射（写 Gitee `part_aliases.csv` + RB 离线库 `rb_part_aliases` 表 + localStorage）
    任一步失败 → 进入方法二
 ```
 
@@ -455,10 +499,11 @@ const RB_SCHEMAS = {
    用户取消 / 无候选 → 提示失败信息
 ```
 
-#### 别名保存（savePartAlias）
+#### 别名保存（savePartAlias / persistPartAlias / ensureAliasPersisted）
 
 - 方法一 / 方法二任一成功后都会建立 `BG型号 → RB型号` 别名映射。
-- 写入后端 Supabase `part_aliases` 表（直连 REST）并刷新前端本地别名缓存，使下次识别同类型号可直接走"场景B"命中。
+- 通过 `persistPartAlias` 三写落盘：**RB 离线库 `rb_part_aliases` 表 + Gitee `part_aliases.csv`（全量写回）+ localStorage**，使下次识别同类型号可直接走"场景B"命中。
+- 别名映射数据源为 Gitee parts-rb 的 `part_aliases.csv`（在线共享），系统启动 / 更新 RB 时经 `loadPartAliasesFromGiteeToRBDB` 加载到本地；设置页"别名映射"按钮（`generateAliasMapping`）可从 AL.json 生成批量映射并合并写回。
 
 ### 3.5 网络兼容性说明
 
@@ -599,12 +644,14 @@ const RB_SCHEMAS = {
 | POST | `/api/parts/` | 创建零件 |
 | GET | `/api/parts/?box_id=` | 获取零件列表 |
 | POST | `/api/parts/batch` | 批量创建零件 |
+| GET | `/api/parts/weight?part_number=` | 查询单个零件重量（Bricklink 抓取，回写 part_weights 缓存） |
+| GET | `/api/parts/price?part_number=&color_id=` | 抓取 Bricklink 价格指南（Playwright 绕过 WAF，返回 last_6_months / current_for_sale） |
 | GET/PUT/DELETE | `/api/parts/{id}` | 单零件操作 |
 
 #### 搜索 `/api/search`
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/search/?part_num=&name=&color_id=` | 搜索零件 |
+| GET | `/api/search/?part_num=&name=&color_id=` | 搜索零件（name 支持 "数字 x 数字" 归一化） |
 | GET | `/api/search/suggestions?query=` | 联想建议 |
 
 #### 系统设置 `/api/settings`
@@ -614,9 +661,15 @@ const RB_SCHEMAS = {
 | GET | `/api/settings/backup/{file}` | 下载备份文件 |
 | POST | `/api/settings/restore/{file}` | 恢复数据库 |
 | POST | `/api/settings/init` | 初始化表结构 |
-| POST | `/api/settings/reset-sequences` | 重置自增序列（前端删除后调用） |
+| POST | `/api/settings/reset-sequences` | 重置自增序列（运维用） |
 
-> 注：前端日常 CRUD 直连 Supabase REST API，不经过 FastAPI。FastAPI 仅用于运维操作（备份/恢复/序列重置）。
+#### 其它
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/health` | 健康检查 |
+| RPC | `POST /rest/v1/rpc/reset_sequences` | **Supabase SECURITY DEFINER 函数**，前端删除后经 REST 直接调用重置序列（替代后端 reset-sequences） |
+
+> 注：前端日常 CRUD 直连 Supabase REST API，不经过 FastAPI。FastAPI 仅用于运维操作（备份/恢复/按需抓取重量/价格）与序列重置后台；前端实际序列重置优先走 Supabase `reset_sequences()` RPC。
 
 ---
 
@@ -625,30 +678,34 @@ const RB_SCHEMAS = {
 ```
 PWA-PY/
 ├── frontend/                         # 前端静态文件 (GitHub Pages 部署)
-│   ├── index.html                    # 主页面 (v3.0.0)
+│   ├── index.html                    # 主页面 (v3.0.0，SW v82)
 │   ├── manifest.json                 # PWA 配置
-│   ├── service-worker.js             # Service Worker (v66)
+│   ├── service-worker.js             # Service Worker (v82)
 │   ├── FORCE_UPDATE                  # 强制更新标记
 │   ├── css/
 │   │   └── style.css                 # 样式文件 (P单位: 1P=46px)
 │   ├── js/
-│   │   ├── api.js                    # Supabase REST + Gitee 封装
-│   │   ├── store.js                  # 状态管理 + localStorage
-│   │   ├── rb-db.js                  # IndexedDB RB_Database 封装
-│   │   └── ui.js                     # UI 交互逻辑 (56个函数)
+│   │   ├── api.js                    # Supabase REST + Gitee + 重量/价格抓取封装
+│   │   ├── store.js                  # 状态管理 + localStorage (+灰卡白平衡状态)
+│   │   ├── part-aliases.js           # 零件别名映射 (part_aliases.csv ⇄ rb_part_aliases)
+│   │   ├── rb-db.js                  # IndexedDB RB_Database 封装 (v7)
+│   │   └── ui.js                     # UI 交互逻辑 (250+ 函数)
 │   └── icons/                        # PWA 图标 + 导航按钮背景图
 │
 ├── app/                              # FastAPI 后端 (CloudBase 云托管)
 │   ├── database.py                   # SQLAlchemy 引擎 (SQLite/PostgreSQL)
 │   ├── backup.py                     # 备份逻辑 (COS + Gitee + pg_dump)
+│   ├── bricklink_price.py            # Bricklink 价格抓取/解析 (Playwright 绕过 WAF)
 │   ├── models/                       # ORM 模型
 │   │   ├── repository.py
 │   │   ├── box.py
-│   │   └── part.py
+│   │   ├── part.py
+│   │   ├── color.py
+│   │   └── part_weight.py
 │   ├── routes/                       # API 路由
 │   │   ├── repositories.py
 │   │   ├── boxes.py
-│   │   ├── parts.py
+│   │   ├── parts.py                  # 含 /weight /price
 │   │   ├── search.py
 │   │   └── settings.py
 │   └── schemas/                      # Pydantic 模型
@@ -665,13 +722,24 @@ PWA-PY/
 │   ├── part_relationships.csv
 │   └── parts.csv
 │
+├── .alias_analysis/                  # 零件别名/库存分析 (inventory_parts.csv、renames.py、audit.py)
 ├── main.py                           # FastAPI 入口
-├── Dockerfile                        # Docker 构建文件 (python:3.11-slim)
+├── server_bricklink_price.py         # Bricklink 价格抓取服务端 (独立部署)
 ├── docker-compose.yml                # 本地 Docker Compose
 ├── cloudbaserc.json                  # CloudBase 云托管配置
+├── Dockerfile                        # Docker 构建文件 (python:3.11-slim)
 ├── requirements.txt                  # Python 依赖
-├── init_supabase.sql                 # Supabase 建表脚本
+├── init_supabase.sql                 # Supabase 建表 + 索引 + 15 色 + reset_sequences() RPC
 ├── .env                              # 环境变量 (DATABASE_URL)
+├── generate_bl_price.py              # 本机离线生成 BL-price.json (Playwright WAF)
+├── push_bl_price_to_gitee.py         # 推送 BL-price.json 到 Gitee parts-rb
+├── fetch_weights.py                  # 批量抓取 Bricklink 重量 → weights.json
+├── push_weights_to_gitee.py          # 推送 weights.json 到 Gitee
+├── push_inventory_parts_to_gitee.py  # 推送 inventory_parts 到 Gitee
+├── migrate_from_cloudbase.py         # CloudBase → Supabase 数据迁移脚本
+├── bl-proxy-worker/                  # Cloudflare Worker 价格代理 (KV 缓存)
+├── cloudflare_bl_price/              # CF Workers + Browser Rendering 无头抓价格
+├── supabase/functions/get-part-weight/  # Supabase Edge Function 重量抓取 (备用)
 ├── .github/workflows/
 │   └── deploy-frontend.yml           # GitHub Actions 自动部署前端
 └── README.md
@@ -681,14 +749,18 @@ PWA-PY/
 
 | 文件 | 功能 |
 |------|------|
-| `api.js` | Supabase REST 封装 + Gitee JSON/CSV 获取 + RB 云备份 |
-| `rb-db.js` | 原生 IndexedDB 封装 RB_Database，提供查询/联想/导入导出 |
-| `store.js` | 全局状态管理（selectedRepository/Box）+ localStorage 缓存 |
-| `ui.js` | 全部 UI 交互逻辑（56 个函数），含模态框、CSV 导入、长按编辑等 |
-| `service-worker.js` | PWA 离线缓存（网络优先 JS/CSS，缓存优先静态资源） |
+| `api.js` | Supabase REST 封装 + Gitee JSON/CSV/分片获取 + RB 云备份 + 重量/价格抓取 |
+| `rb-db.js` | 原生 IndexedDB 封装 RB_Database (v7)，提供查询/联想/导入导出 + 价格/重量缓存 |
+| `part-aliases.js` | 零件别名映射：part_aliases.csv 加载/持久化（RB 离线库 + Gitee + localStorage） |
+| `store.js` | 全局状态管理（selectedRepository/Box）+ localStorage 缓存 + 灰卡白平衡状态 |
+| `ui.js` | 全部 UI 交互逻辑（250+ 函数），含模态框、CSV 导入、长按、拍照识别、价格面板等 |
+| `service-worker.js` | PWA 离线缓存（网络优先 JS/CSS，缓存优先静态资源，v82） |
 | `main.py` | FastAPI 入口，CORS + 路由注册 + APScheduler 每日备份 |
+| `app/bricklink_price.py` | 价格抓取/解析（Playwright 绕过 AWS WAF） |
 | `app/backup.py` | SQLite/PostgreSQL 备份 + COS 上传 + Gitee 推送 |
-| `init_supabase.sql` | Supabase 建表 + 索引 + 15 种预置颜色 |
+| `init_supabase.sql` | Supabase 建表 + 索引 + 15 种预置颜色 + `reset_sequences()` 函数 |
+| `generate_bl_price.py` | 本机离线生成 BL-price.json 价格库 |
+| `fetch_weights.py` | 批量抓取 Bricklink 零件重量 |
 
 ### 5.2 store.js 状态管理
 
@@ -844,13 +916,19 @@ CSV 解析采用自定义 `parseRBCSVLine`（支持引号转义），解析后�
             用户点击"更新RB"
                 │
                 ├── 优先尝试从 Parts-json 下载 rb_database.json (云备份)
-                └── 失败则从 parts-rb 下载 6 个 CSV
+                └── 失败则从 parts-rb 下载（RB 分片 manifest + 分片 CSV，
+                    含 colors/parts/part_categories/elements/inventory_parts/
+                    part_relationships/weights/BL-parts/part_aliases/bl_colors）
                     │
                     ▼
-                解析 + 类型转换 + 分批写入 IndexedDB
+                解析 + 类型转换 + 分批写入 IndexedDB（rb_database v7）
                     │
                     ▼
-                自动导出 rb_database.json 到 Parts-json (备份)
+                可选自动导出 rb_database.json 到 Parts-json (备份)
+                    │
+                    ▼
+                启动时另加载 BL-price.json → rb_prices、bl_colors.json → rb_bl_colors、
+                part_aliases.csv → rb_part_aliases、ID_Abc.json → rb_id_abc
 ```
 
 ### 8.4 颜色数据缓存策略
@@ -873,14 +951,20 @@ CSV 解析采用自定义 `parseRBCSVLine`（支持引号转义），解析后�
 
 ### v3.0 核心特性
 - ✅ 前端原生 fetch 直连 Supabase REST API（无 SDK 依赖）
-- ✅ 原生 IndexedDB 缓存 Rebrickable 6 张表（无 Dexie.js 依赖）
-- ✅ RB 数据从 Gitee parts-rb 私有仓库获取（CSV + Token）
-- ✅ FastAPI 辅助后端（CloudBase 云托管，备份/恢复/序列重置）
+- ✅ 原生 IndexedDB 缓存 RB 数据（RB_Database v7，无 Dexie.js 依赖）
+- ✅ RB 数据从 Gitee parts-rb 私有仓库获取（分片 CSV + Token）
+- ✅ FastAPI 辅助后端（CloudBase 云托管，备份/恢复/序列重置/重量与价格抓取）
 - ✅ 智能分词零件名称联想（支持"数字 x 数字"格式）
-- ✅ 零件图片从 Gitee Parts-img 加载
-- ✅ Service Worker v66 离线缓存（网络优先 JS/CSS）
+- ✅ 零件图片从 Gitee Parts-img 加载（含自定义图片管理、离线缓存）
+- ✅ **Bricklink 离线价格库**（BL-price.json → rb_prices，零件详情右滑秒出价格）
+- ✅ **零件别名映射**（Gitee part_aliases.csv ⇄ rb_part_aliases，拍照识别兜底匹配）
+- ✅ **拍照识别（BG）**：图片识别 + 灰卡白平衡校准 + 颜色分析 + 兜底匹配
+- ✅ **零件转盒**（支持目标仓库/盒子选择与 ID 重编号）
+- ✅ **搜索增强**：清单页、型号"识别"、名称精度档位、仓库范围筛选
+- ✅ Service Worker v82 离线缓存（网络优先 JS/CSS）
 - ✅ 腾讯云 COS + Gitee 双备份（每日 02:00 自动）
 - ✅ P 单位自适应布局（1P = 46px，基于 DPI 检测）
+- ✅ Supabase `reset_sequences()` RPC（SECURITY DEFINER，前端直调重置序列）
 
 ---
 
@@ -891,11 +975,15 @@ CSV 解析采用自定义 `parseRBCSVLine`（支持引号转义），解析后�
 - [x] 前端直连 Supabase REST API (api.js)
 - [x] 原生 IndexedDB 封装 RB_Database (rb-db.js)
 - [x] FastAPI 辅助后端 (备份/恢复/序列重置)
-- [x] Service Worker 离线缓存 (v66)
-- [x] RB 数据导入/导出/云备份
+- [x] Service Worker 离线缓存 (v82)
+- [x] RB 数据导入/导出/云备份（RB 分片上传）
 - [x] 智能分词零件联想
 - [x] CSV 批量导入零件
 - [x] 四标签页 UI 实现（仓库/零件/搜索/设置）
+- [x] 零件转盒
+- [x] 拍照识别（BG）+ 灰卡白平衡校准 + 兜底匹配
+- [x] 零件别名映射（Gitee part_aliases.csv）
+- [x] Bricklink 离线价格库（BL-price.json → rb_prices）
 - [ ] 离线写入队列（pending_ops）
 - [ ] 用户认证与 RLS 数据隔离（如需多用户）
 - [ ] 零件图片预缓存策略
@@ -950,7 +1038,7 @@ async function supabaseRequest(table, options = {}) {
 ```javascript
 // frontend/js/rb-db.js
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 1;
+const RB_DB_VERSION = 7;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -958,7 +1046,13 @@ const RB_STORES = {
     INVENTORY_PARTS: 'rb_inventory_parts',
     PART_CATEGORIES: 'rb_part_categories',
     PART_RELATIONSHIPS: 'rb_part_relationships',
-    PARTS: 'rb_parts'
+    PARTS: 'rb_parts',
+    WEIGHTS: 'rb_weights',
+    BL_PARTS: 'rb_bl_parts',      // BL目录桥接
+    PART_ALIASES: 'rb_part_aliases', // 别名映射
+    ID_ABC: 'rb_id_abc',          // 型号英文词库
+    BL_COLORS: 'rb_bl_colors',    // BL颜色表
+    PRICES: 'rb_prices'           // BL离线价格
 };
 
 function openRBDatabase() {
