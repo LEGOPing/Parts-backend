@@ -3406,12 +3406,13 @@ body {
 }
 
 .pd-image-content {
-    width: 100%;
-    height: 100%;
+    width: 168px;
+    height: 168px;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-shrink: 0;
+    margin: auto;                 /* 正方形图片在图片行内居中 */
 }
 
 .pd-image-action {
@@ -3458,12 +3459,12 @@ body {
     left: 0;
     top: 0;
     height: 100%;
-    width: 200px;
+    width: 90px;                  /* 实际宽度由 JS 按(行宽-图片边长)/2 动态设置，比原版更窄 */
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 6px 8px;
+    padding: 5px 6px;
     gap: 4px;
     font-size: 8px;
     line-height: 1.4;
@@ -3494,7 +3495,7 @@ body {
 }
 .pp-cols {
     display: flex;
-    gap: 10px;
+    gap: 6px;
     flex: 1;
     min-height: 0;
 }
@@ -3526,12 +3527,26 @@ body {
     flex-shrink: 0;
 }
 .pp-val {
-    font-weight: bold;
-    color: #c0392b;
+    font-weight: 600;
+    color: #555;
     text-align: right;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+/* 价格行配色：低/高=深灰，平均=蓝，加权=红粗体 */
+.pp-low .pp-val,
+.pp-high .pp-val {
+    color: #555;
+    font-weight: 400;             /* 深灰色 */
+}
+.pp-avg .pp-val {
+    color: #2196F3;
+    font-weight: 600;             /* 蓝色 */
+}
+.pp-wavg .pp-val {
+    color: #c0392b;
+    font-weight: 700;             /* 红色粗体 */
 }
 .pp-muted {
     color: #bbb;
@@ -3794,8 +3809,8 @@ body {
 }
 
 .pd-image {
-    max-height: 168px;
-    max-width: 100%;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
 }
 
