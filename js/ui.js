@@ -7142,6 +7142,18 @@ async function loadRBOnStartup() {
             } catch (e) {
                 console.warn('补充加载 BL 颜色表失败:', e.message);
             }
+            // 升级场景：旧库无 RB↔BL 颜色映射表，补充加载 RB_BL_colors.csv
+            try {
+                const rbMapCount = await countRecords(RB_STORES.RB_BL_MAP);
+                if (rbMapCount === 0) {
+                    const rbMapResult = await loadRBBLMappingToRBDB();
+                    if (rbMapResult.success) {
+                        console.log(`补充加载 RB↔BL 颜色映射表: ${rbMapResult.count}条`);
+                    }
+                }
+            } catch (e) {
+                console.warn('补充加载 RB↔BL 颜色映射表失败:', e.message);
+            }
             // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
             loadIDAbcOnStartup();
             // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
@@ -7234,6 +7246,15 @@ async function loadRBOnStartup() {
             console.log(`BL 颜色表加载成功: ${blColorResult.count} 条`);
         } catch (error) {
             console.warn('BL 颜色表可选加载失败（不影响RB主库）:', error.message);
+        }
+
+        // 可选：加载 RB↔BL 颜色映射表（RB_BL_colors.csv → rb_bl_map），供颜色ID直接映射使用。
+        // 若仓库暂无或导入失败，不阻塞 RB 主库与 ready 状态。
+        try {
+            const rbMapResult = await loadRBBLMappingToRBDB();
+            console.log(`RB↔BL 颜色映射表加载成功: ${rbMapResult.count} 条`);
+        } catch (error) {
+            console.warn('RB↔BL 颜色映射表可选加载失败（不影响RB主库）:', error.message);
         }
 
         // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
@@ -8112,6 +8133,17 @@ async function updateRB() {
             importResults['bl_colors'] = false;
         }
 
+        // 可选：加载 RB↔BL 颜色映射表（RB_BL_colors.csv → rb_bl_map）
+        try {
+            updateProgress(0.985, '读取 RB↔BL 颜色映射表...', 'RB_BL_colors.csv');
+            const rbMapResult = await loadRBBLMappingToRBDB();
+            importResults['rb_bl_map'] = rbMapResult.success;
+            updateProgress(0.99, `RB↔BL 颜色映射表 - ${rbMapResult.success ? '导入成功' : '导入失败'}`, `${rbMapResult.count}条`);
+        } catch (error) {
+            console.warn('RB↔BL 颜色映射表加载失败（不影响RB主库）:', error.message);
+            importResults['rb_bl_map'] = false;
+        }
+
         // 显示结果
         updateProgress(1, '更新完成！', '');
 
@@ -8127,6 +8159,7 @@ async function updateRB() {
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
+            statsHtml += `<div>RB↔BL颜色映射: ${stats.rb_bl_map || 0} 条</div>`;
             statsHtml += '</div>';
         }
 
