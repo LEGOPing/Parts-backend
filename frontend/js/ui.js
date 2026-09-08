@@ -8173,6 +8173,8 @@ async function updateRB() {
             statsHtml += `<div>零件: ${stats.rb_parts || 0} 条</div>`;
             statsHtml += `<div>类别: ${stats.rb_part_categories || 0} 条</div>`;
             statsHtml += `<div>元素: ${stats.rb_elements || 0} 条</div>`;
+            statsHtml += `<div>零件种类(型号去重,忽略颜色/状态): ${stats.rb_inventory_kinds_by_part || 0} 种</div>`;
+            statsHtml += `<div>零件种类(型号+颜色去重,忽略状态): ${stats.rb_inventory_kinds_by_part_color || 0} 种</div>`;
             statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;

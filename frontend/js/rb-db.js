@@ -229,6 +229,26 @@ async function getRBStats() {
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
         }
+        // 零件种类去重统计（来自库存 inventory_parts，忽略 spare 状态）：
+        // N1 = 零件种类（仅按零件型号去重，忽略颜色与状态）
+        // N2 = 零件种类（按零件型号+颜色去重，忽略状态）
+        try {
+            const invAll = await getAll(RB_STORES.INVENTORY_PARTS);
+            const setByPart = new Set();
+            const setByPartColor = new Set();
+            for (const row of invAll) {
+                const pn = String(row.part_num != null ? row.part_num : '').trim();
+                if (pn === '') continue;
+                setByPart.add(pn);
+                setByPartColor.add(pn + '\u0000' + (row.color_id != null ? row.color_id : ''));
+            }
+            stats.rb_inventory_kinds_by_part = setByPart.size;             // N1：零件型号去重
+            stats.rb_inventory_kinds_by_part_color = setByPartColor.size;  // N2：型号+颜色去重
+        } catch (e) {
+            console.warn('计算库存零件种类去重失败:', e);
+            stats.rb_inventory_kinds_by_part = 0;
+            stats.rb_inventory_kinds_by_part_color = 0;
+        }
         return stats;
     } catch (error) {
         console.error('获取RB统计信息失败:', error);
