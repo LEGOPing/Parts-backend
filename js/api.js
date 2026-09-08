@@ -397,7 +397,9 @@ async function resolveBLColorId(rbColorId) {
     try {
         if (rbColorId === undefined || rbColorId === null || rbColorId === '') return null;
         const rec = await getBLColorMapByRBColorId(rbColorId);
-        if (rec && rec.bl_color_id != null && rec.bl_color_id !== '' && rec.bl_color_id !== 0) {
+        // 注意：BL 颜色ID 0 是合法取值（如黑色等），不能当作“无映射”排除，
+        // 否则颜色ID为0的零件无法解析出 BL 颜色ID，右滑面板也就查不到价格。
+        if (rec && rec.bl_color_id != null && rec.bl_color_id !== '') {
             return Number(rec.bl_color_id);
         }
         return null; // rb_bl_map 中无该 RB 颜色ID 的映射，无法确定 BL 颜色ID
