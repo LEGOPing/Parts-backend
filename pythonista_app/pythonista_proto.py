@@ -76,6 +76,9 @@ _results = []
 _N       = len(PARTS)
 _BASE    = os.path.dirname(os.path.abspath(__file__))
 _RB_BL_MAP = {}  # { RB 颜色ID(int): BL 颜色ID(int) }，由 RB_BL_colors.csv 构建
+STOP = threading.Event()  # 手动停止信号：点顶栏【停止】后置位
+DONE = threading.Event()  # 整批结束信号：用于让主线程安全退出进程
+_status_label = None      # 顶栏状态标签（best-effort 更新）
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +126,7 @@ def _ts():
 
 
 def log(msg):
+    global _status_label
     line = '[%s] %s' % (_ts(), msg)
     print(line, flush=True)
     try:
@@ -130,6 +134,14 @@ def log(msg):
             f.write(line + '\n')
     except Exception:
         pass
+    if _status_label is not None:
+        @on_main_thread
+        def _upd():
+            try:
+                _status_label.text = msg[:44]
+            except Exception:
+                pass
+        _upd()
 
 
 def save_results():
@@ -212,6 +224,8 @@ def _poll_price(webview, timeout=MAX_WAIT):
     """反复带超时取价格 JSON。返回 dict 或 None。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if STOP.is_set():
+            return None
         last = _eval_js_timed(webview, EXTRACT_JS, timeout=JS_TO)
         if last is None:
             log('    JS 调用超时未返回（可能 WAF/页面挂起），继续等待...')
@@ -299,13 +313,17 @@ def _batch():
         def close_ui():
             try:
                 _webview.close()
-            except Exception:
-                pass
+            except Exception as e:
+                log('close 失败: %s' % e)
         close_ui()
+        DONE.set()
         return
     log('已加载 RB→BL 颜色映射 %d 条（系统颜色ID=RB_color_ID，BL=BL_color_ID）' % len(_RB_BL_MAP))
 
     for idx, (part, rb_color) in enumerate(PARTS, start=1):
+        if STOP.is_set():
+            log('用户已手动停止，中断剩余批次')
+            break
         # 系统颜色ID（RB 颜色ID）→ BL 颜色ID：直接查 RB_BL_colors.csv 映射
         try:
             rb_color = str(rb_color).strip()
@@ -335,7 +353,10 @@ def _batch():
                 idx, _N, part, rb_color, MAX_WAIT))
             save_results()
 
-    log('=== 全部处理完成，共 %d 条，成功 %d 条 ===' % (_N, len(_results)))
+    if STOP.is_set():
+        log('=== 已手动停止，已抓 %d 条 ===' % len(_results))
+    else:
+        log('=== 全部处理完成，共 %d 条，成功 %d 条 ===' % (_N, len(_results)))
 
     @on_main_thread
     def close_ui():
@@ -344,11 +365,43 @@ def _batch():
         except Exception as e:
             log('close 失败: %s' % e)
     close_ui()
+    DONE.set()
 
 
 # ---------------------------------------------------------------------------
 # 4) 主流程
 # ---------------------------------------------------------------------------
+def _request_stop():
+    """点顶栏【停止】：置位停止信号，后台循环会尽快退出并对询轮询中断。"""
+    STOP.set()
+    log('=== 用户手动停止 ===')
+
+
+def _build_ui():
+    """带顶栏的容器：顶栏放【停止】按钮 + 进度标签，下方内嵌 WKWebView。"""
+    global _webview, _status_label
+    bar_h = 50
+    container = ui.View(name='BLP', background_color='#1c1c1e')
+    bar = ui.View(background_color='#2c2c2e')
+    btn = ui.Button(title='停止', font=('system', 16), tint_color='#ff453a')
+    btn.action = lambda sender: _request_stop()
+    label = ui.Label(text_color='white', font=('system', 13),
+                     line_break_mode=ui.LB_TRUNCATE_TAIL)
+    label.text = '准备中…'
+    # 先 present 到全屏，再按容器实际尺寸排版（适配横竖屏/机型）
+    container.present('full_modal')
+    w, h = container.width, container.height
+    bar.frame = (0, 0, w, bar_h)
+    btn.frame = (12, (bar_h - 34) / 2, 64, 34)
+    label.frame = (96, 0, w - 104, bar_h)
+    bar.add_subview(btn)
+    bar.add_subview(label)
+    _webview = WKWebView(name='BLP', frame=(0, bar_h, w, h - bar_h))
+    _status_label = label
+    container.add_subview(bar)
+    container.add_subview(_webview)
+
+
 def main():
     global _webview
     # 每次启动清空旧 log，方便从 0 看
@@ -360,17 +413,17 @@ def main():
         pass
     log('共 %d 组待抓：%s（颜色为 RB 颜色ID，将映射为 BL 颜色ID）' % (
         _N, [(p, c) for p, c in PARTS]))
-    # 先弹界面，颜色映射放在后台线程里加载，避免主线程同步联网导致启动挂起
-    _webview = WKWebView(name='BLP')
-    _webview.present('full_modal')
+    # 先弹带顶栏的界面，颜色映射在后台线程加载，避免启动挂起
+    _build_ui()
     # 用守护线程跑后台循环：立即启动、不依赖 Pythonista 的 in_background 调度
     threading.Thread(target=_worker, daemon=True).start()
 
 if __name__ == '__main__':
     try:
         main()
-        while True:
-            time.sleep(60)
+        # 直到处理完成或被手动停止再退出，避免进程常驻导致「无法停止」
+        while not (STOP.is_set() or DONE.is_set()):
+            time.sleep(1)
     except Exception:
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
