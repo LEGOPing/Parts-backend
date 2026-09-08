@@ -29,6 +29,10 @@ v10 关键改动（正式实施爬价）：
     - 若同目录存在 parts_to_crawl.json，则覆盖 PARTS 作为正式待抓清单
       （条目 {"part","color"}，color 为 RB 颜色ID），否则用内置样例。
 
+v11 关键改动（增量爬价）：
+    - 读取上次生成的本地 BL-price.json 建索引：命中且 saved_at 未超过 REFRESH_DAYS(15) 天
+      则直接沿用旧价（不重抓），否则重新爬取；整批结束自动上传最新 BL-price.json 到 Gitee。
+
 运行：
     Pythonista 打开本文件 -> 点运行三角 -> 等自动抓完。
     过程看 progress.log，结果看 BL-price.json。待抓清单看 parts_to_crawl.json。
@@ -45,7 +49,7 @@ import traceback
 import os
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from objc_util import on_main_thread
 
 # ---------------------------------------------------------------------------
@@ -66,6 +70,7 @@ PARTS_FILE = 'parts_to_crawl.json'  # 正式待抓清单（可选）：[{"part":
 MAX_WAIT  = 20      # 单页最长等待价格段出现（秒）；超过则跳过，处理下一个
 POLL_STEP = 3       # 每次轮询间隔（秒）
 JS_TO     = 8       # 单次 JS 调用的超时（秒）
+REFRESH_DAYS = 15   # 增量爬价：距上次抓取(saved_at)超过该天数则重新爬取；否则沿用旧价
 
 # --- Gitee 自动上传配置（整批抓完或手动停止后，把 BL-price.json 推送到仓库根目录） ---
 GITEE_BRANCH   = 'main'
@@ -185,6 +190,38 @@ def _load_parts_from_file():
     PARTS = list(dict.fromkeys(items))
     _N = len(PARTS)
     log('已从 %s 载入正式待抓清单 %d 条' % (PARTS_FILE, _N))
+
+
+def _load_existing_index():
+    """读取上次生成的本地 BL-price.json，建立索引 {key: record}，用于增量爬价。
+    key = '{part_num}:{BL color_id}'（与抓取时 key 一致）。文件不存在或解析失败返回空索引（即全量重抓）。"""
+    idx = {}
+    path = os.path.join(_BASE, OUT_JSON)
+    if not os.path.exists(path):
+        log('未找到本地 %s，将全量抓取（无上次价格可复用）' % OUT_JSON)
+        return idx
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        for rec in data.get('records', []):
+            k = '%s:%s' % (rec.get('part_num'), rec.get('color_id'))
+            if rec.get('part_num') is not None and rec.get('color_id') is not None:
+                idx[k] = rec
+        log('已读取本地 %s 共 %d 条（用于增量判断）' % (OUT_JSON, len(idx)))
+    except Exception as e:
+        log('读取本地 %s 失败，将全量重抓: %s' % (OUT_JSON, e))
+    return idx
+
+
+def _need_refresh(record):
+    """判断记录是否需要重新爬取：超过 REFRESH_DAYS 天（按 saved_at）则为 True。"""
+    if not record or 'saved_at' not in record:
+        return True
+    try:
+        t = datetime.strptime(record['saved_at'], '%Y-%m-%dT%H:%M:%S')
+    except Exception:
+        return True
+    return (datetime.now() - t).total_seconds() > REFRESH_DAYS * 86400
 
 
 _load_parts_from_file()
@@ -429,6 +466,10 @@ def _batch():
         return
     log('已加载 RB→BL 颜色映射 %d 条（系统颜色ID=RB_color_ID，BL=BL_color_ID）' % len(_RB_BL_MAP))
 
+    # 增量爬价：先读上次本地价格建索引，命中且未过期就沿用，否则重新爬
+    existing = _load_existing_index()
+    _reused = 0
+
     for idx, (part, rb_color) in enumerate(PARTS, start=1):
         if STOP.is_set():
             log('用户已手动停止，中断剩余批次')
@@ -445,6 +486,18 @@ def _batch():
             log('    [%d/%d] 跳过 %s:%s（RB 颜色ID在 RB_BL_colors.csv 无对应 BL 颜色ID）' % (
                 idx, _N, part, rb_color))
             continue
+        # --- 增量：命中上次价格且未超过 REFRESH_DAYS -> 沿用旧价，不爬 ---
+        key = '%s:%s' % (part, bl_color)
+        old = existing.get(key)
+        if old is not None and not _need_refresh(old):
+            _results.append(old)
+            _reused += 1
+            log('    [%d/%d] 沿用旧价 %s:%s（BL色%s，%s，未超过 %d 天）' % (
+                idx, _N, part, rb_color, bl_color, old.get('saved_at'), REFRESH_DAYS))
+            continue
+        if old is not None:
+            log('    [%d/%d] 超过 %d 天需刷新 %s:%s（BL色%s，上次 %s）' % (
+                idx, _N, REFRESH_DAYS, part, rb_color, bl_color, old.get('saved_at')))
         url = URL_TMPL.format(part=part, color=bl_color)
         log('=== [%d/%d] 打开 %s (RB色%s→BL色%s) -> %s' % (
             idx, _N, part, rb_color, bl_color, url))
@@ -462,10 +515,15 @@ def _batch():
                 idx, _N, part, rb_color, MAX_WAIT))
             save_results()
 
+    # 无论是否实际爬取，统一落盘一次，确保沿用+新抓都写入 BL-price.json
+    save_results()
+
     if STOP.is_set():
-        log('=== 已手动停止，已抓 %d 条 ===' % len(_results))
+        log('=== 已手动停止，共用 %d 条（新抓 %d，沿用 %d）===' % (
+            len(_results), len(_results) - _reused, _reused))
     else:
-        log('=== 全部处理完成，共 %d 条，成功 %d 条 ===' % (_N, len(_results)))
+        log('=== 全部处理完成，共用 %d 条（新抓 %d，沿用旧价 %d）===' % (
+            len(_results), len(_results) - _reused, _reused))
 
     # 整批结束后，把本地 BL-price.json 自动上传到 Gitee（失败不影响抓取结果）
     _upload_price_json()
