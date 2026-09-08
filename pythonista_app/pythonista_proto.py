@@ -473,8 +473,56 @@ def _eval_js_timed(webview, js, timeout=JS_TO):
     return None   # 超时未返回
 
 
-def _poll_price(webview, timeout=MAX_WAIT):
-    """反复带超时取价格 JSON。返回 dict 或 None。"""
+# 页面跳转校验：返回当前 document 的 URL 与加载状态，用于确认已真正跳到目标零件页。
+NAVCHECK_JS = r"""
+(function () {
+  return JSON.stringify({ url: document.URL, ready: document.readyState });
+})();
+"""
+
+
+def _is_target_page(payload, part, bl_color):
+    """用 document.URL 校验是否已真正跳到目标零件页。
+    关键：只有 URL 里同时含 P=<part> 与 colorID=<bl>、且页面不再处于 loading，
+    才认为新页已就位。否则拿到的 outerHTML 仍是上一页/首屏的旧价格（根因）。"""
+    try:
+        d = json.loads(payload)
+    except Exception:
+        return False
+    url = d.get('url', '') or ''
+    ready = str(d.get('ready', ''))
+    if ready == 'loading':
+        return False
+    # BRICKLINK catalogPG 页 URL 与请求保持一致（可能带额外参数），用 P= 与 colorID= 判定归属
+    if ('P=%s' % str(part)) not in url:
+        return False
+    if ('colorID=%s' % str(bl_color)) not in url:
+        return False
+    return True
+
+
+def _poll_price(webview, part, bl_color, timeout=MAX_WAIT):
+    """阶段1：先等页面真正跳转到目标零件页；阶段2：再反复提取价格 JSON。
+    返回 dict 或 None（超时未跳到目标页 / 未抓到价格段时返回 None，绝不返回旧页价格）。"""
+    # ---- 阶段1：导航就绪校验（杜绝读到上一页/首屏价格）----
+    deadline_nav = time.time() + timeout
+    navigated = False
+    while time.time() < deadline_nav:
+        if STOP.is_set():
+            return None
+        check = _eval_js_timed(webview, NAVCHECK_JS, timeout=JS_TO)
+        if check and _is_target_page(check, part, bl_color):
+            navigated = True
+            log('    已跳转到目标页 %s:%s 准备提取' % (part, bl_color))
+            break
+        if STOP.is_set():
+            return None
+        time.sleep(POLL_STEP)
+    if not navigated:
+        log('    页面未在 %ds 内跳转到 %s:%s（仍停在旧页/被 WAF 拦），跳过本零件' % (
+            timeout, part, bl_color))
+        return None
+    # ---- 阶段2：页面已就位，再轮询取价格段 ----
     deadline = time.time() + timeout
     while time.time() < deadline:
         if STOP.is_set():
@@ -615,7 +663,7 @@ def _batch():
             log('=== [%d/%d] 打开 %s (RB色%s→BL色%s) -> %s' % (
                 idx, _N, part, rb_color, bl_color, url))
             _start_load(_webview, url)
-            data = _poll_price(_webview)
+            data = _poll_price(_webview, part, bl_color)
             if data:
                 rec = _build_record(part, rb_color, bl_color, data)
                 _results.append(rec)
