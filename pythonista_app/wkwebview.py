@@ -403,6 +403,12 @@ class WKWebView(ui.View):
 
     def _message(self, message):
         level, content = message['level'], message['content']
+        # JS console 传对象时 content 为 dict，先转成字符串再打印，避免 TypeEoor
+        if not isinstance(content, str):
+            try:
+                content = json.dumps(content)
+            except Exception:
+                content = str(content)
         if level == 'code':
             print('>>> ' + content)
         elif level == 'raw':
