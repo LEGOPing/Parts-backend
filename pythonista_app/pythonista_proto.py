@@ -33,6 +33,7 @@ import json
 import time
 import csv
 import io
+import threading
 import traceback
 import os
 from datetime import datetime
@@ -262,8 +263,8 @@ def _start_load(webview, url):
 
 # ---------------------------------------------------------------------------
 # 3) 后台工作线程：轮询驱动整批循环，边抓边落盘
+#    用 threading.Thread 启动（不信赖 ui.in_background 的调度，避免后台不跑）
 # ---------------------------------------------------------------------------
-@ui.in_background
 def _worker():
     global _results
     try:
@@ -362,7 +363,8 @@ def main():
     # 先弹界面，颜色映射放在后台线程里加载，避免主线程同步联网导致启动挂起
     _webview = WKWebView(name='BLP')
     _webview.present('full_modal')
-    _worker()
+    # 用守护线程跑后台循环：立即启动、不依赖 Pythonista 的 in_background 调度
+    threading.Thread(target=_worker, daemon=True).start()
 
 if __name__ == '__main__':
     try:
