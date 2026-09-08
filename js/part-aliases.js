@@ -404,6 +404,17 @@ async function matchColorNameToId(colorName) {
     const cleanName = String(colorName).trim().toLowerCase();
     if (!cleanName) return null;
 
+    // 0. 优先用 RB_BL_colors（rb_bl_map）：识别返回的颜色名是 Bricklink 颜色名，
+    //    直接按 BL 颜色名反查 RB 颜色，避免对 RB 颜色名的模糊匹配。
+    try {
+        if (typeof getRBColorByBLColorName === 'function') {
+            const mapped = await getRBColorByBLColorName(colorName);
+            if (mapped && mapped.id != null) return mapped;
+        }
+    } catch (e) {
+        console.warn('RB_BL_colors 颜色名反查失败，回退到 RB 颜色名匹配:', e.message);
+    }
+
     // 1. 标准化名称
     const normalizedName = COLOR_NAME_NORMALIZATION[cleanName] || colorName.trim();
 
