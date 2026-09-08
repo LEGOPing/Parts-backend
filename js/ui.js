@@ -7158,7 +7158,7 @@ async function loadRBOnStartup() {
             loadIDAbcOnStartup();
             // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
             if (typeof loadBLPriceLibraryToRBDb === 'function') {
-                loadBLPriceLibraryToRBDb().then(r => {
+                loadBLPriceLibraryToRBDb({ refresh: true }).then(r => {
                     if (r && r.success) console.log(`离线价格库补充加载: ${r.added}/${r.total} 条`);
                 }).catch(e => console.warn('离线价格库补充加载失败:', e));
             }
@@ -7261,7 +7261,7 @@ async function loadRBOnStartup() {
         loadIDAbcOnStartup();
         // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
         if (typeof loadBLPriceLibraryToRBDb === 'function') {
-            loadBLPriceLibraryToRBDb().then(r => {
+            loadBLPriceLibraryToRBDb({ refresh: true }).then(r => {
                 if (r && r.success) console.log(`离线价格库加载: ${r.added}/${r.total} 条`);
             }).catch(e => console.warn('离线价格库加载失败:', e));
         }
@@ -8144,6 +8144,24 @@ async function updateRB() {
             importResults['rb_bl_map'] = false;
         }
 
+        // 加载最新离线 Bricklink 价格库（BL-price.json → rb_prices）
+        // refresh=true：用最新 BL-price 覆盖旧的离线来源价格，手动回填(source='manual')结果保留
+        let blPriceResult = { success: false, total: 0, added: 0 };
+        try {
+            updateProgress(0.995, '读取离线价格库...', 'BL-price.json');
+            if (typeof loadBLPriceLibraryToRBDb === 'function') {
+                blPriceResult = await loadBLPriceLibraryToRBDb({ refresh: true });
+            }
+            importResults['bl_price'] = !(blPriceResult && blPriceResult.error);
+            updateProgress(0.999,
+                `离线价格库 - ${blPriceResult && !blPriceResult.error ? '导入成功' : '读取失败'}`,
+                `${blPriceResult.total}条/更新${blPriceResult.added}条`);
+        } catch (error) {
+            console.warn('离线价格库加载失败（不影响RB主库）:', error.message);
+            importResults['bl_price'] = false;
+            updateProgress(0.999, '离线价格库 - 读取失败', error.message);
+        }
+
         // 显示结果
         updateProgress(1, '更新完成！', '');
 
@@ -8160,6 +8178,7 @@ async function updateRB() {
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
             statsHtml += `<div>RB↔BL颜色映射: ${stats.rb_bl_map || 0} 条</div>`;
+            statsHtml += `<div>BL价格: ${stats.rb_prices || 0} 条</div>`;
             statsHtml += '</div>';
         }
 

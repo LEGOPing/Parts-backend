@@ -223,7 +223,8 @@ async function getRBStats() {
             'rb_part_aliases': RB_STORES.PART_ALIASES,
             'rb_id_abc': RB_STORES.ID_ABC,
             'rb_bl_colors': RB_STORES.BL_COLORS,
-            'rb_bl_map': RB_STORES.RB_BL_MAP
+            'rb_bl_map': RB_STORES.RB_BL_MAP,
+            'rb_prices': RB_STORES.PRICES
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);

@@ -179,9 +179,12 @@ async function loadRBBLMappingToRBDB() {
 }
 
 // 启动时加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
-// 只在本地还没有该 key 的价格时写入，保留设备端手动回填/抓取的结果优先。
+// 默认只在本地还没有该 key 的价格时写入，保留设备端手动回填/抓取的结果优先。
+// options.refresh=true（"更新RB"使用）：会用最新 BL-price 覆盖来源为离线库(source==='offline')
+// 的旧记录，使缓存更新到最新；手动回填(source==='manual')/服务端抓取的结果仍保留。
 // 非阻塞，失败仅告警。返回 { success, added, total }。
-async function loadBLPriceLibraryToRBDb() {
+async function loadBLPriceLibraryToRBDb(options = {}) {
+    const refresh = !!(options && options.refresh);
     const text = await fetchRBFile('BL-price.json');
     if (!text) return { success: false, added: 0, total: 0, error: 'BL-price.json 读取失败' };
     let data;
@@ -199,7 +202,11 @@ async function loadBLPriceLibraryToRBDb() {
             const existing = (typeof getCachedBLPrice === 'function')
                 ? await getCachedBLPrice(rec.part_num, rec.color_id)
                 : null;
-            if (existing && (existing.last_6_months || existing.current_for_sale)) continue;
+            if (existing && (existing.last_6_months || existing.current_for_sale)) {
+                // 默认：本地已有价格则跳过。
+                // refresh：只有旧记录来自离线库才用最新 BL-price 覆盖，手动回填结果保留。
+                if (!refresh || existing.source !== 'offline') continue;
+            }
             if (typeof saveCachedBLPrice === 'function') {
                 const ok = await saveCachedBLPrice(rec);
                 if (ok) added++;
