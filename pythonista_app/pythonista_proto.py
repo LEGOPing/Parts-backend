@@ -33,6 +33,14 @@ v11 关键改动（增量爬价）：
     - 读取上次生成的本地 BL-price.json 建索引：命中且 saved_at 未超过 REFRESH_DAYS(15) 天
       则直接沿用旧价（不重抓），否则重新爬取；整批结束自动上传最新 BL-price.json 到 Gitee。
 
+v12 关键改动（正式建清单+爬价流程）：
+    1. 从 Supabase 系统数据库 parts 表拉取最新零件（part_num + color_id)，
+       保证清单只含系统里有的零件；按 (型号, 颜色) 去重、忽略状态等其它字段，形成 LP。
+    2. 检查 BL-price.json（NP）：不存在则直接新建；存在则改名覆盖 BL-price.old（OP），再新建 NP。
+    3. 若不存在 OP -> LP 全量爬价；若存在 OP -> 按 LP 顺序逐个判断：
+       OP 有该零件记录 且 时间在 REUSE_DAYS(10) 天内 -> 沿用 OP 价格；否则重新 BL 爬价。
+    4. 结果写入 NP，每 SAVE_EVERY(10) 条落盘一次，整批结束再落盘并自动上传 Gitee。
+
 运行：
     Pythonista 打开本文件 -> 点运行三角 -> 等自动抓完。
     过程看 progress.log，结果看 BL-price.json。待抓清单看 parts_to_crawl.json。
@@ -62,15 +70,23 @@ PARTS = [
     ('3002', '72'),   # 1x2 Brick, Dark Bluish Gray (RB 72 → BL 85)
 ]
 URL_TMPL  = 'https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color}'
-OUT_JSON  = 'BL-price.json'      # 正式输出文件（顶层与字段格式对齐仓库 BL-price.json）
+OUT_JSON  = 'BL-price.json'      # 现价文件（NP）：当前爬价/沿用后的结果
+OP_JSON   = 'BL-price.old'       # 上一版价格文件（OP）：由 NP 改名而来，用于增量沿用判断
 LOG_FILE  = 'progress.log'
 # 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
 CSV_FILE   = 'RB_BL_colors.csv'
-PARTS_FILE = 'parts_to_crawl.json'  # 正式待抓清单（可选）：[{"part":"98138","color":39}]，color 为 RB 颜色ID
+PARTS_FILE = 'parts_to_crawl.json'  # 兜底待抓清单（仅在 Supabase 不可用且此文件存在时读取）
 MAX_WAIT  = 20      # 单页最长等待价格段出现（秒）；超过则跳过，处理下一个
 POLL_STEP = 3       # 每次轮询间隔（秒）
 JS_TO     = 8       # 单次 JS 调用的超时（秒）
-REFRESH_DAYS = 15   # 增量爬价：距上次抓取(saved_at)超过该天数则重新爬取；否则沿用旧价
+REUSE_DAYS = 10     # 增量沿用窗口：OP 记录 saved_at 距今 ≤ 该天数则沿用，否则重新爬
+SAVE_EVERY = 10     # 每攒够 N 条落盘一次 BL-price.json（降低频繁写盘/防网络抖动丢数据）
+
+# --- Supabase 系统数据库：建清单源（步骤1），取系统里实际存在的零件 ---
+SUPABASE_URL    = 'https://tfxydlkpxkdpxyoqrkez.supabase.co'
+SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_'
+SUPABASE_TABLE  = 'parts'           # 零件库存表（系统有的零件）
+SUPABASE_FIELDS = 'part_num,color_id'  # 只取型号 + 颜色ID（RB 颜色ID）
 
 # --- Gitee 自动上传配置（整批抓完或手动停止后，把 BL-price.json 推送到仓库根目录） ---
 GITEE_BRANCH   = 'main'
@@ -167,9 +183,53 @@ def log(msg):
         _upd()
 
 
+def _norm_part_color(v, is_color=False):
+    """归一化：去除首尾空白；颜色统一成整数字符串（72 / 72.0 / ' 72' 都归为 '72'）。
+    只保留 型号(v)、颜色(当 is_color)，忽略其它字段（如状态），避免价格条数虚高。"""
+    s = str(v).strip()
+    if is_color:
+        try:
+            return str(int(float(s)))
+        except (ValueError, TypeError):
+            return s
+    return s
+
+
+def _fetch_supabase_lp():
+    """（步骤1）从 Supabase parts 表拉取系统里实际存在的零件 (part, RB颜色ID)。
+    分页取全（limit+offset），返回归一化后的 (型号, 颜色) list；失败返回 None。"""
+    items = []
+    try:
+        offset = 0
+        while True:
+            url = '%s/rest/v1/%s?select=%s&limit=1000&offset=%d' % (
+                SUPABASE_URL, SUPABASE_TABLE, SUPABASE_FIELDS, offset)
+            req = urllib.request.Request(url, headers={
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer %s' % SUPABASE_ANON_KEY,
+            })
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                rows = json.loads(resp.read().decode('utf-8'))
+            if not rows:
+                break
+            for r in rows:
+                p = r.get('part_num')
+                c = r.get('color_id')
+                if p is None or c is None:
+                    continue
+                items.append((_norm_part_color(p), _norm_part_color(c, True)))
+            offset += len(rows)
+            if len(rows) < 1000:
+                break
+        return items
+    except Exception as e:
+        log('  读取 Supabase %s.%s 失败: %s' % (SUPABASE_TABLE, SUPABASE_FIELDS, e))
+        return None
+
+
 def _load_parts_from_file():
-    """若同目录存在 parts_to_crawl.json，用它覆盖 PARTS 作为正式待抓清单。
-    条目：[{"part": "98138", "color": 39}]，其中 color 为 RB 颜色ID。"""
+    """兜底：Supabase 不可用且同目录存在 parts_to_crawl.json 时读取。
+    条目：[{"part": "98138", "color": 39}]，color 为 RB 颜色ID。"""
     global _N, PARTS
     path = os.path.join(_BASE, PARTS_FILE)
     if not os.path.exists(path):
@@ -178,53 +238,99 @@ def _load_parts_from_file():
     try:
         with open(path, encoding='utf-8') as f:
             lst = json.load(f)
-        items = [(str(x['part']).strip(), str(x['color']).strip())
-                 for x in lst if x.get('part') and x.get('color') is not None]
+        items = []
+        for x in lst:
+            if not isinstance(x, dict):
+                continue
+            part = x.get('part')
+            color = x.get('color')
+            if part is None or color is None:
+                continue
+            items.append((_norm_part_color(part), _norm_part_color(color, True)))
     except Exception as e:
         log('读取 %s 失败，使用内置样例 PARTS: %s' % (PARTS_FILE, e))
         return
+    _apply_lp(items, 'parts_to_crawl.json 兜底')
+
+
+def _apply_lp(items, src):
+    """（步骤2）按 (型号, 颜色) 去重、忽略状态等字段，形成 LP 并赋给 PARTS。"""
+    global _N, PARTS
     if not items:
-        log('%s 为空，使用内置样例 PARTS' % PARTS_FILE)
+        log('  %s 无有效条目，使用内置样例 PARTS' % src)
         return
-    # 去重并保持原顺序
+    before = len(items)
     PARTS = list(dict.fromkeys(items))
     _N = len(PARTS)
-    log('已从 %s 载入正式待抓清单 %d 条' % (PARTS_FILE, _N))
+    if _N != before:
+        log('  %s 载入 %d 条（去重掉 %d 条重复，按 型号+颜色 忽略状态）' % (
+            src, _N, before - _N))
+    else:
+        log('  %s 载入 %d 条（型号+颜色唯一）' % (src, _N))
 
 
-def _load_existing_index():
-    """读取上次生成的本地 BL-price.json，建立索引 {key: record}，用于增量爬价。
-    key = '{part_num}:{BL color_id}'（与抓取时 key 一致）。文件不存在或解析失败返回空索引（即全量重抓）。"""
+def _ensure_lp():
+    """建清单入口：优先 Supabase（系统有的零件）；失败回退本地文件；再无则内置样例。"""
+    items = _fetch_supabase_lp()
+    if items is not None and items:
+        _apply_lp(items, 'Supabase parts 表')
+        return
+    log('  Supabase 未取到数据，尝试 %s 兜底' % PARTS_FILE)
+    _load_parts_from_file()
+    if not PARTS:
+        _apply_lp([('3001', '72'), ('3002', '72')], '内置样例')
+
+
+def _rotate_np():
+    """（步骤3）若 BL-price.json(NP) 存在，改名覆盖 BL-price.old(OP)；然后重置本地结果。
+    返回是否有 OP（决定全量/增量模式）。"""
+    np_path = os.path.join(_BASE, OUT_JSON)
+    op_path = os.path.join(_BASE, OP_JSON)
+    had_op = os.path.exists(op_path)
+    if os.path.exists(np_path):
+        try:
+            os.replace(np_path, op_path)   # 覆盖同名 OP
+            log('已把 %s 改名覆盖为 %s（上一版价格，用于增量沿用）' % (OUT_JSON, OP_JSON))
+            had_op = True
+        except Exception as e:
+            log('改名 %s -> %s 失败: %s' % (OUT_JSON, OP_JSON, e))
+    elif not had_op:
+        log('无 %s 亦无 %s（首次或已删），本批将全量爬价' % (OUT_JSON, OP_JSON))
+    else:
+        log('无 %s，保留既有 %s 作为增量沿用源' % (OUT_JSON, OP_JSON))
+    return had_op
+
+
+def _load_existing_index(path=OP_JSON):
+    """（步骤4）读取 OP(BL-price.old) 建立索引 {key: record}，用于增量沿用。
+    key = '{part_num}:{BL color_id}'。文件不存在/解析失败 -> 空索引（全量爬价）。"""
     idx = {}
-    path = os.path.join(_BASE, OUT_JSON)
-    if not os.path.exists(path):
-        log('未找到本地 %s，将全量抓取（无上次价格可复用）' % OUT_JSON)
+    full = os.path.join(_BASE, path)
+    if not os.path.exists(full):
+        log('未找到 %s，本批全量爬价（无上次价格可沿用）' % path)
         return idx
     try:
-        with open(path, encoding='utf-8') as f:
+        with open(full, encoding='utf-8') as f:
             data = json.load(f)
         for rec in data.get('records', []):
             k = '%s:%s' % (rec.get('part_num'), rec.get('color_id'))
             if rec.get('part_num') is not None and rec.get('color_id') is not None:
                 idx[k] = rec
-        log('已读取本地 %s 共 %d 条（用于增量判断）' % (OUT_JSON, len(idx)))
+        log('已读取 %s 共 %d 条（用于增量沿用判断）' % (path, len(idx)))
     except Exception as e:
-        log('读取本地 %s 失败，将全量重抓: %s' % (OUT_JSON, e))
+        log('读取 %s 失败，本批全量爬价: %s' % (path, e))
     return idx
 
 
 def _need_refresh(record):
-    """判断记录是否需要重新爬取：超过 REFRESH_DAYS 天（按 saved_at）则为 True。"""
+    """记录是否需重新爬：saved_at 距今超过 REUSE_DAYS 天则为 True。"""
     if not record or 'saved_at' not in record:
         return True
     try:
         t = datetime.strptime(record['saved_at'], '%Y-%m-%dT%H:%M:%S')
     except Exception:
         return True
-    return (datetime.now() - t).total_seconds() > REFRESH_DAYS * 86400
-
-
-_load_parts_from_file()
+    return (datetime.now() - t).total_seconds() > REUSE_DAYS * 86400
 
 
 def save_results():
@@ -466,7 +572,14 @@ def _batch():
         return
     log('已加载 RB→BL 颜色映射 %d 条（系统颜色ID=RB_color_ID，BL=BL_color_ID）' % len(_RB_BL_MAP))
 
-    # 增量爬价：先读上次本地价格建索引，命中且未过期就沿用，否则重新爬
+    # ===== 步骤1-2：建抓取清单 LP（Supabase 系统数据库 → 型号+颜色去重忽略状态）=====
+    _ensure_lp()
+    log('共 %d 组待抓（LP）；颜色为 RB 颜色ID，将映射为 BL 颜色ID' % _N)
+
+    # ===== 步骤3：NP/BLP 旋转：NP 存在则改名覆盖 BL-price.old，再新建 NP =====
+    _rotate_np()
+
+    # ===== 步骤4：用 OP(BL-price.old) 建索引做增量沿用；无 OP -> 全量 =====
     existing = _load_existing_index()
     _reused = 0
 
@@ -486,36 +599,38 @@ def _batch():
             log('    [%d/%d] 跳过 %s:%s（RB 颜色ID在 RB_BL_colors.csv 无对应 BL 颜色ID）' % (
                 idx, _N, part, rb_color))
             continue
-        # --- 增量：命中上次价格且未超过 REFRESH_DAYS -> 沿用旧价，不爬 ---
+        # --- 增量：OP 有记录且 saved_at ≤ REUSE_DAYS 天 -> 沿用 OP 价格，不爬 ---
         key = '%s:%s' % (part, bl_color)
         old = existing.get(key)
         if old is not None and not _need_refresh(old):
             _results.append(old)
             _reused += 1
-            log('    [%d/%d] 沿用旧价 %s:%s（BL色%s，%s，未超过 %d 天）' % (
-                idx, _N, part, rb_color, bl_color, old.get('saved_at'), REFRESH_DAYS))
-            continue
-        if old is not None:
-            log('    [%d/%d] 超过 %d 天需刷新 %s:%s（BL色%s，上次 %s）' % (
-                idx, _N, REFRESH_DAYS, part, rb_color, bl_color, old.get('saved_at')))
-        url = URL_TMPL.format(part=part, color=bl_color)
-        log('=== [%d/%d] 打开 %s (RB色%s→BL色%s) -> %s' % (
-            idx, _N, part, rb_color, bl_color, url))
-        _start_load(_webview, url)
-        data = _poll_price(_webview)
-        if data:
-            rec = _build_record(part, rb_color, bl_color, data)
-            _results.append(rec)
-            l6 = data.get('last_6_months') or {}
-            log('    [%d/%d] 成功 %s:RB%s→BL%s avg=%s %s' % (
-                idx, _N, part, rb_color, bl_color, l6.get('avg'), l6.get('currency', '')))
-            save_results()
+            log('    [%d/%d] 沿用 OP 旧价 %s:%s（BL色%s，%s，未超过 %d 天）' % (
+                idx, _N, part, rb_color, bl_color, old.get('saved_at'), REUSE_DAYS))
         else:
-            log('    [%d/%d] 跳过 %s:%s（>%ds 未抓到，下次重试）' % (
-                idx, _N, part, rb_color, MAX_WAIT))
+            if old is not None:
+                log('    [%d/%d] 超 %d 天需刷新 %s:%s（BL色%s，上次 %s）' % (
+                    idx, _N, REUSE_DAYS, part, rb_color, bl_color, old.get('saved_at')))
+            url = URL_TMPL.format(part=part, color=bl_color)
+            log('=== [%d/%d] 打开 %s (RB色%s→BL色%s) -> %s' % (
+                idx, _N, part, rb_color, bl_color, url))
+            _start_load(_webview, url)
+            data = _poll_price(_webview)
+            if data:
+                rec = _build_record(part, rb_color, bl_color, data)
+                _results.append(rec)
+                l6 = data.get('last_6_months') or {}
+                log('    [%d/%d] 成功 %s:RB%s→BL%s avg=%s %s' % (
+                    idx, _N, part, rb_color, bl_color,
+                    l6.get('avg'), l6.get('currency', '')))
+            else:
+                log('    [%d/%d] 跳过 %s:%s（>%ds 未抓到，下次重试）' % (
+                    idx, _N, part, rb_color, MAX_WAIT))
+        # ===== 步骤5：每攒够 SAVE_EVERY 条落盘一次 NP =====
+        if _results and len(_results) % SAVE_EVERY == 0:
             save_results()
 
-    # 无论是否实际爬取，统一落盘一次，确保沿用+新抓都写入 BL-price.json
+    # 整批结束：无论是否攒够，统一落盘一次，确保全部沿用+新抓都写入 BL-price.json
     save_results()
 
     if STOP.is_set():
@@ -574,15 +689,13 @@ def _build_ui():
 
 def main():
     global _webview
-    # 每次启动清空旧 log，方便从 0 看
+    # 每次启动清空旧 log，方便从 0 看（LP 在后台线程构建后打印具体条数）
     try:
         with open(os.path.join(_BASE, LOG_FILE), 'w', encoding='utf-8') as f:
-            f.write('[%s] 启动，待抓 %d 组 %s\n' % (
-                _ts(), _N, [(p, c) for p, c in PARTS]))
+            f.write('[%s] 启动，进入建清单+爬价流程\n' % _ts())
     except Exception:
         pass
-    log('共 %d 组待抓：%s（颜色为 RB 颜色ID，将映射为 BL 颜色ID）' % (
-        _N, [(p, c) for p, c in PARTS]))
+    log('初始化完成，后台线程将：Supabase 建清单 -> NP/OP 旋转 -> 增量爬价 -> 每10条落盘')
     # 先弹带顶栏的界面，颜色映射在后台线程加载，避免启动挂起
     _build_ui()
     # 用守护线程跑后台循环：立即启动、不依赖 Pythonista 的 in_background 调度
