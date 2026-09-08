@@ -1270,7 +1270,8 @@ async function getAllBLColors() {
 // RB_BL_colors.csv 是来自 Gitee parts-rb 仓库的颜色映射 CSV，标准表头：
 //   BL_color_ID, BL_color_Name, RB_color_ID, RB_color_Name, RGB, ...
 // 兼容旧表头（BL_color_ID, BL_name, ID, Name, ...）。
-// 这里生成 keyPath=RB 颜色ID（id），值列 bl_color_id / bl_name，用于 RB 颜色ID ↔ BL 颜色ID 直接映射。
+// 这里生成 keyPath=RB 颜色ID（id），值列 bl_color_id / bl_name / rb_name，
+// 同时支持 RB 颜色ID（RB→BL）与 BL 颜色名 → RB 颜色（BL→RB，用于拍照识别）两个方向。
 
 // 将 RB↔BL 颜色映射数组写入离线缓冲区（覆盖重建）
 async function importRBBLMapToRBDb(records) {
@@ -1278,11 +1279,17 @@ async function importRBBLMapToRBDb(records) {
         const data = (records || [])
             .map(r => {
                 const rbId = Number(String(r.RB_color_ID == null ? (r.ID == null ? '' : r.ID) : r.RB_color_ID).trim());
+                const rbNameRaw = r.RB_color_Name == null ? (r.Name == null ? '' : r.Name) : r.RB_color_Name;
                 const blIdRaw = String(r.BL_color_ID == null ? '' : r.BL_color_ID).trim();
                 const blId = blIdRaw === '' ? null : Number(blIdRaw);
                 const blNameRaw = r.BL_color_Name == null ? (r.BL_name == null ? '' : r.BL_name) : r.BL_color_Name;
-                const blName = String(blNameRaw).trim().replace(/^'+|'+$/g, '');
-                return { id: rbId, bl_color_id: blId, bl_name: blName };
+                const trimQ = s => String(s == null ? '' : s).trim().replace(/^'+|'+$/g, '');
+                return {
+                    id: rbId,
+                    rb_name: trimQ(rbNameRaw),
+                    bl_color_id: blId,
+                    bl_name: trimQ(blNameRaw)
+                };
             })
             .filter(r => !Number.isNaN(r.id));
         await importRBData(RB_STORES.RB_BL_MAP, data);
@@ -1293,12 +1300,36 @@ async function importRBBLMapToRBDb(records) {
     }
 }
 
-// 按 RB 颜色 ID 查询对应的 BL 颜色映射记录（含 bl_color_id / bl_name）
+// 按 RB 颜色 ID 查询对应的 BL 颜色映射记录（含 bl_color_id / bl_name / rb_name）
 async function getBLColorMapByRBColorId(rbColorId) {
     try {
         return await getByKey(RB_STORES.RB_BL_MAP, Number(rbColorId));
     } catch (error) {
         console.error('按 RB 颜色ID 查询 BL 颜色映射失败:', error);
+        return null;
+    }
+}
+
+// 按 BL 颜色名反查 RB 颜色：识别/识别返回的颜色名是 Bricklink 颜色名，
+// 直接遍历 rb_bl_map 按规范化后的 BL 颜色名匹配，命中返回 RB 颜色记录 { id, name, rgb, ... }。
+// 未命中或无误时返回 null。
+async function getRBColorByBLColorName(blColorName) {
+    try {
+        const target = String(blColorName == null ? '' : blColorName).trim().toLowerCase();
+        if (!target) return null;
+        const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, '');
+        const normTarget = norm(target);
+        const maps = await getAll(RB_STORES.RB_BL_MAP);
+        const hit = (maps || []).find(m => m.bl_name && norm(m.bl_name) === normTarget);
+        if (!hit) return null;
+        // 若 rb_colors 已加载，取出完整 RB 颜色记录；否则至少给出 id + rb_name
+        try {
+            const rbColor = await getByKey(RB_STORES.COLORS, Number(hit.id));
+            if (rbColor) return rbColor;
+        } catch (e) { /* 忽略，走兜底 */ }
+        return { id: hit.id, name: hit.rb_name || blColorName };
+    } catch (error) {
+        console.error('按 BL 颜色名反查 RB 颜色失败:', error);
         return null;
     }
 }
