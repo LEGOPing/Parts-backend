@@ -39,9 +39,12 @@ import json
 import time
 import csv
 import io
+import base64
 import threading
 import traceback
 import os
+import urllib.request
+import urllib.error
 from datetime import datetime
 from objc_util import on_main_thread
 
@@ -63,6 +66,14 @@ PARTS_FILE = 'parts_to_crawl.json'  # 正式待抓清单（可选）：[{"part":
 MAX_WAIT  = 20      # 单页最长等待价格段出现（秒）；超过则跳过，处理下一个
 POLL_STEP = 3       # 每次轮询间隔（秒）
 JS_TO     = 8       # 单次 JS 调用的超时（秒）
+
+# --- Gitee 自动上传配置（整批抓完或手动停止后，把 BL-price.json 推送到仓库根目录） ---
+GITEE_BRANCH   = 'main'
+GITEE_OWNER    = 'legoping'
+GITEE_REPO     = 'parts-rb'
+GITEE_TOKEN    = '5e8fe75044a023e2c992c1b5d11c95f0'
+GITEE_TARGET   = 'BL-price.json'   # 上传到仓库根目录的此文件名
+GITEE_API_BASE = 'https://gitee.com/api/v5/repos/%s/%s/contents' % (GITEE_OWNER, GITEE_REPO)
 
 if not PARTS:
     PARTS = [('3001', '72')]
@@ -195,6 +206,67 @@ def save_results():
         log('  已写 %s（当前 %d 条）' % (OUT_JSON, len(_results)))
     except Exception as e:
         log('  写 %s 失败: %s' % (OUT_JSON, e))
+
+
+def _upload_price_json():
+    """把本地 BL-price.json 推送到 Gitee parts-rb 根目录。返回 True/False。
+
+    失败只记录日志、不影响已完成的抓取结果。用 urllib 直连 Gitee API，
+    不存在则 POST（创建），已存在则 PUT（更新，携带 sha）。"""
+    if not GITEE_TOKEN:
+        log('未配置 GITEE_TOKEN，跳过自动上传')
+        return False
+    try:
+        with open(os.path.join(_BASE, OUT_JSON), 'rb') as f:
+            raw = f.read()
+    except Exception as e:
+        log('  上传：读取 %s 失败: %s' % (OUT_JSON, e))
+        return False
+    if not raw:
+        log('  上传：本地 %s 为空，跳过' % OUT_JSON)
+        return False
+    url = '%s/%s' % (GITEE_API_BASE, GITEE_TARGET)
+    # 1) 查询仓库是否已有该文件（决定 POST 创建 或 PUT 更新）
+    sha = None
+    try:
+        req = urllib.request.Request(
+            url + '?ref=%s&access_token=%s' % (GITEE_BRANCH, GITEE_TOKEN), method='GET')
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            d = json.loads(resp.read().decode('utf-8'))
+            if isinstance(d, dict):
+                sha = d.get('sha')
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            log('  上传：查询 Gitee 文件失败 HTTP %s' % e.code)
+    except Exception as e:
+        log('  上传：查询 Gitee 文件异常: %s' % e)
+    # 2) 上传
+    try:
+        import json as _json
+        n = len(_results)
+        payload = {
+            'access_token': GITEE_TOKEN,
+            'content': base64.b64encode(raw).decode('ascii'),
+            'message': 'feat: 更新 Bricklink 离线价格库（%d 条，pythonista 自动上传）[skip ci]' % n,
+            'branch': GITEE_BRANCH,
+        }
+        if sha:
+            payload['sha'] = sha
+        method = 'PUT' if sha else 'POST'
+        req = urllib.request.Request(
+            url, data=_json.dumps(payload).encode('utf-8'), method=method)
+        req.add_header('Content-Type', 'application/json;charset=utf-8')
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            resp.read()
+        log('  ✓ 已上传 %s 到 Gitee（%d 条，%d 字节，%s）' % (
+            GITEE_TARGET, len(_results), len(raw), method))
+        return True
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', 'ignore')[:200]
+        log('  ✗ 上传失败 HTTP %s: %s' % (e.code, body))
+    except Exception as e:
+        log('  ✗ 上传异常: %s' % e)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +466,9 @@ def _batch():
         log('=== 已手动停止，已抓 %d 条 ===' % len(_results))
     else:
         log('=== 全部处理完成，共 %d 条，成功 %d 条 ===' % (_N, len(_results)))
+
+    # 整批结束后，把本地 BL-price.json 自动上传到 Gitee（失败不影响抓取结果）
+    _upload_price_json()
 
     @on_main_thread
     def close_ui():
