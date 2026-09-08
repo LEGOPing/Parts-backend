@@ -3,12 +3,12 @@
 pythonista_proto.py — 「外壳 + 内嵌浏览器」原型（批量版 v4 · 边跑边落盘）
 
 目标：在 iPhone 上用 Pythonista 外壳 + WKWebView（真实 WebKit 内核）绕开 BL 的
-WAF，像正常浏览器一样逐页打开价格页、抓回价格，写成本地 result.json。
+WAF，像正常浏览器一样逐页打开价格页、抓回价格，写成本地 BL-price.json。
 
 v4 关键改动（解决「界面挡住 console，看不到进度/报错」）：
-    运行时的每一步都【追加写】到 progress.log，每抓完一条立刻写 result.json。
+    运行时的每一步都【追加写】到 progress.log，每抓完一条立刻写 BL-price.json。
     这样即使 full_modal 全屏盖住 console，你也随时能在文件 App 里翻看
-    progress.log / result.json 看到实时进展，不用退界面。
+    progress.log / BL-price.json 看到实时进展，不用退界面。
     - 单次 JS 调用带 8s 超时（_eval_js_timed），避免 WKWebView 回调不返回而永久卡死。
     - 后台线程轮询驱动，不依赖加载回调，正常/超时都继续下一个，最终自动关界面。
 
@@ -23,9 +23,15 @@ v7 关键改动（修复 iPhone 启动挂起）：
       映射加载移到后台线程，先弹界面再加载，缺失时明确报错并干净退出，
       彻底避免 iOS 下联网卡死 / 死循环挂起。
 
+v10 关键改动（正式实施爬价）：
+    - 输出改名为 BL-price.json，顶层与每条字段对齐仓库 BL-price.json
+      （generated_at/updated_at/count/source/records；color_id 为 BL 颜色ID）。
+    - 若同目录存在 parts_to_crawl.json，则覆盖 PARTS 作为正式待抓清单
+      （条目 {"part","color"}，color 为 RB 颜色ID），否则用内置样例。
+
 运行：
     Pythonista 打开本文件 -> 点运行三角 -> 等自动抓完。
-    过程看 progress.log，结果看 result.json。要抓的连接改 PARTS。
+    过程看 progress.log，结果看 BL-price.json。待抓清单看 parts_to_crawl.json。
 """
 
 import ui
@@ -49,10 +55,11 @@ PARTS = [
     ('3002', '72'),   # 1x2 Brick, Dark Bluish Gray (RB 72 → BL 85)
 ]
 URL_TMPL  = 'https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color}'
-OUT_JSON  = 'result.json'
+OUT_JSON  = 'BL-price.json'      # 正式输出文件（顶层与字段格式对齐仓库 BL-price.json）
 LOG_FILE  = 'progress.log'
 # 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
 CSV_FILE   = 'RB_BL_colors.csv'
+PARTS_FILE = 'parts_to_crawl.json'  # 正式待抓清单（可选）：[{"part":"98138","color":39}]，color 为 RB 颜色ID
 MAX_WAIT  = 20      # 单页最长等待价格段出现（秒）；超过则跳过，处理下一个
 POLL_STEP = 3       # 每次轮询间隔（秒）
 JS_TO     = 8       # 单次 JS 调用的超时（秒）
@@ -144,19 +151,50 @@ def log(msg):
         _upd()
 
 
+def _load_parts_from_file():
+    """若同目录存在 parts_to_crawl.json，用它覆盖 PARTS 作为正式待抓清单。
+    条目：[{"part": "98138", "color": 39}]，其中 color 为 RB 颜色ID。"""
+    global _N, PARTS
+    path = os.path.join(_BASE, PARTS_FILE)
+    if not os.path.exists(path):
+        log('未找到 %s，使用内置样例 PARTS' % PARTS_FILE)
+        return
+    try:
+        with open(path, encoding='utf-8') as f:
+            lst = json.load(f)
+        items = [(str(x['part']).strip(), str(x['color']).strip())
+                 for x in lst if x.get('part') and x.get('color') is not None]
+    except Exception as e:
+        log('读取 %s 失败，使用内置样例 PARTS: %s' % (PARTS_FILE, e))
+        return
+    if not items:
+        log('%s 为空，使用内置样例 PARTS' % PARTS_FILE)
+        return
+    # 去重并保持原顺序
+    PARTS = list(dict.fromkeys(items))
+    _N = len(PARTS)
+    log('已从 %s 载入正式待抓清单 %d 条' % (PARTS_FILE, _N))
+
+
+_load_parts_from_file()
+
+
 def save_results():
     """把当前 _results 写盘。每次抓完一条调用，实现边跑边落盘。"""
+    now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
     payload = {
-        'generated_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'generated_at': now,
+        'updated_at': now,
         'count': len(_results),
+        'source': 'bl-webview',
         'records': _results,
     }
     try:
         with open(os.path.join(_BASE, OUT_JSON), 'w', encoding='utf-8') as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
-        log('  已写 result.json（当前 %d 条）' % len(_results))
+        log('  已写 %s（当前 %d 条）' % (OUT_JSON, len(_results)))
     except Exception as e:
-        log('  写 result.json 失败: %s' % e)
+        log('  写 %s 失败: %s' % (OUT_JSON, e))
 
 
 # ---------------------------------------------------------------------------
@@ -254,12 +292,11 @@ def _build_record(part, rb_color, bl_color, data):
     return {
         'key': '%s:%s' % (part, bl_color),
         'part_num': part,
-        'color_id': str(bl_color),
-        'rb_color_id': str(rb_color),
+        'color_id': bl_color,  # BL 颜色ID（与仓库 BL-price.json 的 color_id 字段一致）
         'currency': l6.get('currency') or cs.get('currency') or '',
         'last_6_months': data.get('last_6_months'),
         'current_for_sale': data.get('current_for_sale'),
-        'source': 'pythonista-proto',
+        'source': 'bl-webview',
         'saved_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
     }
 
