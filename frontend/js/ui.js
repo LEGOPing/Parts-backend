@@ -8173,8 +8173,6 @@ async function updateRB() {
             statsHtml += `<div>零件: ${stats.rb_parts || 0} 条</div>`;
             statsHtml += `<div>类别: ${stats.rb_part_categories || 0} 条</div>`;
             statsHtml += `<div>元素: ${stats.rb_elements || 0} 条</div>`;
-            statsHtml += `<div>零件种类(型号去重,忽略颜色/状态): ${stats.rb_inventory_kinds_by_part || 0} 种</div>`;
-            statsHtml += `<div>零件种类(型号+颜色去重,忽略状态): ${stats.rb_inventory_kinds_by_part_color || 0} 种</div>`;
             statsHtml += `<div>库存: ${stats.rb_inventory_parts || 0} 条</div>`;
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
@@ -8280,8 +8278,11 @@ async function loadStats() {
         document.getElementById('stat-repos').textContent = repos.length;
         
         let totalBoxes = 0;
-        let totalParts = 0;
         let totalQuantity = 0;
+        // N1：零件种类（仅按零件型号去重，忽略颜色与 is_new 状态）
+        const partNumSet = new Set();
+        // N2：零件种类（按零件型号+颜色去重，忽略 is_new 状态）
+        const partColorSet = new Set();
         
         for (const repo of repos) {
             const boxes = await getBoxes(repo.id);
@@ -8289,13 +8290,19 @@ async function loadStats() {
             
             for (const box of boxes) {
                 const parts = await getParts(box.id);
-                totalParts += parts.length;
                 totalQuantity += parts.reduce((sum, p) => sum + (p.quantity || 0), 0);
+                for (const p of parts) {
+                    const pn = String(p.part_num != null ? p.part_num : '').trim();
+                    if (pn === '') continue;
+                    partNumSet.add(pn);
+                    partColorSet.add(pn + '\u0000' + (p.color_id != null ? p.color_id : ''));
+                }
             }
         }
         
         document.getElementById('stat-boxes').textContent = totalBoxes;
-        document.getElementById('stat-parts').textContent = totalParts;
+        document.getElementById('stat-parts').textContent = partNumSet.size;         // N1 零件型号去重
+        document.getElementById('stat-parts-color').textContent = partColorSet.size;  // N2 型号+颜色去重
         document.getElementById('stat-total-qty').textContent = totalQuantity;
     } catch (error) {
         console.error('加载统计信息失败:', error);
