@@ -293,6 +293,22 @@ def _worker():
 
 
 def _batch():
+    global _RB_BL_MAP
+    # 在后台线程加载颜色映射（不再阻塞启动主线程）；失败则关界面退出，避免死循环
+    _RB_BL_MAP = build_rb_bl_map(_read_csv_text())
+    if not _RB_BL_MAP:
+        log('错误：未能加载 RB_BL_colors.csv 颜色映射，程序退出。'
+            '请将 RB_BL_colors.csv 放到脚本同目录，或确认脚本可访问 Gitee。')
+        @on_main_thread
+        def close_ui():
+            try:
+                _webview.close()
+            except Exception:
+                pass
+        close_ui()
+        return
+    log('已加载 RB→BL 颜色映射 %d 条（系统颜色ID=RB_color_ID，BL=BL_color_ID）' % len(_RB_BL_MAP))
+
     for idx, (part, rb_color) in enumerate(PARTS, start=1):
         # 系统颜色ID（RB 颜色ID）→ BL 颜色ID：直接查 RB_BL_colors.csv 映射
         try:
@@ -338,14 +354,7 @@ def _batch():
 # 4) 主流程
 # ---------------------------------------------------------------------------
 def main():
-    global _webview, _RB_BL_MAP
-    # 构建 RB 颜色ID → BL 颜色ID 映射（采用 RB_BL_colors.csv）
-    _RB_BL_MAP = build_rb_bl_map(_read_csv_text())
-    if not _RB_BL_MAP:
-        log('错误：未能加载 RB_BL_colors.csv 颜色映射。'
-            '请将 RB_BL_colors.csv 放到脚本同目录，或确认脚本可访问 Gitee。')
-        return
-    log('已加载 RB→BL 颜色映射 %d 条（系统颜色ID=RB_color_ID，BL=BL_color_ID）' % len(_RB_BL_MAP))
+    global _webview
     # 每次启动清空旧 log，方便从 0 看
     try:
         with open(os.path.join(_BASE, LOG_FILE), 'w', encoding='utf-8') as f:
@@ -355,6 +364,7 @@ def main():
         pass
     log('共 %d 组待抓：%s（颜色为 RB 颜色ID，将映射为 BL 颜色ID）' % (
         _N, [(p, c) for p, c in PARTS]))
+    # 先弹界面，颜色映射放在后台线程里加载，避免主线程同步联网导致启动挂起
     _webview = WKWebView(name='BLP')
     _webview.present('full_modal')
     _worker()
