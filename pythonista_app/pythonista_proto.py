@@ -18,6 +18,11 @@ v5 关键改动（颜色ID 映射方式与抓取超时）：
     - PARTS 里的颜色改为填【系统的 RB 颜色ID】（同前端 rb_bl_map 直接映射逻辑）。
     - 单页抓价超时由 90s 缩短为 20s：超过 20 秒未抓到价格段即跳过，处理下一个。
 
+v7 关键改动（修复 iPhone 启动挂起）：
+    - 去掉启动时的 Gitee 联网下载：RB_BL_colors.csv 只读脚本同目录本地文件。
+      映射加载移到后台线程，先弹界面再加载，缺失时明确报错并干净退出，
+      彻底避免 iOS 下联网卡死 / 死循环挂起。
+
 运行：
     Pythonista 打开本文件 -> 点运行三角 -> 等自动抓完。
     过程看 progress.log，结果看 result.json。要抓的连接改 PARTS。
@@ -28,11 +33,8 @@ import json
 import time
 import csv
 import io
-import base64
 import traceback
 import os
-import urllib.request
-import urllib.error
 from datetime import datetime
 from objc_util import on_main_thread
 
@@ -48,11 +50,8 @@ PARTS = [
 URL_TMPL  = 'https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color}'
 OUT_JSON  = 'result.json'
 LOG_FILE  = 'progress.log'
-# 颜色映射表 RB_BL_colors.csv：优先读脚本同目录本地文件，缺失时从 Gitee parts-rb 仓库下载。
+# 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
 CSV_FILE   = 'RB_BL_colors.csv'
-GITEE_OWNER = 'legoping'
-GITEE_REPO  = 'parts-rb'
-GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0'
 MAX_WAIT  = 20      # 单页最长等待价格段出现（秒）；超过则跳过，处理下一个
 POLL_STEP = 3       # 每次轮询间隔（秒）
 JS_TO     = 8       # 单次 JS 调用的超时（秒）
@@ -82,21 +81,17 @@ _RB_BL_MAP = {}  # { RB 颜色ID(int): BL 颜色ID(int) }，由 RB_BL_colors.csv
 # 1.1) RB 颜色ID → BL 颜色ID 直接映射（采用 RB_BL_colors.csv）
 # ---------------------------------------------------------------------------
 def _read_csv_text():
-    """读取 RB_BL_colors.csv 文本：优先脚本同目录本地文件，缺失则从 Gitee 下载。"""
+    """读取脚本同目录的 RB_BL_colors.csv；文件缺失则返回 ''（绝不联网，避免 iOS 下卡死）。"""
     local = os.path.join(_BASE, CSV_FILE)
     if os.path.exists(local):
-        with open(local, 'r', encoding='utf-8') as f:
-            return f.read()
-    api = ('https://gitee.com/api/v5/repos/%s/%s/contents/%s'
-           '?ref=main&access_token=%s' % (GITEE_OWNER, GITEE_REPO, CSV_FILE, GITEE_TOKEN))
-    try:
-        req = urllib.request.Request(api)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-        return base64.b64decode(data['content']).decode('utf-8')
-    except Exception as e:
-        log('下载 RB_BL_colors.csv 失败: %s' % e)
-        return ''
+        try:
+            with open(local, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            log('读取本地 RB_BL_colors.csv 失败: %s' % e)
+            return ''
+    log('未找到本地 RB_BL_colors.csv（请与脚本放在同一文件夹）。')
+    return ''
 
 
 def build_rb_bl_map(text):
@@ -298,7 +293,7 @@ def _batch():
     _RB_BL_MAP = build_rb_bl_map(_read_csv_text())
     if not _RB_BL_MAP:
         log('错误：未能加载 RB_BL_colors.csv 颜色映射，程序退出。'
-            '请将 RB_BL_colors.csv 放到脚本同目录，或确认脚本可访问 Gitee。')
+            '请把 RB_BL_colors.csv 放到脚本同目录后重试。')
         @on_main_thread
         def close_ui():
             try:
