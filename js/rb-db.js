@@ -229,6 +229,32 @@ async function getRBStats() {
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
         }
+        // BL价格条数改为只统计"与库存对应"的价格，避免价格目录数虚高到大于库存 零件+颜色 组合数。
+        // 库存(零件×RB颜色) 通过 rb_bl_map 映射为 (零件×BL颜色)，再统计命中这些组合的价格条数。
+        try {
+            const rbToBl = {};
+            for (const m of await getAll(RB_STORES.RB_BL_MAP)) {
+                if (m && m.id != null && m.bl_color_id != null) {
+                    rbToBl[Number(m.id)] = Number(m.bl_color_id);
+                }
+            }
+            const invBlCombo = new Set();
+            for (const row of await getAll(RB_STORES.INVENTORY_PARTS)) {
+                const pn = String(row.part_num != null ? row.part_num : '').trim();
+                if (pn === '') continue;
+                const blc = rbToBl[Number(row.color_id)];
+                if (blc == null) continue;
+                invBlCombo.add(pn.replace(/[^a-zA-Z0-9]/g, '') + '\u0000' + blc);
+            }
+            let matched = 0;
+            for (const p of await getAll(RB_STORES.PRICES)) {
+                const k = String(p.part_num != null ? p.part_num : '').replace(/[^a-zA-Z0-9]/g, '') + '\u0000' + p.color_id;
+                if (invBlCombo.has(k)) matched++;
+            }
+            stats.rb_prices = matched; // 只统计与库存零件+颜色对应的价格条数
+        } catch (e) {
+            console.warn('统计库存相关BL价格失败:', e);
+        }
         return stats;
     } catch (error) {
         console.error('获取RB统计信息失败:', error);

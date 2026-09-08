@@ -119,28 +119,28 @@ async function fetchJSONFile(fileName) {
 }
 
 async function fetchRBFile(fileName) {
+    // 拉取 parts-rb 仓库里的文件并返回文本内容。
+    // 使用 Gitee Contents API + Token（跨域已验证 Access-Control-Allow-Origin:*，可被浏览器读取），
+    // 并通过 giteeRequestWithRetry 对偶发的 HTTP 429 限流 / 连接重置做指数退避重试，
+    // 避免 BL-price.json 等文件在批量更新/启动加载时被限流命中而静默失败，导致价格数据停留在旧版本。
     try {
-        // 使用Gitee API + Token获取文件（CORS代理已全部失效，仅保留此方式）
         const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
         if (token) {
             const apiUrl = `https://gitee.com/api/v5/repos/legoping/parts-rb/contents/${fileName}?ref=main`;
-            const apiResponse = await fetch(apiUrl, {
+            const apiResponse = await giteeRequestWithRetry(() => fetch(apiUrl, {
                 headers: { 'Authorization': `token ${token}` }
-            });
-            if (apiResponse.ok) {
-                const data = await apiResponse.json();
-                if (data.content) {
-                    // 使用TextDecoder替代escape+decodeURIComponent，大幅提升大文件(14MB+)解码性能
-                    const binaryString = atob(data.content);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    return new TextDecoder('utf-8').decode(bytes);
+            }));
+            const data = await apiResponse.json();
+            if (data && data.content) {
+                // 使用TextDecoder替代escape+decodeURIComponent，大幅提升大文件(14MB+)解码性能
+                const binaryString = atob(data.content);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
                 }
+                return new TextDecoder('utf-8').decode(bytes);
             }
         }
-        
         throw new Error('无法访问Gitee文件: ' + fileName);
     } catch (error) {
         console.error(`加载RB文件失败: ${fileName}`, error);
