@@ -1315,9 +1315,11 @@ async function getBLColorMapByRBColorId(rbColorId) {
 // 未命中或无误时返回 null。
 async function getRBColorByBLColorName(blColorName) {
     try {
-        const target = String(blColorName == null ? '' : blColorName).trim().toLowerCase();
+        const target = String(blColorName == null ? '' : blColorName).trim();
         if (!target) return null;
-        const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, '');
+        // 归一化：只保留字母和数字，去除空格/连字符/括号等，兼容不同写法
+        // 例："Light Bluish Grey"/"LBG"/"Light-Bluish-Gray" 均归一化为 lightbluishgrey
+        const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');
         const normTarget = norm(target);
         const maps = await getAll(RB_STORES.RB_BL_MAP);
         const hit = (maps || []).find(m => m.bl_name && norm(m.bl_name) === normTarget);
