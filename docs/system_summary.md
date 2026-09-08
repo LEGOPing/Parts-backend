@@ -861,6 +861,18 @@ CSV 解析采用自定义 `parseRBCSVLine`（支持引号转义），解析后�
 | 数据来源 | 优先 Gitee colors.json，失败回退到内置 30 种默认颜色 |
 | 名称字段 | 优先 `name_en` / `en_name` / `english_name`，兜底 `name` |
 
+### 8.5 颜色表文件说明
+
+`parts-rb` 仓库中存有 3 个颜色相关文件，分别承载不同平台的颜色定义，供颜色查询、跨平台换算与系统颜色主键使用：
+
+| 文件 | 全称/含义 | 数据源 | 内容与格式 | 用途 |
+|------|----------|--------|-----------|------|
+| `colors.csv` | **Rebrickable 颜色表** | Rebrickable colors 接口 | CSV，列：`id, name, rgb, is_trans, num_parts, num_sets, y1, y2` | Rebrickable 官方颜色主数据（ID/名称/RGB/透明标志/零件与套装数/起止年份）。是系统颜色 ID 的**基准主键**，导入到本地 IndexedDB `rb_colors` 表，前端按 `color_id` 查询颜色名称与色值 |
+| `bl-colors.json` | **Bricklink 颜色表** | Bricklink 颜色数据 | JSON 数组，对象：`{ "id", "name", "rgb", "type" }`，用键名 `id` 区分 `(Not Applicable)` 等多条 `id:0` 记录 | BrickLink 平台的颜色 ID/名称/RGB/类型。用于与 BrickLink 数据对接（如重量抓取返回的 Bricklink 颜色编号、Bricklink 颜色名归一化比较） |
+| `RB_BL_colors.csv` | **RB ↔ BL 颜色映射表** | 由上述两份数据自动比对生成 | CSV，`RB_BL_colors.csv` | 将每个 Rebrickable 颜色与其对应的 Bricklink 颜色关联起来，实现颜色 ID **跨平台（RB ↔ BL）换算**。既覆盖 colors.csv 的 RB 原始列（`ID/Name/RGB/Num Parts/Num Sets/First Year/Last Year/LEGO/LDraw/BrickLink/BrickOwl`），又在其最左侧新增 `BL_color_ID` 与 `BL_name` 两列，把 BrickLink 列中的 `ID ['别名']` 结构拆解为独立的 Bricklink 颜色 ID 与名称 |
+
+> 说明：`RB_BL_colors.csv` 中个别 Rebrickable 颜色（如 `HO Dark Red`）在 Bricklink 无对应颜色，此时 `BL_color_ID` 与 `BL_name` 留空；共有 58 行无 Bricklink 对应。
+
 ---
 
 ## 九、版本历史
