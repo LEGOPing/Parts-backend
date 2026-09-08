@@ -7158,7 +7158,7 @@ async function loadRBOnStartup() {
             loadIDAbcOnStartup();
             // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
             if (typeof loadBLPriceLibraryToRBDb === 'function') {
-                loadBLPriceLibraryToRBDb().then(r => {
+                loadBLPriceLibraryToRBDb({ refresh: true }).then(r => {
                     if (r && r.success) console.log(`离线价格库补充加载: ${r.added}/${r.total} 条`);
                 }).catch(e => console.warn('离线价格库补充加载失败:', e));
             }
@@ -7261,7 +7261,7 @@ async function loadRBOnStartup() {
         loadIDAbcOnStartup();
         // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
         if (typeof loadBLPriceLibraryToRBDb === 'function') {
-            loadBLPriceLibraryToRBDb().then(r => {
+            loadBLPriceLibraryToRBDb({ refresh: true }).then(r => {
                 if (r && r.success) console.log(`离线价格库加载: ${r.added}/${r.total} 条`);
             }).catch(e => console.warn('离线价格库加载失败:', e));
         }
