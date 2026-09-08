@@ -1,7 +1,8 @@
 const RB_DB_NAME = 'RB_Database';
 // 6: 新增 rb_bl_colors（BL 颜色表，来自 bl_colors.json）
 // 7: 新增 rb_prices（BL 价格缓存：设备端手动回填/自动抓取后保存在本地，右滑直接读）
-const RB_DB_VERSION = 7;
+// 8: 新增 rb_bl_map（RB↔BL 颜色映射表，来自 RB_BL_colors.csv，RB 颜色ID→BL 颜色ID 直接映射）
+const RB_DB_VERSION = 8;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -19,6 +20,8 @@ const RB_STORES = {
     ID_ABC: 'rb_id_abc',
     // BL 颜色表（来自 bl_colors.json，RB 颜色名→BL 颜色ID 的映射依据）
     BL_COLORS: 'rb_bl_colors',
+    // RB↔BL 颜色映射表（来自 RB_BL_colors.csv，RB 颜色ID→BL 颜色ID 的直接映射）
+    RB_BL_MAP: 'rb_bl_map',
     // BL 价格缓存（设备端手动回填/自动抓取后本地保存，key = part_num:color_id）
     PRICES: 'rb_prices'
 };
@@ -93,9 +96,13 @@ function openRBDatabase() {
             if (!db.objectStoreNames.contains(RB_STORES.BL_COLORS)) {
                 db.createObjectStore(RB_STORES.BL_COLORS, { keyPath: 'id' });
             }
-            // BL 价格缓存：keyPath 为 `${part_num}:${color_id}`，值落完整价格记录
+            // BL 颜色缓存：keyPath 为 `${part_num}:${color_id}`，值落完整价格记录
             if (!db.objectStoreNames.contains(RB_STORES.PRICES)) {
                 db.createObjectStore(RB_STORES.PRICES, { keyPath: 'key' });
+            }
+            // RB↔BL 颜色映射表：keyPath 为 RB 颜色 ID（id），值列 bl_color_id / bl_name
+            if (!db.objectStoreNames.contains(RB_STORES.RB_BL_MAP)) {
+                db.createObjectStore(RB_STORES.RB_BL_MAP, { keyPath: 'id' });
             }
         };
 
@@ -215,7 +222,8 @@ async function getRBStats() {
             'rb_bl_parts': RB_STORES.BL_PARTS,
             'rb_part_aliases': RB_STORES.PART_ALIASES,
             'rb_id_abc': RB_STORES.ID_ABC,
-            'rb_bl_colors': RB_STORES.BL_COLORS
+            'rb_bl_colors': RB_STORES.BL_COLORS,
+            'rb_bl_map': RB_STORES.RB_BL_MAP
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
@@ -1255,5 +1263,42 @@ async function getAllBLColors() {
     } catch (error) {
         console.error('获取全部 BL 颜色失败:', error);
         return [];
+    }
+}
+
+// ===== RB↔BL 颜色映射表（rb_bl_map）离线缓冲区 =====
+// RB_BL_colors.csv 是来自 Gitee parts-rb 仓库的颜色映射 CSV，标准表头：
+//   BL_color_ID, BL_color_Name, RB_color_ID, RB_color_Name, RGB, ...
+// 兼容旧表头（BL_color_ID, BL_name, ID, Name, ...）。
+// 这里生成 keyPath=RB 颜色ID（id），值列 bl_color_id / bl_name，用于 RB 颜色ID ↔ BL 颜色ID 直接映射。
+
+// 将 RB↔BL 颜色映射数组写入离线缓冲区（覆盖重建）
+async function importRBBLMapToRBDb(records) {
+    try {
+        const data = (records || [])
+            .map(r => {
+                const rbId = Number(String(r.RB_color_ID == null ? (r.ID == null ? '' : r.ID) : r.RB_color_ID).trim());
+                const blIdRaw = String(r.BL_color_ID == null ? '' : r.BL_color_ID).trim();
+                const blId = blIdRaw === '' ? null : Number(blIdRaw);
+                const blNameRaw = r.BL_color_Name == null ? (r.BL_name == null ? '' : r.BL_name) : r.BL_color_Name;
+                const blName = String(blNameRaw).trim().replace(/^'+|'+$/g, '');
+                return { id: rbId, bl_color_id: blId, bl_name: blName };
+            })
+            .filter(r => !Number.isNaN(r.id));
+        await importRBData(RB_STORES.RB_BL_MAP, data);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入 RB↔BL 颜色映射表失败:', error);
+        return { success: false, count: 0, error: error.message };
+    }
+}
+
+// 按 RB 颜色 ID 查询对应的 BL 颜色映射记录（含 bl_color_id / bl_name）
+async function getBLColorMapByRBColorId(rbColorId) {
+    try {
+        return await getByKey(RB_STORES.RB_BL_MAP, Number(rbColorId));
+    } catch (error) {
+        console.error('按 RB 颜色ID 查询 BL 颜色映射失败:', error);
+        return null;
     }
 }

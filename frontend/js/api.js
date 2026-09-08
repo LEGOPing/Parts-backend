@@ -162,6 +162,22 @@ async function loadBLColorsToRBDB() {
     return await importBLColorsToRBDb(records);
 }
 
+// 从 Gitee parts-rb 下载 RB_BL_colors.csv 并写入离线 RB 数据库 rb_bl_map 表。
+// 该表提供 RB 颜色ID → BL 颜色ID 的直接映射，供 resolveBLColorId 等跨平台颜色换算使用。
+// 用于启动补全 / 更新 RB 时加载，非阻塞（失败仅告警）。
+async function loadRBBLMappingToRBDB() {
+    const text = await fetchRBFile('RB_BL_colors.csv');
+    if (!text) return { success: false, count: 0, error: 'RB_BL_colors.csv 读取失败' };
+    let data;
+    try {
+        const parsed = parseRBCSV(text);
+        data = parsed.data;
+    } catch (e) {
+        return { success: false, count: 0, error: 'RB_BL_colors.csv 解析失败: ' + e.message };
+    }
+    return await importRBBLMapToRBDb(data);
+}
+
 // 启动时加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
 // 只在本地还没有该 key 的价格时写入，保留设备端手动回填/抓取的结果优先。
 // 非阻塞，失败仅告警。返回 { success, added, total }。
@@ -374,20 +390,17 @@ async function tryAutoFetchBLPrice(blPartNum, blColorId) {
     return null;
 }
 
-// 由 RB 颜色 ID 解析对应的 BL 颜色 ID（离线 rb_bl_colors 表，按颜色名匹配）
+// 由 RB 颜色 ID 直接解析对应的 BL 颜色 ID。
+// 使用离线 rb_bl_map 表（RB_BL_colors.csv 生成）做 RB 颜色ID → BL 颜色ID 直接映射，
+// 不再做颜色名称匹配。未命中（RB 颜色在 Bricklink 无对应）时返回 null。
 async function resolveBLColorId(rbColorId) {
     try {
-        const color = await getColorById(rbColorId);
-        const name = color && color.name ? String(color.name) : '';
-        if (!name) return null;
-        const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        const target = norm(name);
-        if (!target) return null;
-        const colors = await getAllBLColors();
-        for (const rec of colors) {
-            if (rec && norm(rec.name) === target) return rec.id;
+        if (rbColorId === undefined || rbColorId === null || rbColorId === '') return null;
+        const rec = await getBLColorMapByRBColorId(rbColorId);
+        if (rec && rec.bl_color_id != null && rec.bl_color_id !== '' && rec.bl_color_id !== 0) {
+            return Number(rec.bl_color_id);
         }
-        return null; // 未在 BL 颜色表命中，无法确定 BL 颜色ID
+        return null; // rb_bl_map 中无该 RB 颜色ID 的映射，无法确定 BL 颜色ID
     } catch (e) {
         console.warn('解析 BL 颜色ID失败:', e.message);
         return null;
