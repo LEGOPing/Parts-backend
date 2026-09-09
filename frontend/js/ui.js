@@ -1995,10 +1995,36 @@ function initAddPartSuggestions() {
 
 // ==================== 拍照识别零件（Brickognize）====================
 let recognizeUploading = false;
+// 当前正在进行的识别上传请求控制器，用于中断卡住的上传
+let recognizeAbortController = null;
+// 整体识别兜底超时计时器：确保任何一步卡死都能自动解除“识别中”状态
+let recognizeWatchdogTimer = null;
+// 识别批次号：用于忽略上一轮超时/异常残留的异步结果，避免覆盖新一轮识别
+let recognizeRunToken = 0;
+// 上传识别接口超时（网络请求长时间无响应时强制中断）
+const RECOGNIZE_UPLOAD_TIMEOUT_MS = 30000;
+// 一次完整识别的整体超时（压缩、上传、颜色分析等任一环节卡死都强制复位）
+const RECOGNIZE_TIMEOUT_MS = 60000;
+
+// 清理识别进行中的状态：解除“识别中”标记、中断卡住的上传、清除兜底计时器。
+// 每次启动识别前调用，确保从干净环境开始。
+function clearRecognizeInProgress() {
+    recognizeUploading = false;
+    if (recognizeAbortController) {
+        try { recognizeAbortController.abort(); } catch (e) { /* 忽略 */ }
+        recognizeAbortController = null;
+    }
+    if (recognizeWatchdogTimer) {
+        clearTimeout(recognizeWatchdogTimer);
+        recognizeWatchdogTimer = null;
+    }
+}
 
 // 触发相机/相册选择
 function recognizePartFromPhoto() {
-    if (recognizeUploading) { alert('正在识别中，请稍候...'); return; }
+    // 自恢复：若上一轮识别因网络卡死等原因仍被标记为“识别中”，先强制复位，
+    // 避免再次点击时一直提示“识别中”而无法重新识别。
+    if (recognizeUploading) clearRecognizeInProgress();
     const input = document.getElementById('recognize-camera-input');
     if (!input) return;
     input.value = ''; // 允许重复选择同一张图片
@@ -2048,9 +2074,22 @@ async function processRecognitionFile(input) {
         setRecognizeStatus('请选择图片文件');
         return;
     }
-    if (recognizeUploading) return;
+    // 确保每次识别从干净环境启动：先结束上一轮可能卡住的状态
+    clearRecognizeInProgress();
+    const myToken = ++recognizeRunToken;
     recognizeUploading = true;
-    
+
+    // 整体识别兜底超时：无论压缩/上传/颜色分析哪一步卡死，都强制解除“识别中”状态
+    recognizeWatchdogTimer = setTimeout(() => {
+        if (myToken !== recognizeRunToken) return; // 已被新一轮识别取代
+        console.warn('[识别] 识别过程超时，已强制复位识别状态，请重试');
+        if (recognizeAbortController) {
+            try { recognizeAbortController.abort(); } catch (e) { /* 忽略 */ }
+            recognizeAbortController = null;
+        }
+        recognizeUploading = false;
+    }, RECOGNIZE_TIMEOUT_MS);
+
     // 重置之前的识别结果
     resetRecognizeUI();
     
@@ -2121,10 +2160,14 @@ async function processRecognitionFile(input) {
             await showSameNamePartsPicker(partName, effectivePartNum);
         }
     } catch (err) {
+        if (myToken !== recognizeRunToken) return; // 已被新一轮识别取代，忽略旧结果
         console.error('Brickognize识别失败:', err);
         setRecognizeStatus('识别失败：' + (err && err.message ? err.message : '网络错误，请检查网络'));
     } finally {
-        recognizeUploading = false;
+        // 清理兜底计时器与上传控制器；仅当仍是最新一轮时解除“识别中”标记
+        if (recognizeWatchdogTimer) { clearTimeout(recognizeWatchdogTimer); recognizeWatchdogTimer = null; }
+        recognizeAbortController = null;
+        if (myToken === recognizeRunToken) recognizeUploading = false;
     }
 }
 
@@ -2291,7 +2334,15 @@ async function uploadToBrickognize(file) {
     const formData = new FormData();
     formData.append('query_image', file);
     const url = 'https://api.brickognize.com/predict/parts/?predict_color=true&top_k_items=3&min_similarity_items=0';
-    const resp = await fetch(url, { method: 'POST', body: formData });
+    // 上传请求带超时：防止接口长时间无响应导致识别请求永不结束、状态一直卡在“识别中”
+    recognizeAbortController = new AbortController();
+    const uploadTimer = setTimeout(() => recognizeAbortController.abort(), RECOGNIZE_UPLOAD_TIMEOUT_MS);
+    let resp;
+    try {
+        resp = await fetch(url, { method: 'POST', body: formData, signal: recognizeAbortController.signal });
+    } finally {
+        clearTimeout(uploadTimer);
+    }
     if (!resp.ok) {
         // 尝试读取错误详情
         let detail = 'HTTP ' + resp.status;
