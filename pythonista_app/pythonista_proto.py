@@ -57,6 +57,7 @@ import traceback
 import os
 import urllib.request
 import urllib.error
+import random
 from datetime import datetime, timedelta
 from objc_util import on_main_thread
 
@@ -81,6 +82,12 @@ POLL_STEP = 3       # 每次轮询间隔（秒）
 JS_TO     = 8       # 单次 JS 调用的超时（秒）
 REUSE_DAYS = 10     # 增量沿用窗口：OP 记录 saved_at 距今 ≤ 该天数则沿用，否则重新爬
 SAVE_EVERY = 10     # 每攒够 N 条落盘一次 BL-price.json（降低频繁写盘/防网络抖动丢数据）
+
+# --- Bricklink WAF 节奏控制：连续浏览约几十页后 WAF 会重置连接（导航失败）。
+#     访问零件页前后加延时+抖动，失败后再冷却，尽量压低被拦截概率 ---
+DELAY_BETWEEN    = 3.0   # 相邻两个「实际访问 BL」零件之间的延时（秒）
+JITTER           = 3.0   # 额外随机抖动 0~JITTER 秒，打散节奏避免被识别为机器
+BACKOFF_AFTER_FAIL = 5.0 # 某零件被 WAF 拦截/跳转失败后，额外冷却秒数再试下一个
 
 # --- Supabase 系统数据库：建清单源（步骤1），取系统里实际存在的零件 ---
 SUPABASE_URL    = 'https://tfxydlkpxkdpxyoqrkez.supabase.co'
@@ -575,6 +582,17 @@ def _start_load(webview, url):
     do()
 
 
+def _pace(was_fail):
+    """访问完一个 BL 零件页后的节奏延时（含随机抖动）：
+    was_fail=True 时再额外冷却，避免连续失败时仍高频打 BL 触发更强的 WAF 拦截。"""
+    delay = DELAY_BETWEEN + random.random() * JITTER
+    if was_fail:
+        delay += BACKOFF_AFTER_FAIL
+    if delay > 0:
+        log('    节奏延时 %.1fs（失败冷却%s）' % (delay, 'on' if was_fail else 'off'))
+        time.sleep(delay)
+
+
 # ---------------------------------------------------------------------------
 # 3) 后台工作线程：轮询驱动整批循环，边抓边落盘
 #    用 threading.Thread 启动（不信赖 ui.in_background 的调度，避免后台不跑）
@@ -674,6 +692,8 @@ def _batch():
             else:
                 log('    [%d/%d] 跳过 %s:%s（>%ds 未抓到，下次重试）' % (
                     idx, _N, part, rb_color, MAX_WAIT))
+            # 访问过 BL：做节奏延时（失败时额外冷却），降低被 WAF 连续重置的概率
+            _pace(data is None)
         # ===== 步骤5：每攒够 SAVE_EVERY 条落盘一次 NP =====
         if _results and len(_results) % SAVE_EVERY == 0:
             save_results()
