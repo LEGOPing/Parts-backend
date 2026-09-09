@@ -81,6 +81,11 @@ PARTS = [
 URL_TMPL  = 'https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color}'
 OUT_JSON  = 'BL-price.json'      # 现价文件（NP）：当前爬价/沿用后的结果
 OP_JSON   = 'BL-price.old'       # 上一版价格文件（OP）：由 NP 改名而来，用于增量沿用判断
+# ======================================================
+# 版本/配置
+# ======================================================
+VERSION    = 'v13.2'  # 每次功能变动必升，用于 iPhone 上一眼确认跑的是哪个版本
+GIT_SHA    = '918f72b'  # 对应 Gitee blob sha 前 7 位，从 Gitee API 取
 LOG_FILE  = 'progress.log'
 # 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
 CSV_FILE   = 'RB_BL_colors.csv'
@@ -779,6 +784,12 @@ def _worker():
 def _batch():
     global _RB_BL_MAP, _RB_BL_PART_MAP, _FAILED_PART_NUMS
     _FAILED_PART_NUMS = []  # 本批失败型号清零
+
+    # --- 版本打印（排查 iPhone 上版本不对问题用）---
+    import os as _os
+    _script_path = _os.path.abspath(__file__) if '__file__' in dir() else '<unknown>'
+    log('==== pythonista_proto.py %s (sha=%s) ====' % (VERSION, GIT_SHA))
+    log('脚本路径: %s' % _script_path)
 
     # --- 颜色映射（必需）---
     _RB_BL_MAP = build_rb_bl_map(_read_csv_text())
