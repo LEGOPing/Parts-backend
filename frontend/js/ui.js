@@ -4837,10 +4837,20 @@ async function renderBLPricePanel(panelEl, part) {
         if (typeof resolveBLTarget === 'function') {
             target = await resolveBLTarget(part.part_num, part.color_id);
         }
+        // DEBUG：打印颜色映射和解析结果
+        console.groupCollapsed(`[BL价格面板DEBUG] part=${part.part_num} rbColor=${part.color_id}`);
+        console.log('part对象:', JSON.stringify(part));
+        console.log('resolveBLTarget结果:', target);
+        if (typeof getBLColorMapByRBColorId === 'function') {
+            const mapRec = await getBLColorMapByRBColorId(part.color_id);
+            console.log('rb_bl_map命中:', mapRec);
+        }
         let rec = null;
         if (target && typeof getCachedBLPrice === 'function') {
             rec = await getCachedBLPrice(target.blPartNum, target.blColorId);
+            console.log('rb_prices key=', `${target.blPartNum}:${target.blColorId}`, '-> rec:', rec ? {key:rec.key, l6:rec.last_6_months, src:rec.source} : 'NOT FOUND');
         }
+        console.groupEnd();
         if (rec && (rec.last_6_months || rec.current_for_sale)) {
             const l6 = rec.last_6_months || {};
             const now = rec.current_for_sale || {};
@@ -7145,17 +7155,16 @@ async function loadRBOnStartup() {
             } catch (e) {
                 console.warn('补充加载 BL 颜色表失败:', e.message);
             }
-            // 升级场景：旧库无 RB↔BL 颜色映射表，补充加载 RB_BL_colors.csv
+            // RB↔BL 颜色映射表：每次启动都强制用最新 RB_BL_colors.csv 覆盖（clear + reload）。
+            // 原因：iOS Safari 不同版本间 IndexedDB key 类型（number 0 vs string "0"）不一致，
+            // 旧数据可能导致 Black 等 id=0 的颜色查询永远 miss；每次重建能彻底规避。
             try {
-                const rbMapCount = await countRecords(RB_STORES.RB_BL_MAP);
-                if (rbMapCount === 0) {
-                    const rbMapResult = await loadRBBLMappingToRBDB();
-                    if (rbMapResult.success) {
-                        console.log(`补充加载 RB↔BL 颜色映射表: ${rbMapResult.count}条`);
-                    }
+                const rbMapResult = await loadRBBLMappingToRBDB();
+                if (rbMapResult && rbMapResult.success) {
+                    console.log(`RB↔BL 颜色映射表已刷新: ${rbMapResult.count}条`);
                 }
             } catch (e) {
-                console.warn('补充加载 RB↔BL 颜色映射表失败:', e.message);
+                console.warn('RB↔BL 颜色映射表刷新失败:', e.message);
             }
             // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
             loadIDAbcOnStartup();

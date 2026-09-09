@@ -1327,10 +1327,20 @@ async function importRBBLMapToRBDb(records) {
     }
 }
 
-// 按 RB 颜色 ID 查询对应的 BL 颜色映射记录（含 bl_color_id / bl_name / rb_name）
+// 按 RB 颜色 ID 查询对应的 BL 颜色映射记录（含 bl_color_id / bl_name / rb_name）。
+// 兼容 id 在 IndexedDB 里以数字或字符串存在两种情况（iOS Safari 不同版本间 key 类型不一致）：
+// 先用 getByKey 查数字 key，未命中则遍历 getAll 按严格数值比较兜底。
 async function getBLColorMapByRBColorId(rbColorId) {
     try {
-        return await getByKey(RB_STORES.RB_BL_MAP, Number(rbColorId));
+        const targetNum = Number(rbColorId);
+        if (!Number.isNaN(targetNum)) {
+            const direct = await getByKey(RB_STORES.RB_BL_MAP, targetNum);
+            if (direct && direct.bl_color_id != null) return direct;
+        }
+        // 兜底：遍历全表按数值比较 id
+        const all = await getAll(RB_STORES.RB_BL_MAP);
+        const hit = (all || []).find(m => m.id != null && Number(m.id) === targetNum);
+        return hit || null;
     } catch (error) {
         console.error('按 RB 颜色ID 查询 BL 颜色映射失败:', error);
         return null;
