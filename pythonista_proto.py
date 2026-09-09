@@ -292,16 +292,41 @@ def _apply_lp(items, src):
         log('  %s 载入 %d 条（型号+颜色唯一）' % (src, _N))
 
 
+# 清单数据源：默认 'supabase'（必须连 Supabase parts 表，保证清单=系统实际库存）
+# 可选 'file'（强制用本地 parts_to_crawl.json，仅离线调试用，可能过时）
+LP_SOURCE = 'supabase'
+
+
 def _ensure_lp():
-    """建清单入口：优先 Supabase（系统有的零件）；失败回退本地文件；再无则内置样例。"""
+    """建清单入口：
+    默认（LP_SOURCE='supabase'）强制连 Supabase parts 表。
+    连不上直接报错退出——因为回退到本地 parts_to_crawl.json 可能是旧快照，
+    会把系统里已删除的零件混入爬价清单（爬价必然失败）。
+    手动离线调试可把 LP_SOURCE 改成 'file' 强制用本地文件。"""
+    if LP_SOURCE == 'file':
+        log('  LP_SOURCE=file 模式，强制读取本地 %s' % PARTS_FILE)
+        _load_parts_from_file()
+        if not PARTS:
+            _apply_lp([('3001', '72'), ('3002', '72')], '内置样例（file 模式兜底）')
+        return
+
+    # 默认：必须连 Supabase
     items = _fetch_supabase_lp()
     if items is not None and items:
         _apply_lp(items, 'Supabase parts 表')
         return
-    log('  Supabase 未取到数据，尝试 %s 兜底' % PARTS_FILE)
-    _load_parts_from_file()
-    if not PARTS:
-        _apply_lp([('3001', '72'), ('3002', '72')], '内置样例')
+    # Supabase 失败：报错退出，不回退旧快照
+    log('错误：无法连 Supabase parts 表（%s）' % (items is None and '请求失败' or '返回空数据'))
+    log('请检查网络 / Supabase 配置；或手动把 LP_SOURCE 改成 "file" 强制离线调试')
+    @on_main_thread
+    def close_ui():
+        try:
+            _webview.close()
+        except Exception as e:
+            log('close 失败: %s' % e)
+    close_ui()
+    DONE.set()
+    return
 
 
 def _rotate_np():
