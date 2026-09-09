@@ -218,20 +218,34 @@ def _norm_part_color(v, is_color=False):
 
 def _fetch_supabase_lp():
     """（步骤1）从 Supabase parts 表拉取系统里实际存在的零件 (part, RB颜色ID)。
-    分页取全（limit+offset），返回归一化后的 (型号, 颜色) list；失败返回 None。"""
+    分页取全（limit+offset），返回归一化后的 (型号, 颜色) list；失败返回 None。
+    加详细日志 + HTTP 状态码，便于 iPhone 上排查。"""
     items = []
     try:
         offset = 0
+        page = 0
         while True:
+            page += 1
             url = '%s/rest/v1/%s?select=%s&limit=1000&offset=%d' % (
                 SUPABASE_URL, SUPABASE_TABLE, SUPABASE_FIELDS, offset)
+            log('  Supabase 请求 #%d: offset=%d -> %s' % (page, offset, url))
             req = urllib.request.Request(url, headers={
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': 'Bearer %s' % SUPABASE_ANON_KEY,
             })
             with urllib.request.urlopen(req, timeout=30) as resp:
-                rows = json.loads(resp.read().decode('utf-8'))
+                http_code = getattr(resp, 'status', 200)
+                body = resp.read().decode('utf-8')
+            try:
+                rows = json.loads(body)
+            except Exception as parse_err:
+                log('  Supabase 返回非 JSON (HTTP %d): %s...' % (http_code, body[:200]))
+                return None
+            if not isinstance(rows, list):
+                log('  Supabase 返回非数组 (HTTP %d): type=%s' % (http_code, type(rows).__name__))
+                return None
             if not rows:
+                log('  Supabase #%d: 无更多行（总 %d）' % (page, len(items)))
                 break
             for r in rows:
                 p = r.get('part_num')
@@ -240,11 +254,21 @@ def _fetch_supabase_lp():
                     continue
                 items.append((_norm_part_color(p), _norm_part_color(c, True)))
             offset += len(rows)
+            log('  Supabase #%d: HTTP %d, %d 行（累计 %d）' % (page, http_code, len(rows), len(items)))
             if len(rows) < 1000:
                 break
+        log('  Supabase 拉取完成: %d 条原始记录' % len(items))
         return items
+    except urllib.error.HTTPError as e:
+        body = ''
+        try:
+            body = e.read().decode('utf-8', 'ignore')[:300]
+        except Exception:
+            pass
+        log('  Supabase HTTP %d 失败: %s' % (e.code, body or str(e)))
+        return None
     except Exception as e:
-        log('  读取 Supabase %s.%s 失败: %s' % (SUPABASE_TABLE, SUPABASE_FIELDS, e))
+        log('  Supabase 请求失败: %s (type=%s)' % (e, type(e).__name__))
         return None
 
 
