@@ -5129,6 +5129,128 @@ function openManualPriceDialog(target, part) {
     });
 }
 
+// ===== 详情页关闭 + 父级卡片局部刷新 =====
+// 关闭详情模态框（遮罩点击 / 返回按钮 / 保存后 / 删除后都统一走这里）
+// 同时只刷新父级页面中该零件的卡片，不整表刷新，避免滚动位置被重置
+async function closePartDetail(part) {
+    // 先移除当前详情 modal，避免后续 showPartDetail 叠在旧的 modal 上
+    const detailOverlay = document.querySelector('.modal-overlay .part-detail-modal')
+        ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+        : null;
+    if (detailOverlay) detailOverlay.remove();
+
+    if (!part || part.id == null) return;
+
+    // 从数据库重新拉取最新状态（数量 / 状态 / 名称 / 颜色ID）
+    let fresh = part;
+    try {
+        fresh = await getPartById(part.id);
+        if (!fresh) return; // 已被删除，跳过（删除场景会单独处理）
+    } catch (e) {
+        console.warn('[closePartDetail] 刷新零件失败，使用内存快照:', e);
+    }
+    refreshPartCardsInParents(fresh);
+}
+
+// 父级可能出现的零件卡片容器：盒子零件列表 + 搜索结果
+// 仅更新 data-id / data-part-id 匹配的那一个卡片，避免 loadParts 整表刷新丢滚动
+async function refreshPartCardsInParents(part) {
+    if (!part) return;
+    const partId = part.id;
+
+    // 1. 盒子零件列表 (.part-card[data-id])
+    const partsListCard = document.querySelector(`#parts-list .part-card[data-id="${partId}"]`);
+    if (partsListCard) {
+        await updatePartsListCard(partsListCard, part);
+    }
+
+    // 2. 搜索结果 (.search-result-card[data-part-id])
+    const searchCard = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+    if (searchCard) {
+        await updateSearchResultCard(searchCard, part);
+    }
+
+    // 同步更新 selectedBox 的零件数量角标（如果存在）
+    if (partsListCard) {
+        const list = document.getElementById('parts-list');
+        if (list) {
+            const count = list.querySelectorAll('.part-card').length;
+            document.getElementById('part-count').textContent = count;
+        }
+    }
+}
+
+// 更新 #parts-list 中的单个 part-card（数量 / 状态 / 名称 / 颜色 / 图片）
+async function updatePartsListCard(card, part) {
+    let colorName = '未知颜色';
+    try {
+        const colorMap = {};
+        const colors = await getAllColors();
+        colors.forEach(c => colorMap[c.id] = c);
+        const color = colorMap[part.color_id];
+        if (color && color.name) colorName = color.name;
+    } catch (e) { /* 忽略，使用默认 */ }
+
+    const qty = Number(part.quantity) || 0;
+    const qtyClass = qty >= 50 ? 'qty-green' : qty >= 10 ? 'qty-orange' : 'qty-red';
+    card.querySelector('.part-num').textContent = part.part_num;
+    card.querySelector('.part-name').textContent = part.name || '';
+    card.querySelector('.part-color').textContent = colorName;
+    const statusEl = card.querySelector('.part-new-status');
+    statusEl.textContent = part.is_new ? '新' : '旧';
+    statusEl.className = 'part-new-status ' + (part.is_new ? 'new' : 'used');
+    const qtyEl = card.querySelector('.part-quantity');
+    qtyEl.textContent = qty;
+    qtyEl.className = 'part-quantity ' + qtyClass;
+
+    // 图片：异步获取并替换
+    const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+    const imageContainer = card.querySelector('.part-image');
+    if (imgUrl) {
+        const escapedUrl = imgUrl.replace(/"/g, '&quot;');
+        const partNumEsc = String(part.part_num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        imageContainer.innerHTML = `<img src="${escapedUrl}" alt="${part.name || ''}"
+            onload="autoCachePartImage('${partNumEsc}', ${part.color_id}, this)"
+            onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+    } else {
+        imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
+    }
+}
+
+// 更新搜索结果中的单个 search-result-card（数量 / 状态 / 名称 / 颜色 / 图片）
+async function updateSearchResultCard(card, part) {
+    let colorName = '未知颜色';
+    try {
+        const colorMap = {};
+        const colors = await getAllColors();
+        colors.forEach(c => colorMap[c.id] = c);
+        const color = colorMap[part.color_id];
+        if (color && color.name) colorName = color.name;
+    } catch (e) { /* 忽略 */ }
+
+    const qty = Number(part.quantity) || 0;
+    const qtyClass = qty >= 50 ? 'qty-green' : qty >= 10 ? 'qty-orange' : 'qty-red';
+
+    card.querySelector('.src-name').textContent = part.name || '';
+    card.querySelector('.src-color-name').textContent = colorName;
+    const statusEl = card.querySelector('.src-status');
+    statusEl.textContent = part.is_new ? '新' : '旧';
+    statusEl.title = part.is_new ? '新品' : '旧品';
+    statusEl.className = 'src-status ' + (part.is_new ? 'new' : 'used');
+    const qtyEl = card.querySelector('.src-qty');
+    qtyEl.textContent = qty;
+    qtyEl.className = 'src-qty ' + qtyClass;
+
+    // 图片
+    const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+    const imageContainer = card.querySelector('.src-image');
+    if (imgUrl) {
+        imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name || ''}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=src-no-image>暂无</div>'">`;
+    } else {
+        imageContainer.innerHTML = '<div class="src-no-image">暂无</div>';
+    }
+}
+
 async function showPartDetail(part) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
@@ -5216,7 +5338,7 @@ async function showPartDetail(part) {
             <div class="pd-title-btns">
                 <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
                 <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
-                <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返</button>
+                <button class="pd-close-btn" id="pd-close-btn">返</button>
             </div>
         </div>
         <div class="pd-row pd-image-row" id="pd-image-swipe">
@@ -5266,6 +5388,16 @@ async function showPartDetail(part) {
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
+    // 点击详情页以外的区域（遮罩层）→ 关闭详情并刷新父级该零件卡片
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closePartDetail(part);
+    });
+
+    // “返”按钮 → 关闭详情并刷新父级该零件卡片
+    sheet.querySelector('#pd-close-btn').addEventListener('click', () => {
+        closePartDetail(part);
+    });
+
     // 初始化数量调整
     let currentQty = qty;
     const qtyEl = sheet.querySelector('#pd-qty-val');
@@ -5295,11 +5427,9 @@ async function showPartDetail(part) {
     saveBtn.addEventListener('click', async () => {
         const success = await updatePart(partId, { quantity: currentQty });
         if (success) {
-            overlay.remove();
-            if (selectedBox) {
-                await loadParts(selectedBox.id);
-            }
-            updateSearchResultQuantity(partId, currentQty);
+            // 关闭详情并只刷新父级该零件卡片（数量已变，其他可能未变）
+            const updatedPart = { ...part, quantity: currentQty };
+            await closePartDetail(updatedPart);
         } else {
             alert('保存失败');
         }
@@ -5470,7 +5600,7 @@ function changePartStatus(part) {
     box.querySelector('#status-cancel').onclick = () => overlay.remove();
 }
 
-// 应用状态变更：更新数据库 + 详情状态栏 + 列表/搜索显示
+// 应用状态变更：更新数据库 + 详情状态栏 + 父级单个卡片（不整表刷新）
 async function applyPartStatus(part, isNew) {
     if (Boolean(part.is_new) === Boolean(isNew)) return;
     const success = await updatePart(part.id, { is_new: isNew });
@@ -5488,12 +5618,8 @@ async function applyPartStatus(part, isNew) {
             statusEl.className = 'pd-status ' + (isNew ? 'pd-status-new' : 'pd-status-used');
         }
     }
-    // 更新搜索结果卡片
-    updateSearchResultStatus(part.id, isNew);
-    // 刷新当前盒子零件列表
-    if (selectedBox) {
-        await loadParts(selectedBox.id);
-    }
+    // 只刷新父级中的单个零件卡片（不整表刷新，避免滚动位置丢失）
+    await refreshPartCardsInParents(part);
     showToast(isNew ? '已设为新品' : '已设为旧品');
 }
 
@@ -6467,6 +6593,10 @@ async function refreshPartDetailWithCustomImage(partNum, colorId) {
         );
         
         if (part) {
+            // 先关闭可能还残留的详情 modal，再刷新父级卡片的图片，最后重新打开详情
+            const oldDetail = document.querySelector('.part-detail-modal');
+            if (oldDetail) oldDetail.closest('.modal-overlay').remove();
+            await refreshPartCardsInParents(part);
             await showPartDetail(part);
         } else {
             alert('图片已更新，请刷新页面查看');
@@ -6486,15 +6616,20 @@ async function deletePartConfirm(partId) {
             const success = await deletePart(numericPartId);
             if (success) {
                 // 关闭详情弹窗
-                const overlay = document.querySelector('.modal-overlay.active');
-                if (overlay) overlay.remove();
-                // 刷新零件列表
-                if (selectedBox) {
-                    await loadParts(selectedBox.id);
+                const detailOverlay = document.querySelector('.modal-overlay .part-detail-modal')
+                    ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+                    : document.querySelector('.modal-overlay.active');
+                if (detailOverlay) detailOverlay.remove();
+
+                // 只从父级中移除该零件卡片，不整表刷新
+                const partsListCard = document.querySelector(`#parts-list .part-card[data-id="${partId}"]`);
+                if (partsListCard) {
+                    partsListCard.remove();
+                    const count = document.querySelectorAll('#parts-list .part-card').length;
+                    document.getElementById('part-count').textContent = count;
                 }
-                // 从搜索结果中移除该零件卡片
-                const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
-                if (card) card.remove();
+                const searchCard = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+                if (searchCard) searchCard.remove();
             } else {
                 alert('删除零件失败');
             }
@@ -6631,18 +6766,26 @@ async function showMergePartSelector(currentPart) {
             return;
         }
 
-        // 关闭弹窗
+        // 关闭合并弹窗
         overlay.remove();
         // 关闭详情弹窗
-        const detailOverlay = document.querySelector('.modal-overlay.active');
+        const detailOverlay = document.querySelector('.modal-overlay .part-detail-modal')
+            ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+            : document.querySelector('.modal-overlay.active');
         if (detailOverlay) detailOverlay.remove();
-        // 刷新零件列表
-        if (selectedBox) {
-            await loadParts(selectedBox.id);
+
+        // 只更新目标零件卡片（数量已增加）、移除源零件卡片，不整表刷新
+        const refreshedTarget = await getPartById(selectedTargetId);
+        if (refreshedTarget) refreshPartCardsInParents(refreshedTarget);
+
+        const partsListCard = document.querySelector(`#parts-list .part-card[data-id="${currentPart.id}"]`);
+        if (partsListCard) {
+            partsListCard.remove();
+            const count = document.querySelectorAll('#parts-list .part-card').length;
+            document.getElementById('part-count').textContent = count;
         }
-        // 从搜索结果中移除当前零件卡片
-        const card = document.querySelector(`.search-result-card[data-part-id="${currentPart.id}"]`);
-        if (card) card.remove();
+        const sourceSearchCard = document.querySelector(`.search-result-card[data-part-id="${currentPart.id}"]`);
+        if (sourceSearchCard) sourceSearchCard.remove();
 
         alert(`合并成功！已将 ${currentPart.quantity} 个零件合并到目标零件，新数量为 ${newQty}`);
     });
