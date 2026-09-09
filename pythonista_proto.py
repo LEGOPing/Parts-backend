@@ -26,8 +26,7 @@ v7 关键改动（修复 iPhone 启动挂起）：
 v10 关键改动（正式实施爬价）：
     - 输出改名为 BL-price.json，顶层与每条字段对齐仓库 BL-price.json
       （generated_at/updated_at/count/source/records；color_id 为 BL 颜色ID）。
-    - 若同目录存在 parts_to_crawl.json，则覆盖 PARTS 作为正式待抓清单
-      （条目 {"part","color"}，color 为 RB 颜色ID），否则用内置样例。
+    - 【已废弃】parts_to_crawl.json 回退链路——v12 改为强制 Supabase parts 表数据源。
 
 v11 关键改动（增量爬价）：
     - 读取上次生成的本地 BL-price.json 建索引：命中且 saved_at 未超过 REFRESH_DAYS(15) 天
@@ -51,8 +50,8 @@ v13 关键改动（RB→BL 型号映射 fallback）：
     - CSV 手动维护：用户可以直接在 Gitee 或本地编辑 RB-BL-ID.csv 补 B 列（remark 可选）。
 
 运行：
-    Pythonista 打开本文件 -> 点运行三角 -> 等自动抓完。
-    过程看 progress.log，结果看 BL-price.json。待抓清单看 parts_to_crawl.json。
+    Pythonista 打开本文件 -> 点运行三角 -> 自动从 Supabase parts 表拉清单（型号+颜色去重） -> 等爬完。
+    过程看 progress.log，结果看 BL-price.json。
 """
 
 import ui
@@ -85,7 +84,6 @@ OP_JSON   = 'BL-price.old'       # 上一版价格文件（OP）：由 NP 改名
 LOG_FILE  = 'progress.log'
 # 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
 CSV_FILE   = 'RB_BL_colors.csv'
-PARTS_FILE = 'parts_to_crawl.json'  # 兜底待抓清单（仅在 Supabase 不可用且此文件存在时读取）
 # 零件型号映射表 RB-BL-ID.csv：R(RB型号),B(BL映射型号),remark
 # 解决 RB 型号在 BL 上被合并/不存在的问题（如 6223→3003）
 RB_BL_PART_MAP_FILE = 'RB-BL-ID.csv'
@@ -250,74 +248,32 @@ def _fetch_supabase_lp():
         return None
 
 
-def _load_parts_from_file():
-    """兜底：Supabase 不可用且同目录存在 parts_to_crawl.json 时读取。
-    条目：[{"part": "98138", "color": 39}]，color 为 RB 颜色ID。"""
-    global _N, PARTS
-    path = os.path.join(_BASE, PARTS_FILE)
-    if not os.path.exists(path):
-        log('未找到 %s，使用内置样例 PARTS' % PARTS_FILE)
-        return
-    try:
-        with open(path, encoding='utf-8') as f:
-            lst = json.load(f)
-        items = []
-        for x in lst:
-            if not isinstance(x, dict):
-                continue
-            part = x.get('part')
-            color = x.get('color')
-            if part is None or color is None:
-                continue
-            items.append((_norm_part_color(part), _norm_part_color(color, True)))
-    except Exception as e:
-        log('读取 %s 失败，使用内置样例 PARTS: %s' % (PARTS_FILE, e))
-        return
-    _apply_lp(items, 'parts_to_crawl.json 兜底')
-
-
 def _apply_lp(items, src):
-    """（步骤2）按 (型号, 颜色) 去重、忽略状态等字段，形成 LP 并赋给 PARTS。"""
+    """（步骤2）按 (型号, 颜色) 去重，形成 PARTS 全局。"""
     global _N, PARTS
     if not items:
-        log('  %s 无有效条目，使用内置样例 PARTS' % src)
-        return
+        log('  %s 无有效条目，退出' % src)
+        return False
     before = len(items)
     PARTS = list(dict.fromkeys(items))
     _N = len(PARTS)
     if _N != before:
-        log('  %s 载入 %d 条（去重掉 %d 条重复，按 型号+颜色 忽略状态）' % (
+        log('  %s 载入 %d 条（去重掉 %d 条重复，按 型号+颜色）' % (
             src, _N, before - _N))
     else:
         log('  %s 载入 %d 条（型号+颜色唯一）' % (src, _N))
-
-
-# 清单数据源：默认 'supabase'（必须连 Supabase parts 表，保证清单=系统实际库存）
-# 可选 'file'（强制用本地 parts_to_crawl.json，仅离线调试用，可能过时）
-LP_SOURCE = 'supabase'
+    return True
 
 
 def _ensure_lp():
-    """建清单入口：
-    默认（LP_SOURCE='supabase'）强制连 Supabase parts 表。
-    连不上直接报错退出——因为回退到本地 parts_to_crawl.json 可能是旧快照，
-    会把系统里已删除的零件混入爬价清单（爬价必然失败）。
-    手动离线调试可把 LP_SOURCE 改成 'file' 强制用本地文件。"""
-    if LP_SOURCE == 'file':
-        log('  LP_SOURCE=file 模式，强制读取本地 %s' % PARTS_FILE)
-        _load_parts_from_file()
-        if not PARTS:
-            _apply_lp([('3001', '72'), ('3002', '72')], '内置样例（file 模式兜底）')
-        return
-
-    # 默认：必须连 Supabase
+    """建爬价清单：必须从 Supabase parts 表拉，按 (型号, 颜色) 去重。
+    连不上直接报错退出——没有任何本地快照回退，保证清单 = 系统当前库存。"""
     items = _fetch_supabase_lp()
-    if items is not None and items:
-        _apply_lp(items, 'Supabase parts 表')
+    if items is not None and _apply_lp(items, 'Supabase parts 表'):
         return
-    # Supabase 失败：报错退出，不回退旧快照
-    log('错误：无法连 Supabase parts 表（%s）' % (items is None and '请求失败' or '返回空数据'))
-    log('请检查网络 / Supabase 配置；或手动把 LP_SOURCE 改成 "file" 强制离线调试')
+    log('错误：无法从 Supabase parts 表获取零件清单（%s）' % (
+        items is None and '请求失败/超时' or '返回空数据'))
+    log('爬价清单必须等于系统当前库存，请检查网络 / Supabase 配置后重试')
     @on_main_thread
     def close_ui():
         try:
