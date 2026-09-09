@@ -867,8 +867,10 @@ async function loadParts(boxId) {
             imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
         }
         
-        card.addEventListener('click', () => {
-            showPartDetail(part);
+        card.addEventListener('click', async () => {
+            // 从数据库拉最新状态，避免刷新卡片DOM后闭包里的part对象还是旧的
+            const fresh = await getPartById(parseInt(card.dataset.id));
+            if (fresh) showPartDetail(fresh);
         });
         
         list.appendChild(card);
@@ -4804,8 +4806,10 @@ async function renderSearchResults(parts) {
             }
         });
 
-        card.addEventListener('click', () => {
-            showPartDetail(part);
+        card.addEventListener('click', async () => {
+            // 从数据库拉最新状态，避免刷新卡片DOM后闭包里的part对象还是旧的
+            const fresh = await getPartById(parseInt(card.dataset.partId));
+            if (fresh) showPartDetail(fresh);
         });
 
         results.appendChild(card);
@@ -5427,9 +5431,11 @@ async function showPartDetail(part) {
     saveBtn.addEventListener('click', async () => {
         const success = await updatePart(partId, { quantity: currentQty });
         if (success) {
-            // 关闭详情并只刷新父级该零件卡片（数量已变，其他可能未变）
+            // 详情页保持打开（数量已通过 +/- 按钮实时更新过）
+            // 只刷新父级该零件的卡片（不整表刷新，避免滚动位置丢失）
             const updatedPart = { ...part, quantity: currentQty };
-            await closePartDetail(updatedPart);
+            await refreshPartCardsInParents(updatedPart);
+            showToast('已保存');
         } else {
             alert('保存失败');
         }
