@@ -7075,6 +7075,9 @@ async function initializeApp() {
         
         // 初始化零件页左右滑动手势
         initPartsSwipeGesture();
+
+        // AA区logo长按1秒：强制刷新版本
+        initLogoForceRefresh();
         
         // 监听颜色ID输入框变化，手动输入时也更新按钮样式
         const colorIdInput = document.getElementById('search-color-id');
@@ -7638,6 +7641,68 @@ function clearCache() {
 
 function reloadApp() {
     if (confirm('确定要重启应用吗？')) {
+        location.reload();
+    }
+}
+
+// 在 AA 区 logo 图片上长按约 1 秒：强制刷新版本。
+// 动作：注销 Service Worker + 清空站点缓存（保留零件图片离线缓存 part-images-cache-v2）+ 缓存破弃后重载页面。
+// 重载后 loadRBOnStartup 会自动用最新 BL-price.json 等 Gitee 文件刷新离线数据，实现“新代码 + 新数据”。
+function initLogoForceRefresh() {
+    const logoImg = document.querySelector('.aa-area .logo img');
+    if (!logoImg) return;
+    const LONG_PRESS_MS = 1000;
+    let timer = null;
+
+    const start = (e) => {
+        e.preventDefault();
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(forceRefreshVersion, LONG_PRESS_MS);
+    };
+    const cancel = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+    };
+
+    // 触屏优先；touchstart 里 preventDefault 会抑制后续合成 mouse 事件，避免重复触发
+    logoImg.addEventListener('touchstart', start, { passive: false });
+    logoImg.addEventListener('touchend', cancel);
+    logoImg.addEventListener('touchmove', cancel);
+    logoImg.addEventListener('touchcancel', cancel);
+    // 桌面端兜底
+    logoImg.addEventListener('mousedown', start);
+    logoImg.addEventListener('mouseup', cancel);
+    logoImg.addEventListener('mouseleave', cancel);
+    // 屏蔽 iOS 长按图片的呼出菜单
+    logoImg.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+// 强制刷新版本：注销 SW、清站点缓存（保留零件图片离线缓存）、缓存破弃后重载页面
+async function forceRefreshVersion() {
+    try {
+        // 顶部提示
+        const hint = document.createElement('div');
+        hint.textContent = '正在强制刷新版本…';
+        hint.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99999;background:#333;color:#fff;padding:6px 16px;border-radius:16px;font-size:13px;opacity:0.95;';
+        document.body.appendChild(hint);
+
+        // 注销 Service Worker，确保下次加载不走旧 SW 缓存
+        if ('serviceWorker' in navigator) {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(regs.map(r => r.unregister()));
+            } catch (e) { console.warn('注销Service Worker失败:', e); }
+        }
+        // 清空站点缓存（保留零件图片离线缓存，避免重新下载图片）
+        if ('caches' in window) {
+            try {
+                const keys = await caches.keys();
+                await Promise.all(keys.filter(k => k !== 'part-images-cache-v2').map(k => caches.delete(k)));
+            } catch (e) { console.warn('清除缓存失败:', e); }
+        }
+        // 缓存破弃后强制重载，重新拉取最新静态资源与离线数据
+        window.location.href = window.location.pathname + '?v=' + Date.now();
+    } catch (e) {
+        console.error('强制刷新版本失败:', e);
         location.reload();
     }
 }
