@@ -178,35 +178,40 @@ async function loadRBBLMappingToRBDB() {
     return await importRBBLMapToRBDb(data);
 }
 
-// 启动时加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
-// 默认只在本地还没有该 key 的价格时写入，保留设备端手动回填/抓取的结果优先。
-// options.refresh=true（"更新RB"使用）：会用最新 BL-price 覆盖来源为离线库(source==='offline')
-// 的旧记录，使缓存更新到最新；手动回填(source==='manual')/服务端抓取的结果仍保留。
-// 非阻塞，失败仅告警。返回 { success, added, total }。
+// 加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
+// 策略：先清理 rb_prices 里所有来源为离线库(source==='offline')的旧记录，
+//       再把本次从 BL-price.json 读到的 records 全量写入 —— 确保每次读入的
+//       数据都是 Gitee 上最新版本、且不受上一次导入的残留记录污染。
+//       手动回填(source==='manual')和服务端抓取(source==='bl-server')的记录不会被清理。
+// 返回 { success, total, cleared, added, kept, generated_at, error? }。
 async function loadBLPriceLibraryToRBDb(options = {}) {
-    const refresh = !!(options && options.refresh);
+    let cleared = 0, kept = 0;
+    // 1. 先清旧：删除所有来源为离线库的历史记录，为全量读入让路
+    try {
+        if (typeof clearOfflineBLPrices === 'function') {
+            const r = await clearOfflineBLPrices();
+            cleared = r.cleared || 0;
+            kept = r.kept || 0;
+        }
+    } catch (e) {
+        console.warn('清理旧离线价格失败（继续）:', e.message);
+    }
+    // 2. 读文件
     const text = await fetchRBFile('BL-price.json');
-    if (!text) return { success: false, added: 0, total: 0, error: 'BL-price.json 读取失败' };
+    if (!text) return { success: false, added: 0, total: 0, cleared, kept, error: 'BL-price.json 读取失败' };
     let data;
     try {
         data = JSON.parse(text);
     } catch (e) {
-        return { success: false, added: 0, total: 0, error: 'BL-price.json 解析失败: ' + e.message };
+        return { success: false, added: 0, total: 0, cleared, kept, error: 'BL-price.json 解析失败: ' + e.message };
     }
     const records = Array.isArray(data) ? data : (data.records || []);
+    // 3. 全量写入（上一步刚清完 offline 记录，所以这里本质是全新插入）
     let added = 0;
     for (const rec of records) {
         if (!rec || !rec.key) continue;
+        if (!rec.part_num || rec.color_id === undefined || rec.color_id === null || rec.color_id === '') continue;
         try {
-            if (!rec.part_num || rec.color_id === undefined || rec.color_id === null || rec.color_id === '') continue;
-            const existing = (typeof getCachedBLPrice === 'function')
-                ? await getCachedBLPrice(rec.part_num, rec.color_id)
-                : null;
-            if (existing && (existing.last_6_months || existing.current_for_sale)) {
-                // 默认：本地已有价格则跳过。
-                // refresh：只有旧记录来自离线库才用最新 BL-price 覆盖，手动回填结果保留。
-                if (!refresh || existing.source !== 'offline') continue;
-            }
             if (typeof saveCachedBLPrice === 'function') {
                 const ok = await saveCachedBLPrice(rec);
                 if (ok) added++;
@@ -215,7 +220,7 @@ async function loadBLPriceLibraryToRBDb(options = {}) {
             console.warn('写入离线价格失败:', rec.key, e);
         }
     }
-    return { success: true, added, total: records.length, generated_at: data.generated_at || '' };
+    return { success: true, added, total: records.length, cleared, kept, generated_at: data.generated_at || '' };
 }
 
 // ==================== Bricklink 价格指南（catalogPG.asp）====================
