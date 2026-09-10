@@ -3475,7 +3475,6 @@ body {
     background: #fff;
     border-right: 1px solid #e3e8ee;
     border-radius: 8px 0 0 8px;
-    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.08);
 }
 .pd-price-panel .pd-price-loading,
 .pd-price-panel .pd-price-error,
