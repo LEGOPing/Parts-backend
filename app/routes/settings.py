@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from app.database import get_db, engine, is_postgres
 from app.models import Base
-from app.backup import backup_database, backup_to_gitee, upload_to_cos, get_db_url
+from app.backup import backup_database, backup_to_gitee, get_db_url
 
 router = APIRouter()
 
@@ -20,8 +20,7 @@ def manual_backup(db: Session = Depends(get_db)):
         backup_path = backup_database(db_path)
         if backup_path:
             uploaded_gitee = backup_to_gitee(backup_path)
-            uploaded_cos = upload_to_cos(backup_path)
-            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded_gitee, "uploaded_to_cos": uploaded_cos}
+            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded_gitee}
         else:
             raise HTTPException(status_code=500, detail="数据库备份失败")
     elif is_postgres():
@@ -29,8 +28,7 @@ def manual_backup(db: Session = Depends(get_db)):
         backup_path = backup_postgres()
         if backup_path:
             uploaded_gitee = backup_to_gitee(backup_path)
-            uploaded_cos = upload_to_cos(backup_path)
-            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded_gitee, "uploaded_to_cos": uploaded_cos}
+            return {"message": "数据库备份成功", "backup_path": backup_path, "uploaded_to_gitee": uploaded_gitee}
         else:
             raise HTTPException(status_code=500, detail="数据库备份失败")
     else:

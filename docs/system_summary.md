@@ -7,14 +7,13 @@
 - **动态数据**（仓库、盒子、零件库存）存储在 **Supabase PostgreSQL**，前端通过 **原生 fetch 直连 REST API**
 - **静态数据**（Rebrickable 基础 6 表 + 重量/别名/词库/BL 颜色/RB↔BL 映射/价格等扩展存储，共 13 张表）缓存在本地 **IndexedDB**（`RB_Database`），支持离线查询
 - **零件重量**（Bricklink 数据源）三级缓存：离线 `rb_weights` → Supabase `part_weights` → 本机 FastAPI 抓取
-- **辅助后端**（FastAPI + CloudBase 云托管）负责数据库备份/恢复/序列重置等运维任务
+- **辅助后端**（FastAPI）负责数据库备份/恢复/序列重置等运维任务（当前仅本地部署，生产备份由 Supabase 内置 + Gitee 手动完成）
 - **静态资源**（颜色/零件 JSON、零件图片、重量 JSON）托管在 **Gitee** 仓库
 
 **系统版本**：3.0.0 (Supabase版)
 **开发者**：LEGOPing
 **GitHub 仓库**：https://github.com/LEGOPing/Parts-backend
 **前端访问地址**：https://legoping.github.io/Parts-backend/
-**后端服务地址**：https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com
 **终端支持**：iPhone / iPad (iOS 15+)
 **Gitee Token**：5e8fe75044a023e2c992c1b5d11c95f0（用于访问私有 parts-rb 仓库）
 
@@ -29,7 +28,7 @@
 | 零件目录 (前端用) | 内存 + Gitee JSON | Gitee Parts-json 仓库 | 轻量、按需加载 |
 | 零件图片 | Gitee Parts-img 仓库 | Rebrickable 图片 | CDN 加速 |
 | BL价格 (Bricklink) | 本地 `rb_prices` 缓存 + 在线抓取 | Bricklink 价目页 / BL-price.json | 离线可用、多源兜底 |
-| 数据库备份 | 腾讯云 COS + Gitee Parts-backup | FastAPI 定时任务 | 灾难恢复 |
+| 数据库备份 | Supabase 内置备份 + Gitee Parts-backup（FastAPI 定时） | Supabase 自动 + 定时任务 | 灾难恢复 |
 
 ---
 
@@ -44,7 +43,6 @@
 | **前端数据访问** | 原生 fetch → Supabase REST API | 直连，不依赖 Supabase JS SDK |
 | **本地数据库** | 原生 IndexedDB API | Rebrickable 静态数据缓存（无 Dexie.js） |
 | **辅助后端** | Python FastAPI + SQLAlchemy | 备份/恢复/序列重置等运维接口 |
-| **后端托管** | CloudBase 云托管 (Docker) | 容器化部署，按需缩容 |
 | **静态资源** | Gitee 仓库 (raw/API) | 颜色/零件 JSON、零件图片、RB CSV |
 | **PWA框架** | Service Worker + Web App Manifest | 离线缓存与应用壳 |
 
@@ -108,7 +106,7 @@
                ▼                         ▼
     ┌───────────────────────┐    ┌───────────────────────┐
     │  Gitee 静态资源        │    │  FastAPI 辅助后端      │
-    │  - Parts-json (JSON)  │    │  (CloudBase 云托管)    │
+    │  - Parts-json (JSON)  │    │  (本地/自托管)          │
     │  - Parts-img  (图片)  │    │  - 备份/恢复           │
     │  - parts-rb   (CSV)   │    │  - 序列重置           │
     └───────────────────────┘    └───────────────────────┘
@@ -497,7 +495,7 @@ const RB_SCHEMAS = {
 
 ### 3.6 网络兼容性说明
 
-| 项目 | v2.0 (CloudBase) | v3.0 (Supabase REST) |
+| 项目 | v2.0 (CloudBase，已弃用) | v3.0 (Supabase REST) |
 |------|------------------|---------------------|
 | 协议 | HTTPS (云函数) | HTTPS REST API |
 | IPv4 支持 | ✅ | ✅ |
@@ -619,10 +617,9 @@ const RB_SCHEMAS = {
 | `importRBBLMapToRBDb(records)` / `getBLColorMapByRBColorId(rbColorId)` / `getRBColorByBLColorName(blColorName)` | RB↔BL 颜色映射（`rb_bl_map`） |
 | `savePartImageToOfflineCache` / `getPartImageFromOfflineCache` / `deletePartImageFromOfflineCache` | 零件图片离线缓存（part-images-cache-v2） |
 
-### 4.3 辅助后端接口（FastAPI → CloudBase）
+### 4.3 辅助后端接口（FastAPI）
 
-> 后端地址：`https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com`
-
+> 当前前端已完全不依赖自建后端（CRUD/初始化/序列重置均直连 Supabase REST）。以下接口仅保留给本地调试或替代部署场景。
 #### 仓库管理 `/api/repositories`
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -656,7 +653,7 @@ const RB_SCHEMAS = {
 #### 系统设置 `/api/settings`
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/settings/backup` | 手动备份（COS + Gitee） |
+| POST | `/api/settings/backup` | 手动备份（Gitee） |
 | GET | `/api/settings/backup/{file}` | 下载备份文件 |
 | POST | `/api/settings/restore/{file}` | 恢复数据库 |
 | POST | `/api/settings/init` | 初始化表结构 |
@@ -684,9 +681,9 @@ PWA-PY/
 │   │   └── ui.js                     # UI 交互逻辑 (200+ 函数)
 │   └── icons/                        # PWA 图标 + 导航按钮背景图
 │
-├── app/                              # FastAPI 后端 (CloudBase 云托管)
+├── app/                              # FastAPI 后端（本地/自托管；生产无调用）
 │   ├── database.py                   # SQLAlchemy 引擎 (SQLite/PostgreSQL)
-│   ├── backup.py                     # 备份逻辑 (COS + Gitee + pg_dump)
+│   ├── backup.py                     # 备份逻辑 (Gitee + pg_dump)
 │   ├── models/                       # ORM 模型
 │   │   ├── repository.py
 │   │   ├── box.py
@@ -722,10 +719,9 @@ PWA-PY/
 ├── push_weights_to_gitee.py          # 推送 weights.json 到 Gitee
 ├── push_inventory_parts_to_gitee.py  # 推送 inventory_parts 到 Gitee
 ├── push_bl_price_to_gitee.py         # 推送 BL-price.json 到 Gitee
-├── migrate_from_cloudbase.py         # CloudBase → Supabase 迁移脚本
+├── migrate_from_cloudbase.py         # 旧 CloudBase → Supabase 迁移脚本（已完成，可删）
 ├── Dockerfile                        # Docker 构建文件 (python:3.11-slim)
 ├── docker-compose.yml                # 本地 Docker Compose
-├── cloudbaserc.json                  # CloudBase 云托管配置
 ├── requirements.txt                  # Python 依赖
 ├── init_supabase.sql                 # Supabase 建表脚本
 ├── .env                              # 环境变量 (DATABASE_URL)
@@ -744,7 +740,7 @@ PWA-PY/
 | `ui.js` | 全部 UI 交互逻辑（200+ 函数），含拍照识别、灰卡校准、BL 价格、转盒、图片管理、清单页等 |
 | `service-worker.js` | PWA 离线缓存（网络优先 JS/CSS，缓存优先静态资源） |
 | `main.py` | FastAPI 入口，CORS + 路由注册 + APScheduler 每日备份 |
-| `app/backup.py` | SQLite/PostgreSQL 备份 + COS 上传 + Gitee 推送 |
+| `app/backup.py` | SQLite/PostgreSQL 备份 + Gitee 推送 |
 | `init_supabase.sql` | Supabase 建表 + 索引 + 15 种预置颜色 |
 | `generate_bl_price.py` / `server_bricklink_price.py` | 生成离线价目库 / 自建 BL 价目服务端 |
 
@@ -775,17 +771,17 @@ let editingBox = null;          // 正在编辑的盒子
 3. 使用 `JamesIves/github-pages-deploy-action@v4` 将 `frontend/` 目录部署到 `gh-pages` 分支
 4. 访问地址：https://legoping.github.io/Parts-backend/
 
-### 6.2 后端部署（CloudBase 云托管）
-1. 后端代码在仓库根目录（构建目录为空，使用仓库根）
-2. `Dockerfile` 基于 `python:3.11-slim`，pip 使用清华镜像源
-3. `cloudbaserc.json` 配置 CloudBase 服务：
-   - envId: `legopart-d3gyvl7hw36084032`
-   - serviceName: `parts-backend`
-   - CPU: 1核 / 内存: 256MB / 缩容到 0
-   - 端口: 8000
-4. 环境变量通过 CloudBase 控制台配置（DATA_DIR / DATABASE_URL / COS 配置）
-5. 服务地址：https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com
+### 6.2 后端部署
 
+后端**已不再被前端调用**（CRUD 直连 Supabase REST、序列重置走 Supabase RPC、前端备份改成本地 JSON 导出）。保留仅供本地调试 Bricklink 重量抓取（本机 IP 避开反爬）或替代部署场景。
+
+本地启动：
+```bash
+docker build -t lego-parts-backend .
+docker run -p 8000:8000 -e DATABASE_URL="postgresql://..." lego-parts-backend
+```
+
+环境变量：仅 `DATABASE_URL`（Supabase PostgreSQL）。原 COS 配置已删除。
 ### 6.3 Supabase 配置
 1. 在 Supabase 控制台执行 `init_supabase.sql` 建表
 2. 在 `api.js` 中配置：
@@ -819,7 +815,7 @@ let editingBox = null;          // 正在编辑的盒子
 - **定时备份**：APScheduler 每天 02:00 自动执行
   - PostgreSQL: `pg_dump` 备份（失败回退到 SQLAlchemy 方式）
   - 备份文件保留最近 5 份
-- **备份上传**：腾讯云 COS + Gitee Parts-backup 仓库
+- **备份上传**：Gitee Parts-backup 仓库（git push）；Supabase 同时提供 7 天 PITR 自动备份
 - **手动备份**：设置页"数据备份"按钮 → 调用 FastAPI `/api/settings/backup`
 
 ---
@@ -832,12 +828,12 @@ let editingBox = null;          // 正在编辑的盒子
 | 前端数据访问 | 原生 fetch → Supabase REST | 无 SDK 依赖、包体小、IPv4/IPv6 通用 |
 | 静态数据缓存 | 原生 IndexedDB | 无 Dexie.js 依赖、iOS 原生支持 |
 | RB 数据来源 | Gitee parts-rb (CSV) | 私有仓库 Token 访问、数据量大 |
-| 辅助后端 | FastAPI + CloudBase 云托管 | 仅用于备份/恢复，按需缩容到 0 |
+| 辅助后端 | FastAPI（可选部署） | 仅本地调试重量抓取；备份已改 Gitee + Supabase |
 | 用户认证 | 无（anonKey 直连） | 个人单用户场景，简化使用 |
 | 应用框架 | 原生 JavaScript | 无构建依赖、直接部署 |
 | 前端托管 | GitHub Pages | 免费、CDN 加速、Actions 自动部署 |
 | 图片托管 | Gitee Parts-img | 国内访问快 |
-| 备份策略 | COS + Gitee 双备份 | 灾难恢复、异地冗余 |
+| 备份策略 | Supabase PITR + Gitee 定时推送 | 双重保险 |
 
 ### 7.1 为什么前端直连 Supabase REST（而非 JS SDK）
 
@@ -853,7 +849,7 @@ let editingBox = null;          // 正在编辑的盒子
 
 前端直连 Supabase 已满足日常 CRUD，但以下场景需后端：
 - **数据库备份**：需 `pg_dump` 或 SQLAlchemy 全表导出
-- **备份文件管理**：上传 COS / 推送 Gitee
+- **备份文件管理**：推送 Gitee（git push）
 - **序列重置**：删除数据后重置 PostgreSQL 自增序列
 - **定时任务**：APScheduler 每日自动备份
 
@@ -938,14 +934,14 @@ CSV 解析采用自定义 `parseRBCSVLine`（支持引号转义），解析后�
 | 版本 | 架构 | 说明 |
 |------|------|------|
 | v1.0 | Pythonista + iCloud | iOS 原生 Swift 应用 |
-| v2.0 | CloudBase + GitHub Pages | 腾讯云 CloudBase 云函数后端 |
+| v2.0 | CloudBase + GitHub Pages | 腾讯云 CloudBase 云函数后端（已弃用） |
 | **v3.0** | **Supabase REST + IndexedDB + FastAPI** | **当前版本：前端直连 Supabase，RB 本地缓存** |
 
 ### v3.0 核心特性
 - ✅ 前端原生 fetch 直连 Supabase REST API（无 SDK 依赖）
 - ✅ 原生 IndexedDB 缓存 RB 数据（无 Dexie.js 依赖，v8 共 13 表）
 - ✅ RB 数据从 Gitee parts-rb 私有仓库获取（CSV + Token）
-- ✅ FastAPI 辅助后端（CloudBase 云托管，备份/恢复/序列重置）
+- ✅ FastAPI 辅助后端（仅本地调试；生产 CRUD/备份直连 Supabase/Gitee）
 - ✅ 智能分词零件名称联想（支持"数字 x 数字"格式）
 - ✅ 拍照识别添加零件（BG + 颜色校准）、灰卡校准
 - ✅ 添加零件型号兜底匹配（BL-parts 方法一 / 候选列表方法二）与别名自动保存
@@ -953,7 +949,7 @@ CSV 解析采用自定义 `parseRBCSVLine`（支持引号转义），解析后�
 - ✅ BL价格查询（本地缓存 + 多源抓取 + 手动回填）
 - ✅ 零件图片从 Gitee Parts-img 加载 + 本机离线图片缓存
 - ✅ Service Worker v82 离线缓存（网络优先 JS/CSS）
-- ✅ 腾讯云 COS + Gitee 双备份（每日 02:00 自动）
+- ✅ Gitee 定时推送备份 + Supabase 内置 PITR（每日 02:00 自动）
 - ✅ P 单位自适应布局（1P = 46px，基于 DPI 检测）
 
 ---
@@ -1138,7 +1134,6 @@ self.addEventListener('fetch', (event) => {
 |------|------|------|
 | **当前版本文档** | `PWA-PY/docs/system_summary.md` | ✅ v3.0 Supabase版 |
 | **页面规划文档** | `PWA-PY/docs/page_summary.md` | ✅ v3.0 页面规划 |
-| 旧版本文档 (CloudBase) | `PWA/docs/system_summary.md` | ⚠️ v2.0 已弃用 |
 | v3.0 草稿文档 | `PWA-PY/docs/system_summary_副本.md` | ⚠️ 历史草稿 |
 
 ---
@@ -1154,6 +1149,4 @@ self.addEventListener('fetch', (event) => {
 | Supabase | 开源 Firebase 替代产品，提供数据库+认证+存储 |
 | RB | Rebrickable，乐高零件数据库 |
 | FastAPI | Python 现代 Web 框架 |
-| CloudBase | 腾讯云开发平台（云托管） |
-| COS | 腾讯云对象存储 |
 | P 单位 | 自适应布局单位，1P = 46px（基于屏幕 DPI） |

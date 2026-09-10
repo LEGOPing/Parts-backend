@@ -90,7 +90,7 @@ INSERT INTO colors (color_name, rgb, bricklink_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- ============================================
--- 重置自增序列函数（供前端 RPC 调用，替代 CloudBase 后端）
+-- 重置自增序列函数（供前端 RPC 调用）
 -- SECURITY DEFINER: 以函数所有者(postgres)身份执行，使 anon key 也能调用
 -- 使用 setval 同步到 MAX(id)，而非硬编码 RESTART WITH 1，避免主键冲突
 -- ============================================

@@ -2,11 +2,9 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-// 本地开发（localhost）走本机 FastAPI，可利用本机 IP 抓取 Bricklink 重量；
-// 生产环境走 CloudBase 云托管（依赖 Supabase part_weights 缓存）。
-const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-    ? `http://${location.hostname}:8000`
-    : 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
+// 仅本地开发（localhost）走本机 FastAPI，可利用本机 IP 抓取 Bricklink 重量；
+// 生产环境完全直连 Supabase REST，不依赖任何自建后端。
+const LOCAL_BACKEND_URL = 'http://localhost:8000';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
@@ -32,25 +30,6 @@ function supabaseHeaders(extra = {}) {
         'Prefer': 'return=representation',
         ...extra
     };
-}
-
-async function executeSQL(query) {
-    // 调用后端 API 重置序列
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/settings/reset-sequences`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!response.ok) {
-            throw new Error(`重置序列失败: HTTP ${response.status}`);
-        }
-        return await response.json();
-    } catch (error) {
-        console.error('重置序列失败:', error.message);
-        throw error;
-    }
 }
 
 async function supabaseRequest(table, options = {}) {
@@ -1666,7 +1645,7 @@ async function fetchBricklinkPartWeight(partNumber) {
     // 4. 仅本机开发环境调 FastAPI 抓取（本机 IP 也可避开反爬）
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
+            const response = await fetch(`${LOCAL_BACKEND_URL}/api/parts/weight?part_number=${encodeURIComponent(cleanNum)}`);
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.weight != null && data.weight > 0) {
@@ -1682,7 +1661,7 @@ async function fetchBricklinkPartWeight(partNumber) {
     return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 
-// 重置 Supabase 自增序列（通过 RPC 函数，无需 CloudBase 后端）
+// 重置 Supabase 自增序列（通过 RPC 函数直连，无需自建后端）
 async function resetSequencesViaSupabase() {
     try {
         const response = await fetch(`${API_BASE}/rpc/reset_sequences`, {

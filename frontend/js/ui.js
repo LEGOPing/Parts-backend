@@ -7636,7 +7636,7 @@ async function initializeDatabase() {
                     try { await deleteRepository(repo.id); } catch (e) {}
                 }
                 
-                // 重置所有自增序列（通过 Supabase RPC，无需 CloudBase 后端）
+                // 重置所有自增序列（通过 Supabase RPC 函数）
                 try {
                     await resetSequencesViaSupabase();
                     console.log('序列已重置');

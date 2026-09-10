@@ -25,10 +25,6 @@ else:
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
-    from app.backup import download_from_cos
-    if not os.path.exists(db_path):
-        download_from_cos(db_path)
-
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
     def set_sqlite_pragmas(dbapi_connection, connection_record):

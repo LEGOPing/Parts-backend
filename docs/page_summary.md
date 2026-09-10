@@ -194,9 +194,9 @@
 **数据管理按钮**：
 | 按钮 | 功能 | 实现 |
 |------|------|------|
-| 初始化DB | 重置 Supabase 表结构 | 调用 FastAPI `/api/settings/init` |
-| 数据备份 | 备份数据库到 COS + Gitee | 调用 FastAPI `/api/settings/backup` |
-| 数据恢复 | 从备份文件恢复 | 调用 FastAPI `/api/settings/restore/{file}` |
+| 初始化DB | 重置 Supabase 表结构 | 前端直连 Supabase REST 删除 + RPC `reset_sequences` |
+| 数据备份 | 导出 JSON 备份到本地（Supabase 内置 PITR 自动备份） | 前端本地 JSON 导出 |
+| 数据恢复 | 从备份文件恢复 | 前端上传 JSON 后直连 Supabase 重写 |
 | 更新RB | 从 Gitee 下载 RB 数据到 IndexedDB（含扩展 JSON） | `updateRB()` |
 | 导出RB | 导出 RB_Database 为 JSON 并上传 Gitee | `exportRB()` |
 | RB分片 | 大 RB 文件拆分上传 Gitee | `splitAndUploadRB()` |
