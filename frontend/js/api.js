@@ -179,39 +179,50 @@ async function loadRBBLMappingToRBDB() {
 }
 
 // 加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
-// 策略：先清理 rb_prices 里所有来源为离线库(source==='offline')的旧记录，
-//       再把本次从 BL-price.json 读到的 records 全量写入 —— 确保每次读入的
-//       数据都是 Gitee 上最新版本、且不受上一次导入的残留记录污染。
-//       手动回填(source==='manual')和服务端抓取(source==='bl-server')的记录不会被清理。
-// 返回 { success, total, cleared, added, kept, generated_at, error? }。
+// 策略：先用 whitelist 清理 rb_prices 中所有非 manual / 非 bl-server 的记录（覆盖
+//       offline / bl-webview / rebrickable offline 等一切离线来源值，避免 blacklist 漏删），
+//       再把本次从 BL-price.json 读到的 records 全量写入 —— 确保每次读入的数据都是
+//       Gitee 上最新版本、且不受上一次导入的残留记录污染。
+// 保护对象：手动回填(source==='manual') 和 服务端抓取(source==='bl-server') 的记录。
+// 返回 { success, total, cleared, kept, keptBySource, added, generated_at, error? }。
 async function loadBLPriceLibraryToRBDb(options = {}) {
-    let cleared = 0, kept = 0;
-    // 1. 先清旧：删除所有来源为离线库的历史记录，为全量读入让路
+    let cleared = 0, kept = 0, keptBySource = {};
+    // 1. 先清旧：whitelist 方式只保护 manual/bl-server，其余一律清理
     try {
         if (typeof clearOfflineBLPrices === 'function') {
             const r = await clearOfflineBLPrices();
             cleared = r.cleared || 0;
             kept = r.kept || 0;
+            keptBySource = r.keptBySource || {};
         }
     } catch (e) {
         console.warn('清理旧离线价格失败（继续）:', e.message);
     }
     // 2. 读文件
     const text = await fetchRBFile('BL-price.json');
-    if (!text) return { success: false, added: 0, total: 0, cleared, kept, error: 'BL-price.json 读取失败' };
+    if (!text) return { success: false, added: 0, total: 0, cleared, kept, keptBySource, error: 'BL-price.json 读取失败' };
     let data;
     try {
         data = JSON.parse(text);
     } catch (e) {
-        return { success: false, added: 0, total: 0, cleared, kept, error: 'BL-price.json 解析失败: ' + e.message };
+        return { success: false, added: 0, total: 0, cleared, kept, keptBySource, error: 'BL-price.json 解析失败: ' + e.message };
     }
     const records = Array.isArray(data) ? data : (data.records || []);
-    // 3. 全量写入（上一步刚清完 offline 记录，所以这里本质是全新插入）
-    let added = 0;
+    // 3. 全量写入：whitelist 保护写入阶段 —— 若 IndexedDB 里该 key 已存在 manual / bl-server，
+    //    跳过本次写入，保留用户/服务端数据不被离线覆盖。其余全部 upsert。
+    let added = 0, skippedProtected = 0;
     for (const rec of records) {
         if (!rec || !rec.key) continue;
         if (!rec.part_num || rec.color_id === undefined || rec.color_id === null || rec.color_id === '') continue;
         try {
+            // 写入前先查一次，若本地已有 manual / bl-server 同 key → 跳过
+            const existing = (typeof getCachedBLPrice === 'function')
+                ? await getCachedBLPrice(rec.part_num, rec.color_id)
+                : null;
+            if (existing && (existing.source === 'manual' || existing.source === 'bl-server')) {
+                skippedProtected++;
+                continue;
+            }
             if (typeof saveCachedBLPrice === 'function') {
                 const ok = await saveCachedBLPrice(rec);
                 if (ok) added++;
@@ -220,7 +231,7 @@ async function loadBLPriceLibraryToRBDb(options = {}) {
             console.warn('写入离线价格失败:', rec.key, e);
         }
     }
-    return { success: true, added, total: records.length, cleared, kept, generated_at: data.generated_at || '' };
+    return { success: true, added, skippedProtected, total: records.length, cleared, kept, keptBySource, generated_at: data.generated_at || '' };
 }
 
 // ==================== Bricklink 价格指南（catalogPG.asp）====================
