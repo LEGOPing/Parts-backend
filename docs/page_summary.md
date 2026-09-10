@@ -111,25 +111,28 @@
 |------|------|------|
 | 返回 | 返回仓库管理页面 | ✅ 已实现 |
 | 批量导入 | CSV 文件导入零件 | ✅ 已实现 |
-| 零件转盒 | 转移零件到其他盒子 | ⚠️ 开发中（alert 提示） |
+| 零件转盒 | 转移零件到其他盒子 | ✅ 已实现 |
 | 添加零件 | 弹出添加零件面板 | ✅ 已实现 |
 
 **交互特性**：
 - 点击零件卡片 → 显示零件详情弹窗（`showPartDetail`）
-- 零件图片从 Gitee Parts-img 加载（通过 `getPartImageUrl` 查询 RB 库）
+- 零件图片从 Gitee Parts-img 加载（通过 `getPartImageUrl` 查询 RB 库），支持自定义图片与本机离线图片缓存
 - 零件名称/型号联想基于本地 RB_Database（`searchPartsByNumber` / `getPartNameSuggestions`）
 - **左右滑动切换盒子**：在零件管理页水平滑动（阈值 60px）切换上一个/下一个盒子（`initPartsSwipeGesture` / `switchBox`），带滑动动画与序号显示（`updateBoxSequence`）
 - **称重计算**：添加零件面板中通过"称重计算"按钮打开计算器（`showWeightCalculator`），从 Bricklink 查询单个重量（`fetchPartWeightForCalculator`，支持离线/缓存/在线来源），根据总重量自动计算数量并填入（`calculateWeightQuantity`）
+- **零件转盒**：点击"零件转盒"打开转盒弹窗，勾选要转移的零件、选择目标盒子执行转移（`showPartTransferModal` / `performPartTransfer` / `enterTargetBox`）
+- **拍照识别添加**：添加零件面板支持拍照识别（BG + 颜色校准），识别失败时触发型号兜底匹配（方法一/方法二）与别名保存（`showRecognizeModal` / `fillRecognizedPart`）
 
 ### 2.3 零件搜索页面（search-tab）
 
-**布局结构**（搜索/重置按钮位于标题右侧，搜索在最右）：
+**布局结构**（标题右侧为 [清单]、[重置]、[搜索]，最右为搜索）：
 ```
 ┌─────────────────────────────────────┐
-│  零件搜索              [重置] [搜索] │  ← search-header
+│  零件搜索           [清单][重置][搜索]│  ← search-header
 ├─────────────────────────────────────┤
-│ 型号: [________]  名称: [________]   │  ← filter-row 1
-│ 颜色ID: [____] [选色]  状态: [▼全部] │  ← filter-row 2
+│ 型号: [________][识别]               │  ← filter-row 1a
+│ 名称: [________][精度 0]             │  ← filter-row 1b
+│ 颜色ID: [____][选色] 仓库:[___] 状态 │  ← filter-row 2
 ├─────────────────────────────────────┤
 │ ┌─────────────────────────────────┐ │
 │ │11215  零件名称                  │ │  ← search-results
@@ -145,9 +148,10 @@
 **搜索条件**：
 | 条件 | 类型 | 说明 |
 |------|------|------|
-| 型号 | 模糊匹配 | `part_num.toLowerCase().includes(q)` |
-| 名称 | 模糊匹配 | `name.toLowerCase().includes(q)` |
-| 颜色ID | 精确匹配 | Supabase `color_id=eq.xxx` |
+| 型号 | 模糊匹配 | `part_num.toLowerCase().includes(q)`；可点击"识别"按钮拍照填入（`recognizePartFromSearch`） |
+| 名称 | 模糊匹配 | `name.toLowerCase().includes(q)`；可点击"精度"按钮调整匹配精度（`showNamePrecisionPicker`） |
+| 颜色ID | 精确匹配 | Supabase `color_id=eq.xxx`，通过"选色"颜色网格选择 |
+| 仓库 | 精确匹配 | 多选仓库筛选（`openSearchWarehouseSelect` / `toggleSearchWarehouse`），命中选中仓库的库存 |
 | 状态 | 精确匹配 | 新品 / 旧品 / 全部（`is_new` 字段） |
 
 **颜色选择器**：
@@ -160,6 +164,9 @@
 - 搜索结果在 `renderSearchResults` 中渲染卡片
 - 每个结果卡片显示：型号、名称、颜色（带色块）、新旧标签、数量
 
+**清单页**：
+- 点击"清单"按钮（`openListPage`）打开独立清单页，可跨仓库汇总零件，支持识别型号/选色、编辑 Q4 输入值（`renderListParts` / `addListPart` / `editQ4Value`）
+
 ### 2.4 系统设置页面（settings-tab）
 
 **布局结构**：
@@ -168,45 +175,41 @@
 │  系统设置                            │
 ├─────────────────────────────────────┤
 │ 数据管理                            │
-│ [初始化数据库][数据备份][数据恢复]    │
-│ [数据同步]                          │
-│ [更新RB] [导出RB]                   │
-│ (RB状态提示)                        │
+│ [初始化DB][数据备份][数据恢复]       │
+│ RB数据管理                          │
+│ [更新RB][导出RB][RB分片][别名映射]   │
+│ [批量BL重配]                        │
+│ (RB状态提示)(IndexedDB版本)         │
 ├─────────────────────────────────────┤
-│ 缓存管理                            │
-│ [清除本地缓存] [重启应用]            │
+│ 缓存管理 [清除本地缓存] [重启应用]   │
 ├─────────────────────────────────────┤
-│ 统计信息                            │
-│ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐│
-│ │  N   │ │  N   │ │  N   │ │  N   ││
-│ │仓库数│ │盒子数│ │零件种│ │零件总││
-│ └──────┘ └──────┘ └──────┘ └──────┘│
-│ [刷新统计]                          │
+│ 其他     [型号英文]                 │
 ├─────────────────────────────────────┤
-│ 关于系统                            │
-│ 版本: 3.0.0 (Supabase版)           │
-│ 数据库: Supabase PostgreSQL         │
-│ 静态资源: GitHub Pages + Gitee      │
-│ 开发者: LEGOPing                    │
+│ 统计信息 (5 项) + [刷新统计]        │
+├─────────────────────────────────────┤
+│ 关于系统 (版本/数据库/静态资源/开发) │
 └─────────────────────────────────────┘
 ```
 
 **数据管理按钮**：
 | 按钮 | 功能 | 实现 |
 |------|------|------|
-| 初始化数据库 | 重置 Supabase 表结构 | 调用 FastAPI `/api/settings/init` |
+| 初始化DB | 重置 Supabase 表结构 | 调用 FastAPI `/api/settings/init` |
 | 数据备份 | 备份数据库到 COS + Gitee | 调用 FastAPI `/api/settings/backup` |
 | 数据恢复 | 从备份文件恢复 | 调用 FastAPI `/api/settings/restore/{file}` |
-| 数据同步 | 缓存当前数据到 localStorage | `syncData()` |
-| 更新RB | 从 Gitee 下载 Rebrickable 数据到 IndexedDB | `updateRB()` |
+| 更新RB | 从 Gitee 下载 RB 数据到 IndexedDB（含扩展 JSON） | `updateRB()` |
 | 导出RB | 导出 RB_Database 为 JSON 并上传 Gitee | `exportRB()` |
+| RB分片 | 大 RB 文件拆分上传 Gitee | `splitAndUploadRB()` |
+| 别名映射 | 自动生成别名映射并写回 Gitee | `generateAliasMapping()` |
+| 批量BL重配 | 批量重新匹配零件 BL 型号 | `blBatchReconfigure()` |
+| 型号英文 | 重建型号英文词汇表（ID_Abc） | `buildIDAbcJson()` |
 
 **RB 状态提示**（`showRBStatusHint`）：
 - 显示本地 RB_Database 各表记录数
 - 提示是否需要更新
 
 **统计信息**（`loadStats` → `getStats`）：
-- 并行查询 Supabase：仓库数、盒子数、零件种类、零件总数（`SUM(quantity)`）
+- 并行查询 Supabase，共 5 项：仓库数、盒子数、零件种类（型号）、零件种类（型号+颜色）、零件总数（`SUM(quantity)`）
 
 ---
 
@@ -220,11 +223,16 @@
 | **零件选择器** | `showPartSelector()` | 搜索并选择零件型号 |
 | **颜色选择器** | `showColorPicker()` | 网格展示零件可用颜色 |
 | **搜索颜色选择器** | `showSearchColorPicker()` | 搜索页专用颜色选择 |
-| **零件详情** | `showPartDetail()` | 查看零件完整信息+编辑数量+删除+合并+图片管理 |
+| **零件详情** | `showPartDetail()` | 查看零件完整信息+编辑数量+删除+合并+图片管理+BL价格 |
 | **CSV导入** | `showCSVImporter()` | 文件选择 + 预览 + 确认导入 |
 | **称重计算** | `showWeightCalculator()` | 根据总重量和单个重量计算零件数量 |
 | **合并零件** | `showMergePartSelector()` | 合并相同零件（型号+颜色+状态一致） |
 | **图片管理** | `manageCustomImage()` | 管理自定义零件图片（URL/本地上传） |
+| **拍照识别** | `showRecognizeModal()` | 拍照识别零件型号，支持兜底匹配与别名 |
+| **灰卡校准** | `calibrateGrayCard()` | 白平衡校准（含灰卡上传处理） |
+| **零件转盒** | `showPartTransferModal()` | 选择零件与目标盒子执行转移 |
+| **BL价格回填** | `openManualPriceDialog()` | 手动录入零件 BL 当前价 |
+| **清单页** | `openListPage()` | 跨仓库零件清单汇总与编辑 |
 
 ### 3.1 添加零件面板
 
@@ -283,6 +291,7 @@
 - 删除按钮带确认（`deletePartConfirm` → `executeDeletePart`，需密码验证）
 - **合并按钮**：`showMergePartSelector` 在当前盒子中查找相同零件（型号+颜色+状态一致）合并，数量累加后删除当前零件
 - **搜索按钮**：`searchFromDetail` 以当前零件型号+颜色跳转搜索页
+- **BL价格**：显示该零件在 Bricklink 上的 New 状态四个价格（`renderBLPricePanel` / `fetchAndRenderBLPrice`），本地 `rb_prices` 优先，失败时多源抓取（自建服务端 / BL_PRICE_SERVER），可手动回填（`openManualPriceDialog`）
 - **图片管理**：图片区域左滑显示变更按钮（`changePartImage`），支持 URL 添加（`saveImageFromUrl`）/ 本地上传（`uploadLocalImage`）/ 删除（`deletePartDetailImage`，同时清理离线缓存与 Gitee）
 
 ### 3.4 CSV 导入流程
@@ -374,7 +383,7 @@ batchCreateParts(partsData) → Supabase 批量插入
 
 | 特性 | 实现方式 | 文件 |
 |------|----------|------|
-| **离线缓存** | Service Worker (v66) | `service-worker.js` |
+| **离线缓存** | Service Worker (v82) | `service-worker.js` |
 | **Web App Manifest** | manifest.json 配置 | `manifest.json` |
 | **本地存储** | localStorage + IndexedDB | `store.js` / `rb-db.js` |
 | **全局错误捕获** | `window.onerror` + `unhandledrejection` | `index.html` |
@@ -384,7 +393,7 @@ batchCreateParts(partsData) → Supabase 批量插入
 
 ```javascript
 // index.html
-navigator.serviceWorker.register('service-worker.js?v=v66', {
+navigator.serviceWorker.register('service-worker.js?v=v82', {
     updateViaCache: 'none'
 }).then(registration => {
     if (navigator.serviceWorker.controller) {
@@ -451,16 +460,16 @@ let editingBox = null;          // 正在编辑的盒子
 | **交互** | 点击选择 + 长按编辑，模态框集中处理表单 |
 | **响应式** | P 单位自适应（1P=46px），移动端优先 |
 | **视觉** | 乐高黄色主题，统一的卡片设计风格 |
-| **PWA** | SW v66 离线缓存、强制更新机制、全局错误捕获 |
+| **PWA** | SW v82 离线缓存、强制更新机制、全局错误捕获 |
 | **搜索** | 按钮（重置/搜索）位于标题右侧，搜索在最右 |
 | **RB管理** | 设置页集成更新/导出 RB，启动时自动检查 |
-| **扩展性** | 盒子转仓已实现；零件转盒功能入口预留（开发中） |
+| **扩展性** | 盒子转仓、零件转盒均已实现（ID 冲突自动重新编号）；清单页、拍照识别、BL价格等扩展功能已上线 |
 
 ---
 
 ## 八、UI 函数清单（ui.js）
 
-系统 UI 交互逻辑全部集中在 `frontend/js/ui.js`，共 81 个函数：
+系统 UI 交互逻辑全部集中在 `frontend/js/ui.js`，当前共 **200+ 个函数**（约 9,200 行）。以下仅列主要函数，按功能模块分组：
 
 ### 8.1 布局与导航
 | 函数 | 功能 |
@@ -582,6 +591,46 @@ let editingBox = null;          // 正在编辑的盒子
 | `reloadApp()` | 重启应用 |
 | `loadStats()` | 加载统计信息 |
 
+### 8.12 零件转盒
+| 函数 | 功能 |
+|------|------|
+| `showPartTransferModal()` | 打开零件转盒弹窗 |
+| `renderPartTransferParts(parts)` / `togglePartTransferSelection(partId, card)` | 渲染/勾选要转移的零件 |
+| `renderPartTransferRepos(repos)` / `selectPartTransferRepo(repo, card)` | 选择目标仓库 |
+| `renderPartTransferBoxes(boxes)` | 渲染目标盒子 |
+| `performPartTransfer()` | 执行零件转移 |
+| `enterTargetBox(targetBox, targetRepoId)` / `closePartTransferModal()` | 转移后进入目标盒 / 关闭弹窗 |
+
+### 8.13 拍照识别与灰卡校准
+| 函数 | 功能 |
+|------|------|
+| `showRecognizeModal()` / `closeRecognizeModal(cancel)` / `confirmRecognizeResult()` | 拍照识别对话框 |
+| `processRecognitionFile(input)` / `uploadToBrickognize(file)` | 处理/上传识别文件 |
+| `recognizePartPhoto(callback)` / `recognizePartFromSearch()` | 触发识别 |
+| `fillRecognizedPart(partNum, fallbackName, bgColorName)` | 填写识别结果，触发兜底匹配与别名保存 |
+| `matchRBByColorFallback(bgPartNum, bgColorName)` | 方法一：BL-parts 自动匹配 |
+| `buildFallbackCandidates(bgName, bgColorName)` / `showFallbackCandidatePicker(candidates, bgInfo)` | 方法二：名称候选人工选择 |
+| `savePartAlias(aliasPartNum, rbPartNum)` / `ensureAliasPersisted(aliasPartNum, rbPartNum)` | 保存/持久化别名映射 |
+| `computeClosestRBColors(file, partNum)` | 图像主色计算最接近 RB 颜色 |
+| `calibrateGrayCard()` / `processGrayCardFile(input)` / `applyGrayCardToImage(file)` | 灰卡校准 |
+| `getDominantColor(img, wbInfo)` / `estimateIlluminant(img)` / `applyWB(pixel, factors)` | 主要色提取与白平衡 |
+
+### 8.14 BL价格与重新匹配
+| 函数 | 功能 |
+|------|------|
+| `renderBLPricePanel(panelEl, part)` / `fetchAndRenderBLPrice(priceEl, part)` | 展示/抓取 BL 价格 |
+| `openManualPriceDialog(target, part)` | 手动回填价格 |
+| `blReconfigurePartById(partId)` / `blBatchReconfigure()` / `runBLBatchMatch(num, resultEl)` | 批量重新匹配 BL |
+| `matchPartNumToRB(partNum, colorId)` / `reconfigurePartBLMatch(part)` / `applyRematchToPart(part, result)` | 调整零件 BL 匹配 |
+| `handleAliasAfterRematch(aliasNum, rbNum)` | 重新匹配后同步别名 |
+
+### 8.15 清单页与输入面板（Q4）
+| 函数 | 功能 |
+|------|------|
+| `openListPage()` / `closeListPage()` / `renderListParts()` | 清单页打开/关闭/渲染 |
+| `addListPart(part)` / `addListPartFromSelector()` | 添加清单项 |
+| `identifyModel()` / `pickColor()` / `editQ4Value(field)` / `confirmQ4Input(btn)` | 识别型号、选色、编辑 Q4 值 |
+
 ---
 
-当前页面规划已完成核心功能实现，四个标签页（仓库管理、零件管理、零件搜索、系统设置）均已可用。盒子转仓、左右滑动切换盒子、称重计算、合并零件、零件图片管理、CSV 重复检测与合并导入等高级功能均已实现。仅"零件转盒"功能入口仍为开发中（alert 提示）。
+当前页面规划已完成核心功能实现，四个标签页（仓库管理、零件管理、零件搜索、系统设置）均已可用。盒子转仓、零件转盒、左右滑动切换盒子、称重计算、合并零件、零件图片管理、CSV 重复检测与合并导入、拍照识别与灰卡校准、BL 价格查询等高级功能均已实现。
