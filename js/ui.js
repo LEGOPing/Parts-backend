@@ -8381,7 +8381,11 @@ async function updateRB() {
             const _total = blPriceResult ? (blPriceResult.total || 0) : 0;
             const _cleared = blPriceResult ? (blPriceResult.cleared || 0) : 0;
             const _kept = blPriceResult ? (blPriceResult.kept || 0) : 0;
-            const _detail = `清理 ${_cleared} 条旧记录 · 读入 ${_total} 条${_kept > 0 ? ` · 保留 ${_kept} 条手动数据` : ''}`;
+            const _kbs = (blPriceResult && blPriceResult.keptBySource) || {};
+            const _keptDetail = [];
+            if (_kbs.manual) _keptDetail.push(`${_kbs.manual} 条手动`);
+            if (_kbs['bl-server']) _keptDetail.push(`${_kbs['bl-server']} 条服务端`);
+            const _detail = `清理 ${_cleared} 条旧离线 · 读入 ${_total} 条${_keptDetail.length ? ' · 保留 ' + _keptDetail.join(' + ') : ''}`;
             updateProgress(0.999,
                 `离线价格库 - ${blPriceResult && !blPriceResult.error ? '导入成功' : '读取失败'}`,
                 _detail);
