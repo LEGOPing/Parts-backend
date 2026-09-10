@@ -1188,41 +1188,50 @@ async function saveCachedBLPrice(data) {
     }
 }
 
-// 清理设备本地缓存中所有来源为"离线库"(source==='offline')的 BL 价格记录，
-// 为下次从 BL-price.json 全量读入让路，确保离线价格始终与 Gitee 最新版本一致、
-// 不受上一次导入的残留数据污染。
-// 保护手动回填(source==='manual')和服务端抓取(source==='bl-server')的记录。
-// 返回 { cleared: number, kept: number }
+// 清理设备本地缓存中的所有"离线来源"BL 价格记录，为下次从 BL-price.json 全量读入让路，
+// 确保离线价格始终与 Gitee 最新版本一致、不受上一次导入的残留数据污染。
+// 清理策略用 whitelist：只保护设备端独有的 manual 和 bl-server 记录，其余一律删除。
+//   保护项: source === 'manual' | 'bl-server'
+//   清理项: 所有其他值（'offline'、'bl-webview'、'rebrickable offline' 以及将来可能出现的任何
+//          新离线来源标识）——避免 blacklist 漏删。
+// 返回 { cleared: number, kept: number, keptBySource: object }
 async function clearOfflineBLPrices() {
     try {
         const db = await openRBDatabase();
         const all = await getAll(RB_STORES.PRICES);
         const toDelete = [];
+        const keptBySource = {};
         let kept = 0;
         for (const rec of all) {
-            if (rec && rec.source === 'offline' && rec.key) {
+            const s = rec && rec.source;
+            if (s === 'manual' || s === 'bl-server') {
+                kept++;
+                keptBySource[s] = (keptBySource[s] || 0) + 1;
+            } else if (rec && rec.key) {
                 toDelete.push(rec.key);
             } else {
-                kept++;
+                // 没有 key 的记录也一并清除，避免脏数据
+                if (rec && !rec.key) toDelete.push(null);
             }
         }
         if (toDelete.length === 0) {
-            return { cleared: 0, kept };
+            return { cleared: 0, kept, keptBySource };
         }
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(RB_STORES.PRICES, 'readwrite');
             const store = transaction.objectStore(RB_STORES.PRICES);
             let done = 0;
             for (const key of toDelete) {
+                if (key == null) continue;
                 store.delete(key);
                 done++;
             }
-            transaction.oncomplete = () => resolve({ cleared: done, kept });
+            transaction.oncomplete = () => resolve({ cleared: done, kept, keptBySource });
             transaction.onerror = (event) => reject(event.target.error);
         });
     } catch (error) {
         console.error('清理离线BL价格缓存失败:', error);
-        return { cleared: 0, kept: 0, error: error.message };
+        return { cleared: 0, kept: 0, keptBySource: {}, error: error.message };
     }
 }
 
