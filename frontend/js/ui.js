@@ -7488,7 +7488,7 @@ function showRBStatusHint(status) {
     // 异步获取统计数据并更新
     if (status === 'rb-ready' || status === 'rb-partial') {
         getRBStats().then(stats => {
-            const totalCount = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
+            const totalCount = stats ? Object.entries(stats).reduce((sum, [k, v]) => k.startsWith('_') ? sum : sum + v, 0) : 0;
             if (status === 'rb-ready' && totalCount === 0) {
                 hint.textContent = messages['rb-empty'].text;
                 hint.style.color = messages['rb-empty'].color;
@@ -8376,9 +8376,14 @@ async function updateRB() {
                 blPriceResult = await loadBLPriceLibraryToRBDb({ refresh: true });
             }
             importResults['bl_price'] = !(blPriceResult && blPriceResult.error);
+            const _added = blPriceResult ? (blPriceResult.added || 0) : 0;
+            const _total = blPriceResult ? (blPriceResult.total || 0) : 0;
+            const _detail = _added > 0
+                ? `已读取 ${_total} 条 / 更新 ${_added} 条`
+                : `已读取 ${_total} 条 / 全部已是最新`;
             updateProgress(0.999,
                 `离线价格库 - ${blPriceResult && !blPriceResult.error ? '导入成功' : '读取失败'}`,
-                `${blPriceResult.total}条/更新${blPriceResult.added}条`);
+                _detail);
         } catch (error) {
             console.warn('离线价格库加载失败（不影响RB主库）:', error.message);
             importResults['bl_price'] = false;
@@ -8401,7 +8406,13 @@ async function updateRB() {
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
             statsHtml += `<div>RB↔BL颜色映射: ${stats.rb_bl_map || 0} 条</div>`;
-            statsHtml += `<div>BL价格: ${stats.rb_prices || 0} 条</div>`;
+            const _ptotal = stats._rb_prices_total || 0;
+            const _pmat = stats.rb_prices || 0;
+            if (_ptotal === _pmat) {
+                statsHtml += `<div>BL价格: ${_pmat} 条（全部匹配库存）</div>`;
+            } else {
+                statsHtml += `<div>BL价格库: ${_ptotal} 条 · 匹配库存: ${_pmat} 条</div>`;
+            }
             statsHtml += '</div>';
         }
 

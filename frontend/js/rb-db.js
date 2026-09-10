@@ -229,9 +229,12 @@ async function getRBStats() {
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
         }
-        // BL价格条数改为只统计"与库存对应"的价格，避免价格目录数虚高到大于库存 零件+颜色 组合数。
-        // 库存(零件×RB颜色) 通过 rb_bl_map 映射为 (零件×BL颜色)，再统计命中这些组合的价格条数。
+        // BL价格同时统计"价格库总条数"和"与库存对应条数"两个口径：
+        //   _rb_prices_total — IndexedDB rb_prices store 里的原始总条数（与 BL-price.json 一致，
+        //                      用下划线前缀约定为"元数据"，不参与 Object.values(stats).reduce 总条数计算）
+        //   rb_prices        — 库存(零件×RB颜色) 通过 rb_bl_map 映射为 (零件×BL颜色) 后命中的条数
         try {
+            stats._rb_prices_total = stats.rb_prices; // 下划线前缀：不参与 totalCount reduce
             const rbToBl = {};
             for (const m of await getAll(RB_STORES.RB_BL_MAP)) {
                 if (m && m.id != null && m.bl_color_id != null) {
@@ -251,7 +254,7 @@ async function getRBStats() {
                 const k = String(p.part_num != null ? p.part_num : '').replace(/[^a-zA-Z0-9]/g, '') + '\u0000' + p.color_id;
                 if (invBlCombo.has(k)) matched++;
             }
-            stats.rb_prices = matched; // 只统计与库存零件+颜色对应的价格条数
+            stats.rb_prices = matched; // 覆盖为与库存零件+颜色对应的价格条数
         } catch (e) {
             console.warn('统计库存相关BL价格失败:', e);
         }
@@ -377,7 +380,7 @@ async function checkRBDatabase() {
         }
         
         const stats = await getRBStats();
-        const totalRecords = Object.values(stats).reduce((sum, v) => sum + v, 0);
+        const totalRecords = Object.entries(stats).reduce((sum, [k, v]) => k.startsWith('_') ? sum : sum + v, 0);
         
         return { 
             exists: true, 
@@ -475,7 +478,7 @@ async function hasLocalRBData() {
     try {
         const db = await openRBDatabase();
         const stats = await getRBStats();
-        const totalRecords = Object.values(stats).reduce((sum, v) => sum + v, 0);
+        const totalRecords = Object.entries(stats).reduce((sum, [k, v]) => k.startsWith('_') ? sum : sum + v, 0);
         return totalRecords > 0;
     } catch (error) {
         return false;
