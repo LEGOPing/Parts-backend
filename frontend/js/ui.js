@@ -7317,10 +7317,10 @@ async function loadRBOnStartup() {
             }
             // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
             loadIDAbcOnStartup();
-            // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
+            // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（先清旧离线记录再全量读入，非阻塞）
             if (typeof loadBLPriceLibraryToRBDb === 'function') {
-                loadBLPriceLibraryToRBDb({ refresh: true }).then(r => {
-                    if (r && r.success) console.log(`离线价格库补充加载: ${r.added}/${r.total} 条`);
+                loadBLPriceLibraryToRBDb().then(r => {
+                    if (r && r.success) console.log(`离线价格库补充加载: 清理 ${r.cleared} 条 / 读入 ${r.total} 条${r.kept ? ` / 保留 ${r.kept} 条手动` : ''}`);
                 }).catch(e => console.warn('离线价格库补充加载失败:', e));
             }
             showRBStatusHint('rb-ready');
@@ -7420,10 +7420,10 @@ async function loadRBOnStartup() {
 
         // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
         loadIDAbcOnStartup();
-        // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（非阻塞，失败仅告警）
+        // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（先清旧离线记录再全量读入，非阻塞）
         if (typeof loadBLPriceLibraryToRBDb === 'function') {
-            loadBLPriceLibraryToRBDb({ refresh: true }).then(r => {
-                if (r && r.success) console.log(`离线价格库加载: ${r.added}/${r.total} 条`);
+            loadBLPriceLibraryToRBDb().then(r => {
+                if (r && r.success) console.log(`离线价格库加载: 清理 ${r.cleared} 条 / 读入 ${r.total} 条${r.kept ? ` / 保留 ${r.kept} 条手动` : ''}`);
             }).catch(e => console.warn('离线价格库加载失败:', e));
         }
 
@@ -8368,19 +8368,20 @@ async function updateRB() {
         }
 
         // 加载最新离线 Bricklink 价格库（BL-price.json → rb_prices）
-        // refresh=true：用最新 BL-price 覆盖旧的离线来源价格，手动回填(source='manual')结果保留
-        let blPriceResult = { success: false, total: 0, added: 0 };
+        // 策略：先清理 source='offline' 的旧缓存，再全量读入，确保无污染；
+        // source='manual' 和 source='bl-server' 的记录不被清理
+        let blPriceResult = { success: false, total: 0, added: 0, cleared: 0, kept: 0 };
         try {
-            updateProgress(0.995, '读取离线价格库...', 'BL-price.json');
+            updateProgress(0.993, '清理旧离线价格缓存...', 'source=offline');
             if (typeof loadBLPriceLibraryToRBDb === 'function') {
-                blPriceResult = await loadBLPriceLibraryToRBDb({ refresh: true });
+                blPriceResult = await loadBLPriceLibraryToRBDb();
             }
             importResults['bl_price'] = !(blPriceResult && blPriceResult.error);
             const _added = blPriceResult ? (blPriceResult.added || 0) : 0;
             const _total = blPriceResult ? (blPriceResult.total || 0) : 0;
-            const _detail = _added > 0
-                ? `已读取 ${_total} 条 / 更新 ${_added} 条`
-                : `已读取 ${_total} 条 / 全部已是最新`;
+            const _cleared = blPriceResult ? (blPriceResult.cleared || 0) : 0;
+            const _kept = blPriceResult ? (blPriceResult.kept || 0) : 0;
+            const _detail = `清理 ${_cleared} 条旧记录 · 读入 ${_total} 条${_kept > 0 ? ` · 保留 ${_kept} 条手动数据` : ''}`;
             updateProgress(0.999,
                 `离线价格库 - ${blPriceResult && !blPriceResult.error ? '导入成功' : '读取失败'}`,
                 _detail);

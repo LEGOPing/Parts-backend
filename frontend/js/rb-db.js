@@ -1188,6 +1188,44 @@ async function saveCachedBLPrice(data) {
     }
 }
 
+// 清理设备本地缓存中所有来源为"离线库"(source==='offline')的 BL 价格记录，
+// 为下次从 BL-price.json 全量读入让路，确保离线价格始终与 Gitee 最新版本一致、
+// 不受上一次导入的残留数据污染。
+// 保护手动回填(source==='manual')和服务端抓取(source==='bl-server')的记录。
+// 返回 { cleared: number, kept: number }
+async function clearOfflineBLPrices() {
+    try {
+        const db = await openRBDatabase();
+        const all = await getAll(RB_STORES.PRICES);
+        const toDelete = [];
+        let kept = 0;
+        for (const rec of all) {
+            if (rec && rec.source === 'offline' && rec.key) {
+                toDelete.push(rec.key);
+            } else {
+                kept++;
+            }
+        }
+        if (toDelete.length === 0) {
+            return { cleared: 0, kept };
+        }
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(RB_STORES.PRICES, 'readwrite');
+            const store = transaction.objectStore(RB_STORES.PRICES);
+            let done = 0;
+            for (const key of toDelete) {
+                store.delete(key);
+                done++;
+            }
+            transaction.oncomplete = () => resolve({ cleared: done, kept });
+            transaction.onerror = (event) => reject(event.target.error);
+        });
+    } catch (error) {
+        console.error('清理离线BL价格缓存失败:', error);
+        return { cleared: 0, kept: 0, error: error.message };
+    }
+}
+
 // 从 weights.json 对象导入到 rb_weights store
 // weightsJson 格式: { "3001": 2.32, ... }
 async function importWeightsFromJSON(weightsJson, onProgress) {
