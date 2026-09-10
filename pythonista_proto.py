@@ -84,8 +84,8 @@ OP_JSON   = 'BL-price.old'       # 上一版价格文件（OP）：由 NP 改名
 # ======================================================
 # 版本/配置
 # ======================================================
-VERSION    = 'v13.2'  # 每次功能变动必升，用于 iPhone 上一眼确认跑的是哪个版本
-GIT_SHA    = '918f72b'  # 对应 Gitee blob sha 前 7 位，从 Gitee API 取
+VERSION    = 'v13.3'  # 每次功能变动必升，用于 iPhone 上一眼确认跑的是哪个版本
+GIT_SHA    = '57f6bf8'  # 对应 Gitee blob sha 前 7 位，从 Gitee API 取
 LOG_FILE  = 'progress.log'
 # 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
 CSV_FILE   = 'RB_BL_colors.csv'
@@ -869,13 +869,14 @@ def _batch():
                 data = _poll_price(_webview, mapped_part, bl_color)
                 # 用 B 重试也要节奏延时（先不 pace，等下面统一 pace）
             if data:
-                # 用实际用到的 BL 型号（R 或 B）构建 record
-                rec = _build_record(_actual_bl_part, rb_color, bl_color, data)
+                # 保存时必须用原始 RB 型号（part），绝不能用映射过来的 B
+                # 否则系统查价时用 R=6223 找不到已存的 B=3003 记录
+                rec = _build_record(part, rb_color, bl_color, data)
                 _results.append(rec)
                 l6 = data.get('last_6_months') or {}
-                tag = ' [映射:%s]' % part if _used_fallback else ''
+                tag = ' [映射:BL用%s]' % _actual_bl_part if _used_fallback else ''
                 log('    [%d/%d] 成功 %s:RB%s→BL%s%s avg=%s %s' % (
-                    idx, _N, _actual_bl_part, rb_color, bl_color, tag,
+                    idx, _N, part, rb_color, bl_color, tag,
                     l6.get('avg'), l6.get('currency', '')))
             else:
                 # R 失败且 B 也不存在/也失败 → 记录到 CSV R 列，等用户填 B
