@@ -285,6 +285,16 @@
         </div>
     </div>
     
+    <!-- 手机横屏锁定遮罩：窄屏横屏时提示用户旋转设备 -->
+    <div class="phone-rotate-overlay" id="phoneRotateOverlay">
+        <div class="phone-rotate-icon">
+            <div class="phone-body"></div>
+            <div class="phone-screen"></div>
+        </div>
+        <div class="phone-rotate-title">请将设备竖屏使用</div>
+        <div class="phone-rotate-sub">本应用在手机上仅支持竖屏显示<br>请旋转设备后继续使用</div>
+    </div>
+    
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
