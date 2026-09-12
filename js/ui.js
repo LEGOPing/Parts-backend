@@ -8958,6 +8958,10 @@ async function renderListParts() {
             <div class="lpc-right">
                 <div class="lpc-repo-label"></div>
                 <div class="lpc-repo-total"></div>
+                <div class="lpc-repo-detail" style="display:none;">
+                    <span class="lpc-repo-new">新<span class="lpc-repo-new-qty">0</span></span>
+                    <span class="lpc-repo-used">旧<span class="lpc-repo-used-qty">0</span></span>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -9033,17 +9037,27 @@ async function enrichListPartCard(card, part) {
         });
     }
 
-    // ④ 该零件在系统各仓库的数量总数（点击可查看各仓库详情）
+    // ④ 该零件（按型号+颜色匹配）在系统各仓库的数量总数（点击可查看各仓库详情，区分新/旧状态）
     try {
-        const summary = await getListPartRepoSummary(partNum);
+        const summary = await getListPartRepoSummary(partNum, colorId);
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
+        const detailEl = card.querySelector('.lpc-repo-detail');
+        const newQtyEl = card.querySelector('.lpc-repo-new-qty');
+        const usedQtyEl = card.querySelector('.lpc-repo-used-qty');
         if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共：` : '';
         if (totalEl) {
             totalEl.textContent = summary.total;
+            // 显示新/旧数量详情
+            if (detailEl && summary.repoCount) {
+                detailEl.style.display = 'flex';
+                if (newQtyEl) newQtyEl.textContent = summary.totalNew;
+                if (usedQtyEl) usedQtyEl.textContent = summary.totalUsed;
+            }
             if (summary.repoCount) {
-                totalEl.title = '点击查看各仓库数量';
-                totalEl.addEventListener('click', () => showListPartRepoDetail(partNum));
+                totalEl.title = '点击查看各仓库数量（按型号+颜色匹配）';
+                totalEl.style.cursor = 'pointer';
+                totalEl.addEventListener('click', () => showListPartRepoDetail(partNum, colorId));
             } else {
                 totalEl.title = '系统暂无该零件库存';
             }
@@ -9053,13 +9067,13 @@ async function enrichListPartCard(card, part) {
     }
 }
 
-// 搜索该零件在系统各仓库的数量汇总（按 part_num 精确匹配，跨仓库）
-async function getListPartRepoSummary(partNum) {
+// 搜索该零件在系统各仓库的数量汇总（按 part_num + color_id 精确匹配，跨仓库，区分新/旧状态）
+async function getListPartRepoSummary(partNum, colorId) {
     try {
         const [repos, boxes, parts] = await Promise.all([
             getRepositories(),
             supabaseRequest('boxes', { select: 'id,repository_id' }),
-            supabaseRequest('parts', { select: 'id,part_num,quantity,box_id' })
+            supabaseRequest('parts', { select: 'id,part_num,color_id,is_new,quantity,box_id' })
         ]);
         const boxRepoMap = {};
         (boxes || []).forEach((b) => { boxRepoMap[b.id] = b.repository_id; });
@@ -9068,33 +9082,51 @@ async function getListPartRepoSummary(partNum) {
         const perRepo = {};
         (parts || []).forEach((p) => {
             if (p.part_num !== partNum) return;
+            // 如果指定了颜色，则过滤颜色匹配的记录
+            if (colorId != null && colorId !== '' && String(p.color_id) !== String(colorId)) return;
             const rid = boxRepoMap[p.box_id];
             if (rid == null) return;
-            perRepo[rid] = (perRepo[rid] || 0) + (p.quantity || 0);
+            if (!perRepo[rid]) { perRepo[rid] = { newQty: 0, usedQty: 0, total: 0 }; }
+            const qty = p.quantity || 0;
+            if (p.is_new) {
+                perRepo[rid].newQty += qty;
+            } else {
+                perRepo[rid].usedQty += qty;
+            }
+            perRepo[rid].total += qty;
         });
         const entries = Object.keys(perRepo).map((id) => ({
             id: Number(id),
             name: repoNameMap[id] || ('仓库' + id),
-            quantity: perRepo[id]
+            newQty: perRepo[id].newQty,
+            usedQty: perRepo[id].usedQty,
+            quantity: perRepo[id].total
         }));
         const total = entries.reduce((s, e) => s + e.quantity, 0);
-        return { repos: entries, total: total, repoCount: entries.length };
+        const totalNew = entries.reduce((s, e) => s + e.newQty, 0);
+        const totalUsed = entries.reduce((s, e) => s + e.usedQty, 0);
+        return { repos: entries, total: total, totalNew: totalNew, totalUsed: totalUsed, repoCount: entries.length };
     } catch (error) {
         console.error('获取清单零件仓库汇总失败:', error.message);
-        return { repos: [], total: 0, repoCount: 0 };
+        return { repos: [], total: 0, totalNew: 0, totalUsed: 0, repoCount: 0 };
     }
 }
 
-// 弹窗显示该零件在各个仓库的数量详情
-async function showListPartRepoDetail(partNum) {
-    const summary = await getListPartRepoSummary(partNum);
+// 弹窗显示该零件在各个仓库的数量详情（区分新/旧状态）
+async function showListPartRepoDetail(partNum, colorId) {
+    const summary = await getListPartRepoSummary(partNum, colorId);
     const rows = summary.repos.length
         ? summary.repos.map((r) => `
             <div class="repo-detail-row">
                 <span class="repo-detail-name">${escapeHtml(r.name)}</span>
                 <span class="repo-detail-qty">${escapeHtml(r.quantity)}</span>
+                <div class="repo-detail-status">
+                    <span class="repo-detail-new">新:${escapeHtml(r.newQty)}</span>
+                    <span class="repo-detail-used">旧:${escapeHtml(r.usedQty)}</span>
+                </div>
             </div>`).join('')
         : '<div class="repo-detail-empty">系统暂无该零件库存</div>';
+    const colorHint = (colorId != null && colorId !== '') ? `（颜色ID:${escapeHtml(String(colorId))}）` : '';
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -9102,13 +9134,14 @@ async function showListPartRepoDetail(partNum) {
     sheet.className = 'modal-content repo-detail-modal';
     sheet.innerHTML = `
         <div class="modal-header">
-            <span class="modal-title">${escapeHtml(partNum)} 仓库分布</span>
+            <span class="modal-title">${escapeHtml(partNum)}${colorHint} 仓库分布</span>
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         </div>
         <div class="modal-body">
             <div class="repo-detail-list">${rows}</div>
+            ${summary.repos.length ? `<div class="repo-detail-total">总计：<span class="repo-detail-total-qty">${summary.total}</span> <span class="repo-detail-total-new">新${summary.totalNew}</span> <span class="repo-detail-total-used">旧${summary.totalUsed}</span></div>` : ''}
         </div>
     `;
     overlay.appendChild(sheet);
