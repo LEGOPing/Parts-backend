@@ -5238,7 +5238,7 @@ body {
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
-    height: 72px;
+    height: 76px;
     background: var(--light-gray-color);
     border: 1px solid var(--light-gray-color);
     border-radius: 8px;
@@ -5246,11 +5246,11 @@ body {
     overflow: hidden;
 }
 
-/* 左：零件图片（固定 72px） */
+/* 左：零件图片（固定 76px） */
 .lpc-left {
-    flex: 0 0 72px;
-    width: 72px;
-    height: 72px;
+    flex: 0 0 76px;
+    width: 76px;
+    height: 76px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5286,7 +5286,7 @@ body {
 .lpc-mid {
     flex: 1 1 auto;
     min-width: 0;
-    height: 72px;
+    height: 76px;
     display: flex;
     flex-direction: column;
     padding: 0 6px;
@@ -5395,7 +5395,7 @@ body {
 .lpc-right {
     flex: 0 0 64px;
     width: 64px;
-    height: 72px;
+    height: 76px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
@@ -5404,11 +5404,11 @@ body {
 }
 
 .lpc-repo-label {
-    flex: 0 0 24px;
-    height: 24px;
+    flex: 0 0 18px;
+    height: 18px;
     font-size: 8px;
     color: #555;
-    line-height: 12px;
+    line-height: 10px;
     display: flex;
     align-items: center;
     overflow: hidden;
@@ -5427,6 +5427,39 @@ body {
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
+}
+
+.lpc-repo-detail {
+    flex: 0 0 auto;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    line-height: 14px;
+    margin-top: 1px;
+}
+
+.lpc-repo-new,
+.lpc-repo-used {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    padding: 0 3px;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 9px;
+    line-height: 14px;
+}
+
+.lpc-repo-new {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.lpc-repo-used {
+    background-color: #fff3e0;
+    color: #e65100;
 }
 
 /* 仓库分布详情弹窗 */
@@ -5467,6 +5500,50 @@ body {
     text-align: center;
     color: var(--dark-gray-color);
     font-size: 13px;
+}
+
+.repo-detail-status {
+    display: flex;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.repo-detail-new {
+    color: #2e7d32;
+    font-weight: 500;
+}
+
+.repo-detail-used {
+    color: #e65100;
+    font-weight: 500;
+}
+
+.repo-detail-total {
+    padding: 10px 4px 4px;
+    font-size: 13px;
+    color: #555;
+    border-top: 1px solid #eee;
+    margin-top: 4px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    align-items: center;
+}
+
+.repo-detail-total-qty {
+    font-weight: bold;
+    font-size: 15px;
+    color: var(--black-color);
+}
+
+.repo-detail-total-new {
+    color: #2e7d32;
+    font-size: 12px;
+}
+
+.repo-detail-total-used {
+    color: #e65100;
+    font-size: 12px;
 }
 
 /* Q4：水平分 4 区（型号/颜色/数量/添加按钮） */
