@@ -7217,6 +7217,24 @@ async function doConfirmCSVImport() {
 
 async function initializeApp() {
     try {
+        // ============ 手机竖屏锁定检测 ============
+        function checkPhoneOrientation() {
+            const overlay = document.getElementById('phoneRotateOverlay');
+            if (!overlay) return;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const isNarrow = Math.min(w, h) < 768;  // 短边 < 768 视为手机级屏幕
+            const isLandscape = w > h;
+            if (isNarrow && isLandscape) {
+                overlay.classList.add('show');
+            } else {
+                overlay.classList.remove('show');
+            }
+        }
+        checkPhoneOrientation();
+        window.addEventListener('orientationchange', () => setTimeout(checkPhoneOrientation, 100));
+        window.addEventListener('resize', checkPhoneOrientation);
+
         const P = 46;
         document.documentElement.style.setProperty('--P', P);
         document.documentElement.style.setProperty('--card-width', (2 * P) + 'px');

@@ -3056,6 +3056,8 @@ body {
     white-space: nowrap;
 }
 
+/* ============ 手机竖屏（默认基准，< 768px） ============ */
+/* 默认值已在上方定义：零件 3 列、盒子 4 列、统计 2 列、表单 wrap */
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -3066,14 +3068,260 @@ body {
     }
 }
 
-@media (min-width: 768px) {
+/* ============ 手机横屏锁定：窄屏横屏时显示旋转提示遮罩 ============ */
+@media (max-width: 767px) and (orientation: landscape) {
+    body > .container {
+        display: none;
+    }
+    /* 遮罩层由 JS 动态插入，这里预留样式定义在文件末尾 */
+}
+
+/* ============ iPad 竖屏：768px - 1023px（含 portrait） ============ */
+@media (min-width: 768px) and (max-width: 1023px) {
     .container {
-        max-width: 1200px;
+        max-width: 100%;
         margin: 0 auto;
     }
-    
-    .box-grid, .part-grid {
-        grid-template-columns: repeat(4, 1fr);
+
+    /* 头部更大气 */
+    .header-content {
+        height: 90px;
+    }
+    .logo img {
+        height: 90px !important;
+        width: 90px !important;
+        max-height: 90px !important;
+        max-width: 90px !important;
+    }
+    .title-main {
+        font-size: 40px;
+    }
+    .title-sub {
+        font-size: 20px;
+    }
+    .title {
+        top: 0;
+        right: calc(50% - 235px);
+        height: 90px;
+    }
+    .logo {
+        top: 0;
+        left: calc(50% - 235px);
+    }
+
+    /* 导航按钮增大 */
+    .bb-area {
+        height: 100px;
+    }
+    .bb-area .nav button {
+        width: 110px;
+        height: 76px;
+        font-size: 13px;
+    }
+    .bb-area .nav button.active {
+        font-size: 17px;
+    }
+
+    /* 盒子网格 5 列 */
+    .box-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .box-card {
+        height: 72px;
+    }
+    .box-card-name {
+        font-size: 16px;
+    }
+    .box-delete-btn {
+        width: 20px;
+        height: 20px;
+        font-size: 16px;
+    }
+
+    /* 零件网格 5 列 */
+    .part-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .part-image {
+        width: 72px;
+        height: 72px;
+    }
+    .part-num {
+        font-size: 14px;
+    }
+    .part-name {
+        font-size: 12px;
+    }
+
+    /* 仓库卡片横向更充裕 */
+    .repository-card {
+        width: calc((100% - 40px) / 5);
+        min-width: 120px;
+        height: 80px;
+    }
+    .repo-card-name {
+        font-size: 16px;
+    }
+
+    /* 统计网格 5 列 */
+    .stats-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .stat-value {
+        font-size: 28px;
+    }
+    .stat-label {
+        font-size: 14px;
+    }
+
+    /* 搜索结果卡片 */
+    .search-result-card {
+        height: 104px;
+    }
+    .src-left {
+        width: 104px;
+    }
+
+    /* 表单更舒展 */
+    .form-row {
+        flex-wrap: nowrap;
+    }
+}
+
+/* ============ iPad 横屏 / 大平板 / 桌面：≥ 1024px ============ */
+@media (min-width: 1024px) {
+    .container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    /* 头部更舒展 */
+    .header-content {
+        height: 96px;
+    }
+    .logo img {
+        height: 96px !important;
+        width: 96px !important;
+        max-height: 96px !important;
+        max-width: 96px !important;
+    }
+    .title-main {
+        font-size: 44px;
+    }
+    .title-sub {
+        font-size: 22px;
+    }
+    .title {
+        top: 0;
+        right: calc(50% - 260px);
+        height: 96px;
+    }
+    .logo {
+        top: 0;
+        left: calc(50% - 260px);
+    }
+
+    /* 导航按钮更大更清晰 */
+    .bb-area {
+        height: 108px;
+    }
+    .bb-area .nav button {
+        width: 120px;
+        height: 84px;
+        font-size: 14px;
+    }
+    .bb-area .nav button.active {
+        font-size: 18px;
+    }
+
+    /* 盒子网格 6 列 */
+    .box-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .box-card {
+        height: 76px;
+    }
+    .box-card-name {
+        font-size: 17px;
+    }
+
+    /* 零件网格 6 列 */
+    .part-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .part-image {
+        width: 80px;
+        height: 80px;
+    }
+    .part-num {
+        font-size: 14px;
+    }
+    .part-name {
+        font-size: 12px;
+    }
+    .part-color {
+        font-size: 11px;
+    }
+
+    /* 仓库卡片更宽 */
+    .repository-card {
+        width: calc((100% - 50px) / 6);
+        min-width: 140px;
+        height: 84px;
+    }
+    .repo-card-name {
+        font-size: 17px;
+    }
+
+    /* 统计网格 6 列 */
+    .stats-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .stat-value {
+        font-size: 30px;
+    }
+    .stat-label {
+        font-size: 14px;
+    }
+
+    /* 搜索结果卡片更大 */
+    .search-result-card {
+        height: 112px;
+    }
+    .src-left {
+        width: 112px;
+    }
+    .src-row {
+        font-size: 15px;
+    }
+
+    /* 搜索页筛选区双列更舒展 */
+    .filter-row {
+        gap: 12px;
+    }
+    .filter-group {
+        min-width: 0;
+    }
+
+    /* 动作按钮（零件管理页）更大 */
+    .part-action-buttons {
+        gap: 12px;
+    }
+    .action-btn {
+        font-size: 15px;
+    }
+
+    /* 统计弹窗更宽 */
+    .modal-content {
+        max-width: 480px;
+    }
+    .add-part-modal {
+        max-width: 560px !important;
+    }
+
+    /* 表单不换行 */
+    .form-row {
+        flex-wrap: nowrap;
     }
 }
 
@@ -5430,4 +5678,77 @@ body {
     background: #e8f0fe;
     border-color: #90b8f0;
     color: #1565C0;
+}
+/* ============ 手机横屏锁定遮罩 ============ */
+.phone-rotate-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #F2CD37;
+    z-index: 99999;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    color: #333;
+    padding: 20px;
+    box-sizing: border-box;
+    text-align: center;
+    overscroll-behavior: none;
+}
+
+.phone-rotate-overlay.show {
+    display: flex;
+}
+
+.phone-rotate-icon {
+    width: 100px;
+    height: 100px;
+    position: relative;
+    animation: rotate-hint 2s ease-in-out infinite;
+}
+
+.phone-rotate-icon .phone-body {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 90px;
+    background: #333;
+    border-radius: 10px;
+    border: 4px solid #333;
+}
+
+.phone-rotate-icon .phone-screen {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 44px;
+    height: 64px;
+    background: #fff;
+    border-radius: 3px;
+}
+
+@keyframes rotate-hint {
+    0%, 100% { transform: rotate(0deg); }
+    30% { transform: rotate(-60deg); }
+    70% { transform: rotate(-60deg); }
+}
+
+.phone-rotate-title {
+    font-size: 22px;
+    font-weight: bold;
+    color: #333;
+}
+
+.phone-rotate-sub {
+    font-size: 15px;
+    color: #555;
+    line-height: 1.6;
+    max-width: 300px;
 }
