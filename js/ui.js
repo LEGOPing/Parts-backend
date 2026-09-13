@@ -1514,12 +1514,19 @@ function showRecognizeModal() {
     grayCardInput.addEventListener('change', () => processGrayCardFile(grayCardInput));
     document.body.appendChild(grayCardInput);
     
-    // 重置识别结果
+    // 重置所有拍照识别相关状态（防止上次使用后/取消后残留的"正在识别中"卡死）
+    recognizeUploading = false;
+    recognizeFallbackSetColor = false;
     recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
 }
 
 // 关闭识别弹窗
 function closeRecognizeModal(cancel) {
+    // 重置所有拍照识别相关状态（防止上次使用后/取消后残留的"正在识别中"卡死）
+    recognizeUploading = false;
+    recognizeFallbackSetColor = false;
+    recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
+    
     // 清理相机输入
     const input = document.getElementById('recognize-camera-input');
     if (input) input.remove();
@@ -1528,11 +1535,6 @@ function closeRecognizeModal(cancel) {
     
     const overlay = document.getElementById('recognize-modal-overlay');
     if (overlay) overlay.remove();
-    
-    if (cancel) {
-        // 取消则不保留任何结果
-        recognizeResultData = { partNum: '', partName: '', colorId: '', colorName: '' };
-    }
 }
 
 // 确认识别结果，填入添加零件表单
