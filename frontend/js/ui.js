@@ -9365,7 +9365,7 @@ async function renderListParts() {
                 </div>
                 <div class="lpc-mid">
                     <div class="lpc-num">${escapeHtml(partNum)}</div>
-                    <div class="lpc-name"></div>
+                    <div class="lpc-name" style="color:#666">Part #${escapeHtml(partNum)}</div>
                     <div class="lpc-row3">
                         <div class="lpc-color">
                             <div class="lpc-color-id">${escapeHtml(colorId)}</div>
@@ -9584,7 +9584,7 @@ async function enrichListPartCard(card, part) {
     if (card.dataset.enrichToken !== String(token)) return;
     if (nameEl && !nameResolved && rawPartNum) {
         nameEl.textContent = 'Part #' + rawPartNum;
-        nameEl.style.color = '#999';
+        nameEl.style.color = '#666';
     }
 
     // ② 颜色名称（RB 数据库）
