@@ -9731,9 +9731,9 @@ function pickColor() {
 // “+”：按当前型号/颜色/数量将零件添加到清单（已存在则数量累加）
 function addListPartFromSelector() {
     if (!listModel) { showToast('请先输入型号ID'); return; }
-    if (!listColor) { showToast('请先选择颜色'); return; }
+    if (listColor === '' || listColor == null) { showToast('请先选择颜色'); return; }
 
-    const idx = listParts.findIndex((p) => (p.part_num || '') === listModel && (p.colorId || '') === listColor);
+    const idx = listParts.findIndex((p) => (p.part_num || '') === listModel && (String(p.colorId ?? '')) === String(listColor));
     if (idx >= 0) {
         listParts[idx].quantity = (listParts[idx].quantity || 0) + listQty;
     } else {
@@ -9750,7 +9750,8 @@ function refreshQ4Labels() {
     const cv = document.getElementById('q4-color-val');
     const qv = document.getElementById('q4-qty-val');
     if (mv) mv.textContent = listModel || '—';
-    if (cv) cv.textContent = listColor || '—';
+    // 颜色 0（黑色）也是有效值，不能用 || 判断（|| 会把 0 当作 falsy）
+    if (cv) cv.textContent = (listColor === '' || listColor == null) ? '—' : String(listColor);
     if (qv) qv.textContent = String(listQty);
 }
 
