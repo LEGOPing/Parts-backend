@@ -9380,11 +9380,11 @@ async function renderListParts() {
                     </div>
                     <div class="lpc-inv">
                         <div class="lpc-inv-cell"></div>
-                        <div class="lpc-inv-cell lpc-repo-label"></div>
+                        <div class="lpc-inv-cell lpc-repo-trigger lpc-repo-label"></div>
                         <div class="lpc-inv-cell">新</div>
                         <div class="lpc-inv-cell">旧</div>
                         <div class="lpc-inv-cell">现有库存</div>
-                        <div class="lpc-inv-cell lpc-repo-total">0</div>
+                        <div class="lpc-inv-cell lpc-repo-trigger lpc-repo-total">0</div>
                         <div class="lpc-inv-cell"><span class="lpc-repo-new-qty">0</span></div>
                         <div class="lpc-inv-cell"><span class="lpc-repo-used-qty">0</span></div>
                     </div>
@@ -9634,21 +9634,24 @@ async function enrichListPartCard(card, part) {
         }
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
-        const qtyWrap = card.querySelector('.lpc-qty-wrap');
         const newQtyEl = card.querySelector('.lpc-repo-new-qty');
         const usedQtyEl = card.querySelector('.lpc-repo-used-qty');
         if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共` : '';
         if (totalEl) totalEl.textContent = summary.total;
         if (newQtyEl) newQtyEl.textContent = summary.totalNew;
         if (usedQtyEl) usedQtyEl.textContent = summary.totalUsed;
-        // 点击 LPn（数量区）查看库存详情
-        const clickTarget = qtyWrap || totalEl;
-        if (clickTarget && summary.repoCount) {
-            clickTarget.title = '点击查看各仓库数量（按型号+颜色匹配）';
-            clickTarget.style.cursor = 'pointer';
-            clickTarget.addEventListener('click', () => showListPartRepoDetail(rawPartNum, colorId, effectivePartNum));
-        } else if (clickTarget) {
-            clickTarget.title = '系统暂无该零件库存';
+        // 点击 LPr 第 2 列（总仓库数 + 总数量）查看库存详情
+        const triggers = card.querySelectorAll('.lpc-repo-trigger');
+        const handler = () => showListPartRepoDetail(rawPartNum, colorId, effectivePartNum);
+        // 每次 renderListParts 会重建 innerHTML，旧监听自动失效
+        if (summary.repoCount) {
+            triggers.forEach(t => {
+                t.title = '点击查看各仓库数量（按型号+颜色匹配）';
+                t.style.cursor = 'pointer';
+                t.addEventListener('click', handler);
+            });
+        } else {
+            triggers.forEach(t => { t.title = '系统暂无该零件库存'; });
         }
     } catch (e) {
         console.error('获取清单零件仓库汇总失败:', e);
