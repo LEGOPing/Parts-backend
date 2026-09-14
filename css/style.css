@@ -5635,30 +5635,88 @@ body {
 
 /* ============ 清单文件管理弹窗 ============ */
 .list-file-modal {
-    width: 90%;
+    width: 92%;
     max-width: 420px;
-    max-height: 80vh;
-}
-
-.list-file-modal .modal-body {
-    padding: 8px 12px;
-    max-height: calc(80vh - 50px);
-    overflow-y: auto;
-}
-
-.list-file-toolbar {
+    max-height: 85vh;
+    background: #fff;
+    border-radius: 10px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* 第一行：标题 + 关闭 */
+.lf-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
     border-bottom: 1px solid #eee;
+    box-sizing: border-box;
+}
+
+.lf-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--black-color);
+}
+
+.lf-close-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: #333;
+    cursor: pointer;
+}
+
+/* 第二行：当前清单 */
+.lf-current-row {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid #f5f5f5;
+    box-sizing: border-box;
+    gap: 4px;
+}
+
+.lf-current-row .lfc-label {
+    font-weight: 500;
+    color: #555;
+    font-size: 12px;
+}
+
+.lf-current-row .lfc-name {
+    color: #2196F3;
+    font-family: monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* 第三行：5 个按钮 */
+.lf-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 5px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+    box-sizing: border-box;
 }
 
 .lft-btn {
-    flex: 1 1 auto;
-    min-width: 56px;
-    padding: 6px 8px;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 4px;
     font-size: 12px;
     font-weight: 500;
     border: none;
@@ -5666,41 +5724,25 @@ body {
     cursor: pointer;
     color: white;
     white-space: nowrap;
+    box-sizing: border-box;
 }
 
 .lft-new { background: #4CAF50; }
-.lft-save { background: #2196F3; }
-.lft-save-as { background: #00BCD4; }
-.lft-export { background: #FF9800; }
 .lft-import { background: #9C27B0; }
+.lft-export { background: #FF9800; }
+.lft-save-as { background: #00BCD4; }
+.lft-save { background: #2196F3; }
 
-.list-file-current {
-    font-size: 11px;
-    color: #555;
-    padding: 6px 8px;
-    background: #f5faff;
-    border: 1px solid #e3f2fd;
-    border-radius: 4px;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.lfc-label { font-weight: 500; }
-.lfc-name {
-    color: #2196F3;
-    font-family: monospace;
-    font-size: 10px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.list-file-list {
+/* 文件列表区 */
+.lf-file-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
 }
 
 .list-file-empty {
@@ -5710,14 +5752,61 @@ body {
     font-size: 13px;
 }
 
+/* 左滑容器 */
+.lf-item-wrap {
+    position: relative;
+    height: 52px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* 左滑后露出的按钮区 */
+.lf-slide-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 170px;
+    height: 52px;
+    display: flex;
+    gap: 4px;
+    padding: 0;
+    box-sizing: border-box;
+    z-index: 1;
+}
+
+.lf-slide-actions .lfa-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 4px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: white;
+    box-sizing: border-box;
+}
+
+.lfa-open { background: #2196F3; }
+.lfa-rename { background: #FF9800; }
+.lfa-del { background: #F44336; }
+
+/* 卡片主体（滑动的元素） */
 .list-file-item {
+    position: relative;
+    z-index: 2;
+    height: 52px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px 10px;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 10px;
     background: #fafafa;
     border: 1px solid #eee;
     border-radius: 6px;
+    box-sizing: border-box;
+    touch-action: pan-y;
 }
 
 .list-file-name {
@@ -5733,27 +5822,6 @@ body {
     font-size: 10px;
     color: #888;
 }
-
-.list-file-actions {
-    display: flex;
-    gap: 4px;
-    margin-top: 2px;
-}
-
-.lfa-btn {
-    flex: 1 1 auto;
-    padding: 4px 6px;
-    font-size: 11px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    color: white;
-    font-weight: 500;
-}
-
-.lfa-open { background: #2196F3; }
-.lfa-rename { background: #FF9800; }
-.lfa-del { background: #F44336; }
 
 /* Q4：水平分 4 区（型号/颜色/数量/添加按钮） */
 .list-q4 {

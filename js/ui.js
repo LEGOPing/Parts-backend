@@ -9008,41 +9008,39 @@ async function showListFileManager() {
             const date = f.updatedAt ? new Date(f.updatedAt) : null;
             const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : '';
             return `
-            <div class="list-file-item">
-                <div class="list-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
-                <div class="list-file-meta">${(f.parts || []).length}项 · ${dateStr}</div>
-                <div class="list-file-actions">
+            <div class="lf-item-wrap">
+                <div class="lf-slide-actions">
                     <button class="lfa-btn lfa-open" data-name="${escapeHtml(f.name)}">打开</button>
                     <button class="lfa-btn lfa-rename" data-name="${escapeHtml(f.name)}">重命名</button>
                     <button class="lfa-btn lfa-del" data-name="${escapeHtml(f.name)}">删除</button>
+                </div>
+                <div class="list-file-item" data-name="${escapeHtml(f.name)}">
+                    <div class="list-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+                    <div class="list-file-meta">${(f.parts || []).length}项 · ${dateStr}</div>
                 </div>
             </div>`;
         }).join('')
         : '<div class="list-file-empty">暂无已保存的清单</div>';
 
     overlay.innerHTML = `
-        <div class="modal-content list-file-modal">
-            <div class="modal-header">
-                <span class="modal-title">清单管理</span>
-                <div class="modal-actions">
-                    <button class="btn-cancel" data-close>关闭</button>
-                </div>
+        <div class="list-file-modal">
+            <div class="lf-header">
+                <span class="lf-title">清单管理</span>
+                <button class="lf-close-btn" data-close>关闭</button>
             </div>
-            <div class="modal-body">
-                <div class="list-file-toolbar">
-                    <button class="lft-btn lft-new">新建</button>
-                    <button class="lft-btn lft-save">保存</button>
-                    <button class="lft-btn lft-save-as">另存为</button>
-                    <button class="lft-btn lft-export">导出CSV</button>
-                    <button class="lft-btn lft-import">导入CSV</button>
-                    <input type="file" id="lft-import-input" accept=".csv,text/csv" style="display:none;">
-                </div>
-                <div class="list-file-current">
-                    <span class="lfc-label">当前：</span>
-                    <span class="lfc-name" id="lfc-current-name">${escapeHtml(currentListFileName || generateTempFileName())}</span>
-                </div>
-                <div class="list-file-list">${filesHTML}</div>
+            <div class="lf-current-row">
+                <span class="lfc-label">当前清单：</span>
+                <span class="lfc-name" id="lfc-current-name">${escapeHtml(currentListFileName || generateTempFileName())}</span>
             </div>
+            <div class="lf-toolbar">
+                <button class="lft-btn lft-new">新建</button>
+                <button class="lft-btn lft-import">导入</button>
+                <button class="lft-btn lft-export">导出</button>
+                <button class="lft-btn lft-save-as">另存</button>
+                <button class="lft-btn lft-save">保存</button>
+                <input type="file" id="lft-import-input" accept=".csv,text/csv" style="display:none;">
+            </div>
+            <div class="lf-file-list">${filesHTML}</div>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -9056,7 +9054,6 @@ async function showListFileManager() {
         currentListFileName = generateTempFileName();
         renderListParts();
         updateListFileNameDisplay();
-        updateListHint('当前清单为空，可添加零件');
         showToast('已新建清单');
         overlay.remove();
     });
@@ -9129,10 +9126,89 @@ async function showListFileManager() {
         }
     });
 
-    // 文件项事件委托
-    overlay.querySelectorAll('.list-file-item').forEach(item => {
-        const name = item.querySelector('.lfa-open').dataset.name;
-        item.querySelector('.lfa-open').addEventListener('click', async () => {
+    // 文件卡片左滑 + 按钮事件
+    const DELETE_WIDTH = 170; // 三个按钮总宽
+    overlay.querySelectorAll('.lf-item-wrap').forEach(wrap => {
+        const card = wrap.querySelector('.list-file-item');
+        const actions = wrap.querySelector('.lf-slide-actions');
+
+        const closeSwipe = () => {
+            card.style.transition = 'transform 0.22s ease';
+            card.style.transform = 'translateX(0)';
+            setTimeout(() => { card.style.transition = ''; }, 240);
+        };
+        const openSwipe = () => {
+            card.style.transition = 'transform 0.22s ease';
+            card.style.transform = `translateX(-${DELETE_WIDTH}px)`;
+            setTimeout(() => { card.style.transition = ''; }, 240);
+        };
+
+        // 关闭其它已打开的
+        const closeOthers = () => {
+            overlay.querySelectorAll('.lf-item-wrap.swiped').forEach(w => {
+                if (w !== wrap) {
+                    w.classList.remove('swiped');
+                    const c = w.querySelector('.list-file-item');
+                    c.style.transition = 'transform 0.22s ease';
+                    c.style.transform = 'translateX(0)';
+                    setTimeout(() => { c.style.transition = ''; }, 240);
+                }
+            });
+        };
+
+        let startX = 0, startY = 0, curX = 0, dragging = false, lockedAxis = null;
+        const onStart = (x, y) => { startX = x; startY = y; curX = 0; dragging = true; lockedAxis = null; closeOthers(); };
+        const onMove = (x, y) => {
+            if (!dragging) return;
+            const dx = x - startX, dy = y - startY;
+            if (lockedAxis === null) {
+                if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+                lockedAxis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+            }
+            if (lockedAxis !== 'x') return;
+            curX = dx;
+            const opened = wrap.classList.contains('swiped');
+            let translate;
+            if (opened) translate = -DELETE_WIDTH + Math.max(0, Math.min(DELETE_WIDTH + 30, curX + DELETE_WIDTH));
+            else {
+                translate = Math.min(30, curX);
+                if (curX < 0) translate = Math.max(-DELETE_WIDTH - 20, curX);
+            }
+            card.style.transition = 'none';
+            card.style.transform = `translateX(${translate}px)`;
+        };
+        const onEnd = () => {
+            if (!dragging) return;
+            dragging = false;
+            const opened = wrap.classList.contains('swiped');
+            if (opened) {
+                if (curX > DELETE_WIDTH * 0.35) { wrap.classList.remove('swiped'); closeSwipe(); }
+                else openSwipe();
+            } else {
+                if (curX < -DELETE_WIDTH * 0.35) { wrap.classList.add('swiped'); openSwipe(); }
+                else closeSwipe();
+            }
+        };
+
+        wrap.addEventListener('touchstart', (e) => { const t = e.touches[0]; onStart(t.clientX, t.clientY); }, { passive: true });
+        wrap.addEventListener('touchmove', (e) => { const t = e.touches[0]; onMove(t.clientX, t.clientY); }, { passive: true });
+        wrap.addEventListener('touchend', onEnd);
+
+        let mouseDown = false;
+        wrap.addEventListener('mousedown', (e) => { mouseDown = true; onStart(e.clientX, e.clientY); });
+        document.addEventListener('mousemove', (e) => { if (mouseDown) onMove(e.clientX, e.clientY); });
+        document.addEventListener('mouseup', () => { if (mouseDown) { mouseDown = false; onEnd(); } });
+
+        // 点击卡片关闭
+        card.addEventListener('click', () => {
+            if (wrap.classList.contains('swiped')) { wrap.classList.remove('swiped'); closeSwipe(); }
+        });
+
+        // 按钮事件
+        const name = card.dataset.name;
+        actions.querySelector('.lfa-open').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            wrap.classList.remove('swiped'); closeSwipe();
             try {
                 const file = await loadListFile(name);
                 if (!file) { showToast('文件不存在'); return; }
@@ -9140,12 +9216,13 @@ async function showListFileManager() {
                 currentListFileName = name;
                 renderListParts();
                 updateListFileNameDisplay();
-                updateListHint(`已打开：${name}（${listParts.length}项）`);
                 showToast('已打开：' + name);
                 overlay.remove();
-            } catch (e) { showToast('打开失败：' + e.message); }
+            } catch (err) { showToast('打开失败：' + err.message); }
         });
-        item.querySelector('.lfa-rename').addEventListener('click', async () => {
+        actions.querySelector('.lfa-rename').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            wrap.classList.remove('swiped'); closeSwipe();
             const newName = prompt('输入新文件名：', name);
             if (!newName || newName === name) return;
             let finalName = newName.trim();
@@ -9155,25 +9232,21 @@ async function showListFileManager() {
                 if (!file) return;
                 await saveListFile(finalName, file.parts || []);
                 await deleteListFile(name);
-                if (currentListFileName === name) {
-                    currentListFileName = finalName;
-                    updateListFileNameDisplay();
-                }
+                if (currentListFileName === name) { currentListFileName = finalName; updateListFileNameDisplay(); }
                 showToast('已重命名为：' + finalName);
                 overlay.remove();
-            } catch (e) { showToast('重命名失败：' + e.message); }
+            } catch (err) { showToast('重命名失败：' + err.message); }
         });
-        item.querySelector('.lfa-del').addEventListener('click', async () => {
+        actions.querySelector('.lfa-del').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            wrap.classList.remove('swiped'); closeSwipe();
             if (!confirm(`确认删除清单 "${name}"？`)) return;
             try {
                 await deleteListFile(name);
-                if (currentListFileName === name) {
-                    currentListFileName = generateTempFileName();
-                    updateListFileNameDisplay();
-                }
+                if (currentListFileName === name) { currentListFileName = generateTempFileName(); updateListFileNameDisplay(); }
                 showToast('已删除');
                 overlay.remove();
-            } catch (e) { showToast('删除失败：' + e.message); }
+            } catch (err) { showToast('删除失败：' + err.message); }
         });
     });
 }
