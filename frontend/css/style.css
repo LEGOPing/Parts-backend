@@ -5165,7 +5165,7 @@ body {
     box-sizing: border-box;
 }
 
-/* Q1：标题 + 返回按钮 */
+/* Q1：标题 + 返回按钮 + 清单管理 */
 .list-q1 {
     flex: 0 0 46px;
     height: 46px;
@@ -5184,6 +5184,28 @@ body {
     color: var(--black-color);
 }
 
+.list-q1-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.list-mgmt-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
 .list-back-btn {
     width: 46px;
     aspect-ratio: 3 / 2;
@@ -5199,6 +5221,30 @@ body {
     box-sizing: border-box;
     padding: 0;
     white-space: nowrap;
+}
+
+/* Q1b：文件名显示行（标题行下方，8px 蓝色） */
+.list-filename-row {
+    flex: 0 0 auto;
+    height: 16px;
+    min-height: 16px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+    background: #f5faff;
+    border-bottom: 1px solid #e3f2fd;
+    overflow: hidden;
+}
+
+.list-filename-text {
+    font-size: 8px;
+    color: #2196F3;
+    line-height: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: monospace;
 }
 
 /* Q2：信息提示区 */
@@ -5243,7 +5289,8 @@ body {
     border: 1px solid var(--light-gray-color);
     border-radius: 8px;
     box-sizing: border-box;
-    overflow: hidden;
+    padding-right: 2px; /* 给右侧留出 2px 空间，避免状态标签被圆角裁切 */
+    overflow: visible; /* 改为 visible，防止右侧状态被圆角裁切 */
 }
 
 /* 左：零件图片（固定 76px） */
@@ -5399,13 +5446,14 @@ body {
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    padding: 0 4px;
+    padding: 0 2px 0 4px; /* 右侧 2px padding 防止圆角遮挡 */
     border-left: 1px solid #eee;
+    overflow: visible;
 }
 
 .lpc-repo-label {
-    flex: 0 0 18px;
-    height: 18px;
+    flex: 0 0 14px;
+    height: 14px;
     font-size: 8px;
     color: #555;
     line-height: 10px;
@@ -5431,25 +5479,46 @@ body {
 
 .lpc-repo-detail {
     flex: 0 0 auto;
-    height: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 1px;
+    overflow: visible;
+}
+
+.lpc-repo-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    justify-content: space-between;
     font-size: 9px;
-    line-height: 14px;
-    margin-top: 1px;
+    line-height: 12px;
+    height: 12px;
 }
 
 .lpc-repo-new,
 .lpc-repo-used {
     display: inline-flex;
     align-items: center;
-    gap: 1px;
-    padding: 0 3px;
+    justify-content: center;
+    width: 14px;
+    height: 10px;
     border-radius: 3px;
     font-weight: bold;
+    font-size: 8px;
+    line-height: 10px;
+    flex: 0 0 14px;
+    text-align: center;
+}
+
+.lpc-repo-new-qty,
+.lpc-repo-used-qty {
     font-size: 9px;
-    line-height: 14px;
+    font-weight: bold;
+    color: var(--black-color);
+    flex: 1 1 auto;
+    text-align: right;
+    line-height: 12px;
+    margin-left: 2px;
 }
 
 .lpc-repo-new {
@@ -5545,6 +5614,128 @@ body {
     color: #e65100;
     font-size: 12px;
 }
+
+/* ============ 清单文件管理弹窗 ============ */
+.list-file-modal {
+    width: 90%;
+    max-width: 420px;
+    max-height: 80vh;
+}
+
+.list-file-modal .modal-body {
+    padding: 8px 12px;
+    max-height: calc(80vh - 50px);
+    overflow-y: auto;
+}
+
+.list-file-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.lft-btn {
+    flex: 1 1 auto;
+    min-width: 56px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: white;
+    white-space: nowrap;
+}
+
+.lft-new { background: #4CAF50; }
+.lft-save { background: #2196F3; }
+.lft-save-as { background: #00BCD4; }
+.lft-export { background: #FF9800; }
+.lft-import { background: #9C27B0; }
+
+.list-file-current {
+    font-size: 11px;
+    color: #555;
+    padding: 6px 8px;
+    background: #f5faff;
+    border: 1px solid #e3f2fd;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.lfc-label { font-weight: 500; }
+.lfc-name {
+    color: #2196F3;
+    font-family: monospace;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.list-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.list-file-empty {
+    text-align: center;
+    padding: 24px 0;
+    color: #999;
+    font-size: 13px;
+}
+
+.list-file-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 6px;
+}
+
+.list-file-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.list-file-meta {
+    font-size: 10px;
+    color: #888;
+}
+
+.list-file-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.lfa-btn {
+    flex: 1 1 auto;
+    padding: 4px 6px;
+    font-size: 11px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: white;
+    font-weight: 500;
+}
+
+.lfa-open { background: #2196F3; }
+.lfa-rename { background: #FF9800; }
+.lfa-del { background: #F44336; }
 
 /* Q4：水平分 4 区（型号/颜色/数量/添加按钮） */
 .list-q4 {

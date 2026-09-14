@@ -3056,6 +3056,8 @@ body {
     white-space: nowrap;
 }
 
+/* ============ 手机竖屏（默认基准，< 768px） ============ */
+/* 默认值已在上方定义：零件 3 列、盒子 4 列、统计 2 列、表单 wrap */
 @media (max-width: 767px) {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -3066,14 +3068,260 @@ body {
     }
 }
 
-@media (min-width: 768px) {
+/* ============ 手机横屏锁定：窄屏横屏时显示旋转提示遮罩 ============ */
+@media (max-width: 767px) and (orientation: landscape) {
+    body > .container {
+        display: none;
+    }
+    /* 遮罩层由 JS 动态插入，这里预留样式定义在文件末尾 */
+}
+
+/* ============ iPad 竖屏：768px - 1023px（含 portrait） ============ */
+@media (min-width: 768px) and (max-width: 1023px) {
     .container {
-        max-width: 1200px;
+        max-width: 100%;
         margin: 0 auto;
     }
-    
-    .box-grid, .part-grid {
-        grid-template-columns: repeat(4, 1fr);
+
+    /* 头部更大气 */
+    .header-content {
+        height: 90px;
+    }
+    .logo img {
+        height: 90px !important;
+        width: 90px !important;
+        max-height: 90px !important;
+        max-width: 90px !important;
+    }
+    .title-main {
+        font-size: 40px;
+    }
+    .title-sub {
+        font-size: 20px;
+    }
+    .title {
+        top: 0;
+        right: calc(50% - 235px);
+        height: 90px;
+    }
+    .logo {
+        top: 0;
+        left: calc(50% - 235px);
+    }
+
+    /* 导航按钮增大 */
+    .bb-area {
+        height: 100px;
+    }
+    .bb-area .nav button {
+        width: 110px;
+        height: 76px;
+        font-size: 13px;
+    }
+    .bb-area .nav button.active {
+        font-size: 17px;
+    }
+
+    /* 盒子网格 5 列 */
+    .box-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .box-card {
+        height: 72px;
+    }
+    .box-card-name {
+        font-size: 16px;
+    }
+    .box-delete-btn {
+        width: 20px;
+        height: 20px;
+        font-size: 16px;
+    }
+
+    /* 零件网格 5 列 */
+    .part-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .part-image {
+        width: 72px;
+        height: 72px;
+    }
+    .part-num {
+        font-size: 14px;
+    }
+    .part-name {
+        font-size: 12px;
+    }
+
+    /* 仓库卡片横向更充裕 */
+    .repository-card {
+        width: calc((100% - 40px) / 5);
+        min-width: 120px;
+        height: 80px;
+    }
+    .repo-card-name {
+        font-size: 16px;
+    }
+
+    /* 统计网格 5 列 */
+    .stats-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .stat-value {
+        font-size: 28px;
+    }
+    .stat-label {
+        font-size: 14px;
+    }
+
+    /* 搜索结果卡片 */
+    .search-result-card {
+        height: 104px;
+    }
+    .src-left {
+        width: 104px;
+    }
+
+    /* 表单更舒展 */
+    .form-row {
+        flex-wrap: nowrap;
+    }
+}
+
+/* ============ iPad 横屏 / 大平板 / 桌面：≥ 1024px ============ */
+@media (min-width: 1024px) {
+    .container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    /* 头部更舒展 */
+    .header-content {
+        height: 96px;
+    }
+    .logo img {
+        height: 96px !important;
+        width: 96px !important;
+        max-height: 96px !important;
+        max-width: 96px !important;
+    }
+    .title-main {
+        font-size: 44px;
+    }
+    .title-sub {
+        font-size: 22px;
+    }
+    .title {
+        top: 0;
+        right: calc(50% - 260px);
+        height: 96px;
+    }
+    .logo {
+        top: 0;
+        left: calc(50% - 260px);
+    }
+
+    /* 导航按钮更大更清晰 */
+    .bb-area {
+        height: 108px;
+    }
+    .bb-area .nav button {
+        width: 120px;
+        height: 84px;
+        font-size: 14px;
+    }
+    .bb-area .nav button.active {
+        font-size: 18px;
+    }
+
+    /* 盒子网格 6 列 */
+    .box-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .box-card {
+        height: 76px;
+    }
+    .box-card-name {
+        font-size: 17px;
+    }
+
+    /* 零件网格 6 列 */
+    .part-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .part-image {
+        width: 80px;
+        height: 80px;
+    }
+    .part-num {
+        font-size: 14px;
+    }
+    .part-name {
+        font-size: 12px;
+    }
+    .part-color {
+        font-size: 11px;
+    }
+
+    /* 仓库卡片更宽 */
+    .repository-card {
+        width: calc((100% - 50px) / 6);
+        min-width: 140px;
+        height: 84px;
+    }
+    .repo-card-name {
+        font-size: 17px;
+    }
+
+    /* 统计网格 6 列 */
+    .stats-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+    .stat-value {
+        font-size: 30px;
+    }
+    .stat-label {
+        font-size: 14px;
+    }
+
+    /* 搜索结果卡片更大 */
+    .search-result-card {
+        height: 112px;
+    }
+    .src-left {
+        width: 112px;
+    }
+    .src-row {
+        font-size: 15px;
+    }
+
+    /* 搜索页筛选区双列更舒展 */
+    .filter-row {
+        gap: 12px;
+    }
+    .filter-group {
+        min-width: 0;
+    }
+
+    /* 动作按钮（零件管理页）更大 */
+    .part-action-buttons {
+        gap: 12px;
+    }
+    .action-btn {
+        font-size: 15px;
+    }
+
+    /* 统计弹窗更宽 */
+    .modal-content {
+        max-width: 480px;
+    }
+    .add-part-modal {
+        max-width: 560px !important;
+    }
+
+    /* 表单不换行 */
+    .form-row {
+        flex-wrap: nowrap;
     }
 }
 
@@ -3321,14 +3569,16 @@ body {
 /* ============ 零件详情弹窗（正方形 1:1） ============ */
 .part-detail-modal {
     width: min(92vw, 380px);
-    height: min(92vw, 380px);
+    height: min(92vw, 440px);
     max-width: 380px;
+    max-height: 92vh;
     padding: 12px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .pd-row {
@@ -3400,15 +3650,20 @@ body {
     border-radius: 8px;
     overflow: hidden;
     position: relative;
+    touch-action: pan-y;
 }
 
 .pd-image-content {
-    width: 100%;
-    height: 100%;
+    position: absolute;           /* 由 JS 按滑动手势控制位置（居中/右对齐/左对齐） */
+    left: 0;
+    top: 0;
+    width: 168px;
+    height: 168px;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-shrink: 0;
+    margin: 0;
 }
 
 .pd-image-action {
@@ -3449,9 +3704,393 @@ body {
     line-height: 1;
 }
 
+/* BL 价格面板（右滑零件图片后显示在图片左侧，数据源：离线 BL-price.json → rb_prices） */
+.pd-price-panel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 90px;                  /* 实际宽度由 JS 按(行宽-图片边长)/2 动态设置，比原版更窄 */
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 5px 6px;
+    gap: 4px;
+    font-size: 8px;
+    line-height: 1.4;
+    color: #333;
+    background: #fff;
+    border-right: 1px solid #e3e8ee;
+    border-radius: 8px 0 0 8px;
+}
+.pd-price-panel .pd-price-loading,
+.pd-price-panel .pd-price-error,
+.pd-price-panel .pp-empty {
+    font-size: 8px;
+    color: #999;
+}
+.pp-top {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-weight: bold;
+    font-size: 8px;
+    color: #34495e;
+    white-space: nowrap;
+}
+.pp-day {
+    font-weight: normal;
+    color: #aaa;
+}
+.pp-cols {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    min-height: 0;
+}
+.pp-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.pp-title {
+    font-weight: bold;
+    color: #1565c0;
+    font-size: 8px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 2px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+}
+.pp-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 8px;
+}
+.pp-label {
+    color: #888;
+    flex-shrink: 0;
+}
+.pp-val {
+    font-weight: 600;
+    color: #555;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* 价格行配色：低/高=深灰，平均=蓝，加权=红粗体 */
+.pp-low .pp-val,
+.pp-high .pp-val {
+    color: #555;
+    font-weight: 400;             /* 深灰色 */
+}
+.pp-avg .pp-val {
+    color: #2196F3;
+    font-weight: 600;             /* 蓝色 */
+}
+.pp-wavg .pp-val {
+    color: #c0392b;
+    font-weight: 700;             /* 红色粗体 */
+}
+/* 3 列 × 5 行价格表：行 = 最低价/平均价/加权价/最高价；列 = 空 / 近6月 / 现在 */
+.pp-grid {
+    width: 100%;
+    border-collapse: collapse;
+    flex: 1;
+    min-height: 0;
+}
+.pp-grid th,
+.pp-grid td {
+    padding: 2px 4px;
+    text-align: left;
+    font-size: 8px;
+    vertical-align: middle;
+}
+.pp-grid th {
+    color: #1565c0;
+    font-weight: bold;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+}
+.pp-grid td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pp-row-label {
+    color: #888;
+    padding-right: 6px;
+    white-space: nowrap;
+}
+.pp-muted {
+    color: #bbb;
+    font-size: 8px;
+    line-height: 1.6;
+}
+.pp-empty {
+    text-align: center;
+    padding-top: 12px;
+    line-height: 1.6;
+}
+
+/* BL 价格面板（旧：图片左侧右滑显示，已废弃） */
+.pd-image-price {
+    display: none;
+}
+
+/* BL 价格独立区块（图片下方） */
+.pd-bl-row {
+    flex-direction: column;
+    align-items: stretch;
+    background: #f7f9fc;
+    border: 1px solid #e3e8ee;
+    border-radius: 8px;
+    padding: 8px 10px;
+    gap: 6px;
+}
+
+.pd-bl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.pd-bl-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #34495e;
+}
+
+.pd-bl-fetch-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    background: #43a047;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.pd-bl-fetch-btn:active {
+    background: #2e7d32;
+}
+
+.pd-bl-price {
+    width: 100%;
+}
+
+.pd-price-hint {
+    font-size: 11px;
+    color: #999;
+    line-height: 1.5;
+}
+
+.pd-price-head {
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
+}
+
+.pd-price-sub {
+    font-size: 10px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.pd-price-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+}
+
+.pd-price-block {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #e3e8ee;
+}
+
+.pd-price-block:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.pd-price-day {
+    font-size: 9px;
+    color: #bbb;
+    margin-bottom: 4px;
+}
+
+.pd-price-label {
+    color: #888;
+    flex-shrink: 0;
+    font-size: 10px;
+}
+
+.pd-price-val {
+    color: #c62828;
+    font-weight: 700;
+    margin-left: 8px;
+    text-align: right;
+    font-size: 10px;
+}
+
+.pd-price-loading, .pd-price-error {
+    font-size: 11px;
+    color: #999;
+    line-height: 1.5;
+}
+
+.pd-price-error {
+    color: #e53935;
+}
+
+.pd-price-detail {
+    font-size: 10px;
+    color: #b0852e;
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.pd-price-ops {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.pd-price-src {
+    font-size: 9px;
+    color: #2e7d32;
+    margin-bottom: 4px;
+}
+
+.pd-price-refresh {
+    margin-top: 6px;
+    font-size: 10px;
+    color: #1565c0;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* 手动回填 BL 价格弹窗 */
+.pd-mprice {
+    padding: 16px;
+    max-height: 88vh;
+    overflow-y: auto;
+}
+.pd-mprice-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #222;
+    margin-bottom: 8px;
+}
+.pd-mprice-tip {
+    font-size: 11px;
+    color: #666;
+    line-height: 1.6;
+    background: #f4f6fa;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+}
+.pd-mprice-currency {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+.pd-mprice-currency input {
+    width: 72px;
+}
+.pd-mprice-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.pd-mprice-import,
+.pd-mprice-copy {
+    padding: 7px 12px;
+    border: 1px solid #cfd6e0;
+    border-radius: 6px;
+    background: #f7f9fc;
+    color: #1565c0;
+    font-size: 12px;
+    cursor: pointer;
+}
+.pd-mprice-import:active,
+.pd-mprice-copy:active {
+    background: #e8eef7;
+}
+.pd-mprice-hint {
+    width: 100%;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #888;
+    min-height: 4px;
+}
+.pd-mprice-group {
+    background: #fafbfc;
+    border: 1px solid #e8eaed;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 10px;
+}
+.pd-mprice-gtitle {
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 6px;
+}
+.pd-mprice-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #555;
+    padding: 3px 0;
+}
+.pd-mprice-row input {
+    width: 120px;
+    text-align: right;
+}
+.pd-mprice-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+.pd-mprice-actions button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.pd-mprice-cancel {
+    background: #eee;
+    color: #333;
+}
+.pd-mprice-save {
+    background: #1565c0;
+    color: #fff;
+}
+
 .pd-image {
-    max-height: 168px;
-    max-width: 100%;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
 }
 
@@ -4526,7 +5165,7 @@ body {
     box-sizing: border-box;
 }
 
-/* Q1：标题 + 返回按钮 */
+/* Q1：标题 + 返回按钮 + 清单管理 */
 .list-q1 {
     flex: 0 0 46px;
     height: 46px;
@@ -4545,6 +5184,28 @@ body {
     color: var(--black-color);
 }
 
+.list-q1-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.list-mgmt-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
 .list-back-btn {
     width: 46px;
     aspect-ratio: 3 / 2;
@@ -4560,6 +5221,30 @@ body {
     box-sizing: border-box;
     padding: 0;
     white-space: nowrap;
+}
+
+/* Q1b：文件名显示行（标题行下方，8px 蓝色） */
+.list-filename-row {
+    flex: 0 0 auto;
+    height: 16px;
+    min-height: 16px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+    background: #f5faff;
+    border-bottom: 1px solid #e3f2fd;
+    overflow: hidden;
+}
+
+.list-filename-text {
+    font-size: 8px;
+    color: #2196F3;
+    line-height: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: monospace;
 }
 
 /* Q2：信息提示区 */
@@ -4599,19 +5284,20 @@ body {
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
-    height: 72px;
+    height: 76px;
     background: var(--light-gray-color);
     border: 1px solid var(--light-gray-color);
     border-radius: 8px;
     box-sizing: border-box;
-    overflow: hidden;
+    padding-right: 2px; /* 给右侧留出 2px 空间，避免状态标签被圆角裁切 */
+    overflow: visible; /* 改为 visible，防止右侧状态被圆角裁切 */
 }
 
-/* 左：零件图片（固定 72px） */
+/* 左：零件图片（固定 76px） */
 .lpc-left {
-    flex: 0 0 72px;
-    width: 72px;
-    height: 72px;
+    flex: 0 0 76px;
+    width: 76px;
+    height: 76px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4647,7 +5333,7 @@ body {
 .lpc-mid {
     flex: 1 1 auto;
     min-width: 0;
-    height: 72px;
+    height: 76px;
     display: flex;
     flex-direction: column;
     padding: 0 6px;
@@ -4756,20 +5442,21 @@ body {
 .lpc-right {
     flex: 0 0 64px;
     width: 64px;
-    height: 72px;
+    height: 76px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    padding: 0 4px;
+    padding: 0 2px 0 4px; /* 右侧 2px padding 防止圆角遮挡 */
     border-left: 1px solid #eee;
+    overflow: visible;
 }
 
 .lpc-repo-label {
-    flex: 0 0 24px;
-    height: 24px;
+    flex: 0 0 14px;
+    height: 14px;
     font-size: 8px;
     color: #555;
-    line-height: 12px;
+    line-height: 10px;
     display: flex;
     align-items: center;
     overflow: hidden;
@@ -4788,6 +5475,60 @@ body {
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
+}
+
+.lpc-repo-detail {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 1px;
+    overflow: visible;
+}
+
+.lpc-repo-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9px;
+    line-height: 12px;
+    height: 12px;
+}
+
+.lpc-repo-new,
+.lpc-repo-used {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 10px;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 8px;
+    line-height: 10px;
+    flex: 0 0 14px;
+    text-align: center;
+}
+
+.lpc-repo-new-qty,
+.lpc-repo-used-qty {
+    font-size: 9px;
+    font-weight: bold;
+    color: var(--black-color);
+    flex: 1 1 auto;
+    text-align: right;
+    line-height: 12px;
+    margin-left: 2px;
+}
+
+.lpc-repo-new {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.lpc-repo-used {
+    background-color: #fff3e0;
+    color: #e65100;
 }
 
 /* 仓库分布详情弹窗 */
@@ -4829,6 +5570,172 @@ body {
     color: var(--dark-gray-color);
     font-size: 13px;
 }
+
+.repo-detail-status {
+    display: flex;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.repo-detail-new {
+    color: #2e7d32;
+    font-weight: 500;
+}
+
+.repo-detail-used {
+    color: #e65100;
+    font-weight: 500;
+}
+
+.repo-detail-total {
+    padding: 10px 4px 4px;
+    font-size: 13px;
+    color: #555;
+    border-top: 1px solid #eee;
+    margin-top: 4px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    align-items: center;
+}
+
+.repo-detail-total-qty {
+    font-weight: bold;
+    font-size: 15px;
+    color: var(--black-color);
+}
+
+.repo-detail-total-new {
+    color: #2e7d32;
+    font-size: 12px;
+}
+
+.repo-detail-total-used {
+    color: #e65100;
+    font-size: 12px;
+}
+
+/* ============ 清单文件管理弹窗 ============ */
+.list-file-modal {
+    width: 90%;
+    max-width: 420px;
+    max-height: 80vh;
+}
+
+.list-file-modal .modal-body {
+    padding: 8px 12px;
+    max-height: calc(80vh - 50px);
+    overflow-y: auto;
+}
+
+.list-file-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.lft-btn {
+    flex: 1 1 auto;
+    min-width: 56px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: white;
+    white-space: nowrap;
+}
+
+.lft-new { background: #4CAF50; }
+.lft-save { background: #2196F3; }
+.lft-save-as { background: #00BCD4; }
+.lft-export { background: #FF9800; }
+.lft-import { background: #9C27B0; }
+
+.list-file-current {
+    font-size: 11px;
+    color: #555;
+    padding: 6px 8px;
+    background: #f5faff;
+    border: 1px solid #e3f2fd;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.lfc-label { font-weight: 500; }
+.lfc-name {
+    color: #2196F3;
+    font-family: monospace;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.list-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.list-file-empty {
+    text-align: center;
+    padding: 24px 0;
+    color: #999;
+    font-size: 13px;
+}
+
+.list-file-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 6px;
+}
+
+.list-file-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.list-file-meta {
+    font-size: 10px;
+    color: #888;
+}
+
+.list-file-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.lfa-btn {
+    flex: 1 1 auto;
+    padding: 4px 6px;
+    font-size: 11px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: white;
+    font-weight: 500;
+}
+
+.lfa-open { background: #2196F3; }
+.lfa-rename { background: #FF9800; }
+.lfa-del { background: #F44336; }
 
 /* Q4：水平分 4 区（型号/颜色/数量/添加按钮） */
 .list-q4 {
@@ -4962,19 +5869,6 @@ body {
     box-sizing: border-box;
 }
 
-.q4-popup-mode {
-    margin-top: 8px;
-    width: 100%;
-    height: 30px;
-    border: 1px solid #bbb;
-    border-radius: 6px;
-    background: #fff;
-    color: #444;
-    font-size: 13px;
-    cursor: pointer;
-    box-sizing: border-box;
-}
-
 .q4-popup-actions {
     display: flex;
     gap: 10px;
@@ -5004,4 +5898,125 @@ body {
     padding-top: 12vh;
     overflow-y: auto;
     overscroll-behavior: none;
+}
+
+/* ===== 型号英文词库（内嵌于「零件清单」型号输入弹窗） ===== */
+.id-abc-inline-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.id-abc-empty {
+    padding: 8px;
+    color: #999;
+    font-size: 13px;
+}
+
+/* 待选文字一栏：自动换行、约三行、超出垂直滚动 */
+.id-abc-wrap {
+    max-height: 108px; /* ≈3 行（含内边距） */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+.id-abc-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 13px;
+    color: #333;
+    background: #f6f6f6;
+    border: 1px solid #e0e0e0;
+    border-radius: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.id-abc-chip:hover {
+    background: #e8f0fe;
+    border-color: #90b8f0;
+    color: #1565C0;
+}
+/* ============ 手机横屏锁定遮罩 ============ */
+.phone-rotate-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #F2CD37;
+    z-index: 99999;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    color: #333;
+    padding: 20px;
+    box-sizing: border-box;
+    text-align: center;
+    overscroll-behavior: none;
+}
+
+.phone-rotate-overlay.show {
+    display: flex;
+}
+
+.phone-rotate-icon {
+    width: 100px;
+    height: 100px;
+    position: relative;
+    animation: rotate-hint 2s ease-in-out infinite;
+}
+
+.phone-rotate-icon .phone-body {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 90px;
+    background: #333;
+    border-radius: 10px;
+    border: 4px solid #333;
+}
+
+.phone-rotate-icon .phone-screen {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 44px;
+    height: 64px;
+    background: #fff;
+    border-radius: 3px;
+}
+
+@keyframes rotate-hint {
+    0%, 100% { transform: rotate(0deg); }
+    30% { transform: rotate(-60deg); }
+    70% { transform: rotate(-60deg); }
+}
+
+.phone-rotate-title {
+    font-size: 22px;
+    font-weight: bold;
+    color: #333;
+}
+
+.phone-rotate-sub {
+    font-size: 15px;
+    color: #555;
+    line-height: 1.6;
+    max-width: 300px;
 }

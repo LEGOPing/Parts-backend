@@ -9,10 +9,19 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>乐高零件管理系统</title>
+
+    <!-- ======= BL价格获取方式 =======
+         当前采用人工方案（推荐）：Bricklink 受 AWS WAF 保护，云端/无头浏览器一律被拦，
+         所以"在BL打开"会新标签打开官方价格页，对照后手动填价。
+         下面 BL_PRICE_SERVER 保持为空即可；仅当未来接入合规接口（如 Bricklink 官方
+         API / 自建服务端）时，才把它指向该 https 地址。 -->
+    <script>
+    window.BL_PRICE_SERVER = '';
+    </script>
     
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icons/icon-192x192.png">
-    <link rel="stylesheet" href="css/style.css?v=20260903">
+    <link rel="stylesheet" href="css/style.css?v=2026091401">
 
     <!-- 内联回退：确保RB_STORES始终可用，防止旧SW缓存导致变量丢失 -->
     <script>
@@ -40,11 +49,11 @@
     }
     </script>
 
-    <script src="js/api.js?v=2026083110"></script>
+    <script src="js/api.js?v=2026091002"></script>
     <script src="js/store.js?v=2026081811"></script>
     <script src="js/part-aliases.js?v=2026082911"></script>
-    <script src="js/rb-db.js?v=2026082910"></script>
-    <script src="js/ui.js?v=2026090101"></script>
+    <script src="js/rb-db.js?v=2026091002"></script>
+    <script src="js/ui.js?v=2026091401"></script>
 </head>
 <body>
     <div class="container">
@@ -241,7 +250,11 @@
                             </div>
                             <div class="stat-item">
                                 <div class="stat-value" id="stat-parts">--</div>
-                                <div class="stat-label">零件种类</div>
+                                <div class="stat-label">零件种类(型号)</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="stat-parts-color">--</div>
+                                <div class="stat-label">零件种类(型号+颜色)</div>
                             </div>
                             <div class="stat-item">
                                 <div class="stat-value" id="stat-total-qty">--</div>
@@ -249,6 +262,13 @@
                             </div>
                         </div>
                         <button onclick="loadStats()" class="btn-refresh-stats">刷新统计</button>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <h3>其他</h3>
+                        <div class="settings-buttons">
+                            <button onclick="buildIDAbcJson()" class="btn-settings" style="background:#8e44ad; color:white;">型号英文</button>
+                        </div>
                     </div>
                     
                     <div class="settings-group">
@@ -265,11 +285,21 @@
         </div>
     </div>
     
+    <!-- 手机横屏锁定遮罩：窄屏横屏时提示用户旋转设备 -->
+    <div class="phone-rotate-overlay" id="phoneRotateOverlay">
+        <div class="phone-rotate-icon">
+            <div class="phone-body"></div>
+            <div class="phone-screen"></div>
+        </div>
+        <div class="phone-rotate-title">请将设备竖屏使用</div>
+        <div class="phone-rotate-sub">本应用在手机上仅支持竖屏显示<br>请旋转设备后继续使用</div>
+    </div>
+    
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
-                navigator.serviceWorker.register('service-worker.js?v=v81', { updateViaCache: 'none' })
+                navigator.serviceWorker.register('service-worker.js?v=v82', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
                         // 如果有旧SW在控制页面，强制重新加载以应用新版本

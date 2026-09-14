@@ -167,15 +167,11 @@ async function loadRepositories() {
         const boxCounts = {};
         await Promise.all(uniqueRepos.map(async repo => {
             const boxes = await getBoxes(repo.id);
-            // 去重：与 loadBoxes() 保持一致
+            // 去重：与 loadBoxes() 保持一致，仅按 id 去重
             const seenIds = new Set();
-            const seenBoxNums = new Set();
             const uniqueBoxes = boxes.filter(box => {
                 if (seenIds.has(box.id)) return false;
-                const key = `${box.box_number}_${box.name}`;
-                if (seenBoxNums.has(key)) return false;
                 seenIds.add(box.id);
-                seenBoxNums.add(key);
                 return true;
             });
             boxCounts[repo.id] = uniqueBoxes.length;
@@ -411,15 +407,12 @@ async function loadBoxes(repoId) {
     let boxes = await getBoxes(repoId);
     const grid = document.getElementById('boxes-list');
     
-    // 去重：按id去重，同时按box_number+name去重
+    // 去重：仅按 id 去重。不得按 box_number+name 合并，否则同名盒子（如多个「临时盒子」）
+    // 会被静默隐藏，导致盒子内的零件在盒子视图中看不到、却在零件搜索中能搜到。
     const seenIds = new Set();
-    const seenBoxNums = new Set();
     const uniqueBoxes = boxes.filter(box => {
         if (seenIds.has(box.id)) return false;
-        const key = `${box.box_number}_${box.name}`;
-        if (seenBoxNums.has(key)) return false;
         seenIds.add(box.id);
-        seenBoxNums.add(key);
         return true;
     });
     
@@ -834,13 +827,21 @@ async function loadParts(boxId) {
     
     document.getElementById('part-count').textContent = parts.length;
     
-    for (const part of parts) {
+    // 先并行解析所有零件图片URL（避免逐个 await 串行，极大提升页面刷新速度）
+    const partsWithUrl = await Promise.all(parts.map(async (part) => ({
+        part,
+        imgUrl: await getPartImageUrl(part.part_num, part.color_id)
+    })));
+    
+    for (const { part, imgUrl } of partsWithUrl) {
         const card = document.createElement('div');
         card.className = 'part-card';
         card.dataset.id = part.id;
         
         const color = colorMap[part.color_id];
         const colorName = color ? color.name : '未知颜色';
+        // 转义型号中的单引号/反斜杠，避免破坏 onload 内联属性
+        const partNumEsc = String(part.part_num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         
         card.innerHTML = `
             <div class="part-num">${part.part_num}</div>
@@ -855,17 +856,21 @@ async function loadParts(boxId) {
             </div>
         `;
         
-        // 异步加载图片
-        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         const imageContainer = card.querySelector('.part-image');
         if (imgUrl) {
-            imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+            // onload 成功即写入离线缓存（Gitee/RB 都满足：首次加载的图片进入离线缓存区）
+            const escapedUrl = imgUrl.replace(/"/g, '&quot;');
+            imageContainer.innerHTML = `<img src="${escapedUrl}" alt="${part.name}"
+                onload="autoCachePartImage('${partNumEsc}', ${part.color_id}, this)"
+                onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
         } else {
             imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
         }
         
-        card.addEventListener('click', () => {
-            showPartDetail(part);
+        card.addEventListener('click', async () => {
+            // 从数据库拉最新状态，避免刷新卡片DOM后闭包里的part对象还是旧的
+            const fresh = await getPartById(parseInt(card.dataset.id));
+            if (fresh) showPartDetail(fresh);
         });
         
         list.appendChild(card);
@@ -951,7 +956,13 @@ async function renderPartTransferParts(parts) {
     const colorMap = {};
     colors.forEach(c => colorMap[c.id] = c);
 
-    for (const part of parts) {
+    // 先并行解析图片URL，避免串行等待拖慢弹窗渲染
+    const partsWithUrl = await Promise.all(parts.map(async (part) => ({
+        part,
+        imgUrl: await getPartImageUrl(part.part_num, part.color_id)
+    })));
+    
+    for (const { part, imgUrl } of partsWithUrl) {
         const color = colorMap[part.color_id];
         const colorName = color ? color.name : '未知颜色';
         const card = document.createElement('div');
@@ -967,10 +978,13 @@ async function renderPartTransferParts(parts) {
             </div>
             <div class="pt-part-check"></div>
         `;
-        const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         const imgBox = card.querySelector('.pt-part-image');
         if (imgUrl) {
-            imgBox.innerHTML = `<img src="${imgUrl}" alt="${part.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+            const partNumEsc = String(part.part_num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const escapedUrl = imgUrl.replace(/"/g, '&quot;');
+            imgBox.innerHTML = `<img src="${escapedUrl}" alt="${part.name}"
+                onload="autoCachePartImage('${partNumEsc}', ${part.color_id}, this)"
+                onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
         }
         card.addEventListener('click', () => togglePartTransferSelection(part.id, card));
         grid.appendChild(card);
@@ -1139,15 +1153,11 @@ function closePartTransferModal() {
 async function getSortedBoxes() {
     if (!selectedRepository) return [];
     const boxes = await getBoxes(selectedRepository.id);
-    // 去重：与 loadBoxes() 保持一致
+    // 去重：与 loadBoxes() 保持一致，仅按 id 去重
     const seenIds = new Set();
-    const seenBoxNums = new Set();
     const uniqueBoxes = boxes.filter(box => {
         if (seenIds.has(box.id)) return false;
-        const key = `${box.box_number}_${box.name}`;
-        if (seenBoxNums.has(key)) return false;
         seenIds.add(box.id);
-        seenBoxNums.add(key);
         return true;
     });
     uniqueBoxes.sort((a, b) => (a.box_number || 0) - (b.box_number || 0));
@@ -4798,8 +4808,10 @@ async function renderSearchResults(parts) {
             }
         });
 
-        card.addEventListener('click', () => {
-            showPartDetail(part);
+        card.addEventListener('click', async () => {
+            // 从数据库拉最新状态，避免刷新卡片DOM后闭包里的part对象还是旧的
+            const fresh = await getPartById(parseInt(card.dataset.partId));
+            if (fresh) showPartDetail(fresh);
         });
 
         results.appendChild(card);
@@ -4816,10 +4828,438 @@ function clearSearchResults() {
     updateNamePrecisionBtn();
 }
 
+// 渲染右滑图片后出现在图片左侧的 BL 价格面板（零件详情页）。
+// 数据源：离线 BL-price.json，系统启动时已加载到本地 rb_prices（设备端手动回填/抓取的结果优先保留）。
+// 8px 小字，3 列 5 行价格表：行 = 最低价/平均价/加权价/最高价，列 = 空/近6月/现在。
+async function renderBLPricePanel(panelEl, part) {
+    if (!panelEl) return;
+    panelEl.innerHTML = '<div class="pd-price-loading">价格加载中...</div>';
+    const esc = (s) => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/&/g, '&amp;');
+    const cell = (v) => v == null ? '' : esc(String(v));
+    const row3 = (cls, label, l6v, curV) =>
+        `<tr class="${cls}"><td class="pp-row-label">${label}</td><td class="pp-val">${cell(l6v)}</td><td class="pp-val">${cell(curV)}</td></tr>`;
+    try {
+        let target = null;
+        if (typeof resolveBLTarget === 'function') {
+            target = await resolveBLTarget(part.part_num, part.color_id);
+        }
+        // DEBUG：打印颜色映射和解析结果
+        console.groupCollapsed(`[BL价格面板DEBUG] part=${part.part_num} rbColor=${part.color_id}`);
+        console.log('part对象:', JSON.stringify(part));
+        console.log('resolveBLTarget结果:', target);
+        if (typeof getBLColorMapByRBColorId === 'function') {
+            const mapRec = await getBLColorMapByRBColorId(part.color_id);
+            console.log('rb_bl_map命中:', mapRec);
+        }
+        let rec = null;
+        if (target && typeof getCachedBLPrice === 'function') {
+            rec = await getCachedBLPrice(target.blPartNum, target.blColorId);
+            console.log('rb_prices key=', `${target.blPartNum}:${target.blColorId}`, '-> rec:', rec ? {key:rec.key, l6:rec.last_6_months, src:rec.source} : 'NOT FOUND');
+        }
+        console.groupEnd();
+        if (rec && (rec.last_6_months || rec.current_for_sale)) {
+            const l6 = rec.last_6_months || {};
+            const now = rec.current_for_sale || {};
+            const cur = rec.currency ? ' · ' + esc(rec.currency) : '';
+            const day = rec.saved_at ? `<span class="pp-day">${esc(rec.saved_at.slice(0, 10))}</span>` : '';
+            panelEl.innerHTML =
+                `<div class="pp-top">BL价格${cur}${day}</div>` +
+                `<table class="pp-grid"><thead><tr><th></th><th>近6月</th><th>现在</th></tr></thead><tbody>` +
+                row3('pp-low', '最低价', l6.min, now.min) +
+                row3('pp-avg', '平均价', l6.avg, now.avg) +
+                row3('pp-wavg', '加权价', l6.qty_avg, now.qty_avg) +
+                row3('pp-high', '最高价', l6.max, now.max) +
+                `</tbody></table>`;
+        } else {
+            panelEl.innerHTML = '<div class="pp-empty">暂无离线价格<span class="pp-muted">（更新Gitee BL-price.json后重启加载）</span></div>';
+        }
+    } catch (e) {
+        console.error('渲染BL价格面板失败:', e);
+        panelEl.innerHTML = '<div class="pp-empty">暂无离线价格</div>';
+    }
+}
+
+// 抓取并渲染 BL 价格（零件详情页 BL价格 区块调用）。
+// 依据 part 的 RB 型号 + RB 颜色ID，解析为 BL 目标并打开 Bricklink 官方价格页。
+// 说明：Bricklink 受 AWS WAF 保护，云端无头浏览器/数据中心 IP 一律被拦，
+//       故采用人工方案——新标签打开官方价格页（设备真实浏览器可过 WAF 看到价），
+//       用户对照页面手动填价（或粘贴取价脚本自动导入）。此路径不再走服务端抓取。
+async function fetchAndRenderBLPrice(priceEl, part) {
+    if (!priceEl) return;
+    priceEl.innerHTML = '<div class="pd-price-loading">正在准备打开 Bricklink 官方价格页...</div>';
+    // msg 为主提示；detail 为失败具体原因；showManual=true 显示手动填价入口
+    const failMsg = (msg, detail) => {
+        const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/\n/g, ' ');
+        priceEl.innerHTML =
+            `<div class="pd-price-error">${esc(msg)}</div>` +
+            (detail ? `<div class="pd-price-detail">${esc(detail)}</div>` : '') +
+            `<div class="pd-price-ops"><span class="pd-price-refresh" id="pd-price-mretry">↻ 重试</span><span class="pd-price-refresh" id="pd-price-mmanual">✎ 手动填价</span></div>`;
+        const mr = priceEl.querySelector('#pd-price-mretry');
+        if (mr) mr.addEventListener('click', (e) => { e.stopPropagation(); renderAndFetchFresh(priceEl, part); });
+        const mm = priceEl.querySelector('#pd-price-mmanual');
+        if (mm) mm.addEventListener('click', (e) => { e.stopPropagation(); openManualPriceDialogFromFail(part); });
+    };
+    // 渲染单条价格记录（两组：Last 6 Months / Current for Sale）
+    const renderPriceData = (rec, sourceLabel) => {
+        const c = rec && rec.currency ? rec.currency + ' ' : '';
+        const block = (title, p) => {
+            if (!p) return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div><div class="pd-price-error">无数据</div></div>`;
+            const rows = [];
+            if (p.min != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Min</span><span class="pd-price-val">${c}${p.min}</span></div>`);
+            if (p.avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Avg</span><span class="pd-price-val">${c}${p.avg}</span></div>`);
+            if (p.qty_avg != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Qty Avg</span><span class="pd-price-val">${c}${p.qty_avg}</span></div>`);
+            if (p.max != null) rows.push(`<div class="pd-price-item"><span class="pd-price-label">Max</span><span class="pd-price-val">${c}${p.max}</span></div>`);
+            return `<div class="pd-price-block"><div class="pd-price-sub">${title} · New</div>${rows.join('') || '<div class="pd-price-error">无数据</div>'}</div>`;
+        };
+        const day = rec && rec.saved_at ? rec.saved_at.slice(0, 10) : '';
+        const srcTag = sourceLabel ? `<div class="pd-price-src">${sourceLabel}</div>` : '';
+        priceEl.innerHTML =
+            (day ? `<div class="pd-price-day">${day}</div>` : '') +
+            srcTag +
+            block('6个月销量', rec && rec.last_6_months)
+            + block('当前在售', rec && rec.current_for_sale) +
+            '<div class="pd-price-refresh" id="pd-price-refresh">↻ 重新获取</div>';
+        const btn = priceEl.querySelector('#pd-price-refresh');
+        if (btn) btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renderAndFetchFresh(priceEl, part);
+        });
+    };
+
+    // 重新获取 / 首次拉取：打开官方价格页 → 手动回填（人工方案，不再试服务端抓取）
+    const renderAndFetchFresh = async (el, p) => {
+        try {
+            el.innerHTML = '<div class="pd-price-loading">正在打开 Bricklink 官方价格页...<br>请在新标签对照价格手动填写（可用「取价脚本」快速导入）。</div>';
+            const target = await resolveBLTargetSafe(p);
+            const rec = await openManualPriceDialog(target, p);
+            if (rec) {
+                if (typeof saveCachedBLPrice === 'function') await saveCachedBLPrice(rec);
+                renderPriceData(rec, '手动回填');
+                return;
+            }
+            renderCachedOrFail(el, p, '');
+        } catch (e) {
+            console.error('BL价格手动获取失败:', e);
+            renderCachedOrFail(el, p, (e && e.message) || String(e));
+        }
+    };
+
+    // 全部失败时：若有缓存读缓存，否则提示
+    const renderCachedOrFail = async (el, p, detail) => {
+        try {
+            const target = await resolveBLTargetSafe(p);
+            const cached = (typeof getCachedBLPrice === 'function') ? await getCachedBLPrice(target.blPartNum, target.blColorId) : null;
+            if (cached && (cached.last_6_months || cached.current_for_sale)) {
+                renderPriceData(cached, '本地缓存');
+                return;
+            }
+        } catch (e) { /* 忽略 */ }
+        failMsg('价格获取失败或暂无数据', detail);
+    };
+
+    // 失败后手动填价入口（重新解析 target 并打开手动回填弹窗）
+    const openManualPriceDialogFromFail = async (p) => {
+        try {
+            const target = await resolveBLTargetSafe(p);
+            const rec = await openManualPriceDialog(target, p);
+            if (rec) {
+                if (typeof saveCachedBLPrice === 'function') saveCachedBLPrice(rec);
+                renderPriceData(rec, '手动回填');
+            }
+        } catch (e) {
+            failMsg('无法打开手动填价', (e && e.message) || String(e));
+        }
+    };
+
+    // 组装 target（解析型号/颜色）
+    const resolveBLTargetSafe = async (p) => {
+        if (typeof resolveBLTarget !== 'function') throw new Error('离线库未就绪');
+        const target = await resolveBLTarget(p.part_num, p.color_id);
+        if (!target) throw new Error('无法解析BL型号/颜色');
+        return target;
+    };
+
+    // 主流程：缓存优先
+    try {
+        if (typeof resolveBLTarget !== 'function') { failMsg('离线库未就绪'); return; }
+        const target = await resolveBLTarget(part.part_num, part.color_id);
+        if (!target) { failMsg('无法解析BL型号/颜色'); return; }
+        const cached = (typeof getCachedBLPrice === 'function') ? await getCachedBLPrice(target.blPartNum, target.blColorId) : null;
+        if (cached && (cached.last_6_months || cached.current_for_sale)) {
+            renderPriceData(cached, '本地缓存');
+            return;
+        }
+        // 无缓存：进入 自动→手动 流程
+        renderAndFetchFresh(priceEl, part);
+    } catch (e) {
+        failMsg(`错误: ${(e && e.message) || e}`);
+    }
+}
+
+// 在 Bricklink 官方价格页运行的"取价脚本"（收藏夹脚本）。
+// 用法：官方页把地址栏改为粘贴这段脚本并回车，它会把两组价格以 JSON 复制到剪贴板，
+// 回到本弹窗点"从剪贴板导入"，无需手打。
+const BL_PRICE_BOOKMARKLET =
+    "javascript:(()=>{" +
+    "var h=document.body.innerHTML;" +
+    "var re=/<td>(Min Price|Qty Avg Price|Avg Price|Max Price):<\\/td>\\s*<td><b>([A-Z]{2,3})?(?:\\s|&nbsp;|\\u00a0)*([\\d,]+\\.\\d+)<\\/b><\\/td>/gi;" +
+    "var out={min:[],avg:[],qty_avg:[],max:[]},map={'Min Price':'min','Avg Price':'avg','Qty Avg Price':'qty_avg','Max Price':'max'},m;" +
+    "while((m=re.exec(h))!==null){var k=map[m[1]];if(k&&out[k])out[k].push([(m[2]||'').toUpperCase(),parseFloat(m[3].replace(/,/g,''))]);}" +
+    "var blk=function(col){function g(k){return out[k][col]?out[k][col][1]:null;}return {min:g('min'),avg:g('avg'),qty_avg:g('qty_avg'),max:g('max')};};" +
+    "var cur=(h.indexOf('CNY')>=0?'CNY':(h.indexOf('USD')>=0?'USD':''));" +
+    "var json=JSON.stringify({cur:cur,l6:blk(0),cs:blk(2)});" +
+    "navigator.clipboard.writeText(json).then(function(){window.alert('已复制价格，回到Rebrickable点「从剪贴板导入」');})" +
+    ".catch(function(){window.prompt('复制下面内容到app导入框：',json);});" +
+    "})();";
+
+// 手动回填价格弹窗：先新标签打开 Bricklink 官方价格页（设备真实浏览器可过 WAF 看到价），
+// 用户对照页面把 New 的 Min/Avg/Qty Avg/Max 填入，保存后 Promise resolve 一条本地价格记录。
+// resolve(rec) 成功 / resolve(null) 取消或关闭。
+function openManualPriceDialog(target, part) {
+    return new Promise((resolve) => {
+        // 打开官方价格页（同型号+颜色，方便对照填价），不阻塞本弹窗
+        const blPage = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(target.blPartNum)}&colorID=${encodeURIComponent(target.blColorId)}`;
+        window.open(blPage, '_blank');
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        const sheet = document.createElement('div');
+        sheet.className = 'modal-content pd-mprice';
+        sheet.innerHTML = `
+            <div class="pd-mprice-title">手动填写 BL 价格</div>
+            <div class="pd-mprice-tip">已为你打开 <b>${target.blPartNum}</b> 官方价格页（新标签）。请对照页面 <b>New</b> 一列的 <b>Min / Avg / Qty Avg / Max</b> 数字，手动填到下方两组并点保存。<br><b>提示</b>：「取价脚本」仅桌面浏览器可用；iOS/Safari 无法从地址栏运行 <code>javascript:</code>，请直接对照数字手填。</div>
+            <div class="pd-mprice-toolbar">
+                <button type="button" class="pd-mprice-import" id="pd-mp-import">↑ 从剪贴板导入</button>
+                <button type="button" class="pd-mprice-copy" id="pd-mp-copy">📋 复制取价脚本</button>
+                <div class="pd-mprice-hint" id="pd-mp-hint"></div>
+            </div>
+            <div class="pd-mprice-currency"><label>币种</label><input id="pd-mp-cur" type="text" value="CNY" maxlength="3" placeholder="CNY"></div>
+            <div class="pd-mprice-group">
+                <div class="pd-mprice-gtitle">Last 6 Months Sales</div>
+                <div class="pd-mprice-row"><label>Min</label><input id="pd-mp-l6-min" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Avg</label><input id="pd-mp-l6-avg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Qty Avg</label><input id="pd-mp-l6-qavg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Max</label><input id="pd-mp-l6-max" type="number" step="0.01" min="0"></div>
+            </div>
+            <div class="pd-mprice-group">
+                <div class="pd-mprice-gtitle">Current Items for Sale</div>
+                <div class="pd-mprice-row"><label>Min</label><input id="pd-mp-cs-min" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Avg</label><input id="pd-mp-cs-avg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Qty Avg</label><input id="pd-mp-cs-qavg" type="number" step="0.01" min="0"></div>
+                <div class="pd-mprice-row"><label>Max</label><input id="pd-mp-cs-max" type="number" step="0.01" min="0"></div>
+            </div>
+            <div class="pd-mprice-actions">
+                <button type="button" class="pd-mprice-cancel" id="pd-mp-cancel">取消</button>
+                <button type="button" class="pd-mprice-save" id="pd-mp-save">保存</button>
+            </div>`;
+
+        const close = () => {
+            overlay.remove();
+            document.body.classList.remove('modal-open');
+        };
+        const parseNum = (id) => {
+            const raw = overlay.querySelector(id).value.trim();
+            if (raw === '') return null;
+            const v = parseFloat(raw);
+            return isNaN(v) ? null : v;
+        };
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) { close(); resolve(null); } });
+        sheet.querySelector('#pd-mp-cancel').addEventListener('click', () => { close(); resolve(null); });
+        sheet.querySelector('#pd-mp-save').addEventListener('click', () => {
+            const cur = (overlay.querySelector('#pd-mp-cur').value.trim() || 'CNY').toUpperCase();
+            const rec = {
+                key: `${target.blPartNum}:${target.blColorId}`,
+                part_num: target.blPartNum,
+                color_id: target.blColorId,
+                currency: cur,
+                last_6_months: {
+                    currency: cur,
+                    min: parseNum('#pd-mp-l6-min'),
+                    avg: parseNum('#pd-mp-l6-avg'),
+                    qty_avg: parseNum('#pd-mp-l6-qavg'),
+                    max: parseNum('#pd-mp-l6-max')
+                },
+                current_for_sale: {
+                    currency: cur,
+                    min: parseNum('#pd-mp-cs-min'),
+                    avg: parseNum('#pd-mp-cs-avg'),
+                    qty_avg: parseNum('#pd-mp-cs-qavg'),
+                    max: parseNum('#pd-mp-cs-max')
+                },
+                source: 'manual',
+                saved_at: new Date().toISOString()
+            };
+            close();
+            resolve(rec);
+        });
+        const hintEl = () => sheet.querySelector('#pd-mp-hint');
+        const setHint = (text, color) => {
+            const el = hintEl();
+            if (el) {
+                el.textContent = text || '';
+                el.style.color = color || '#888';
+            }
+        };
+        sheet.querySelector('#pd-mp-import').addEventListener('click', async () => {
+            let text = '';
+            try { text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
+            let obj = null;
+            if (text) { try { obj = JSON.parse(text); } catch (e) { obj = null; } }
+            if (!obj || typeof obj !== 'object' || (!obj.l6 && !obj.cs)) {
+                setHint('剪贴板未找到取价数据。请先在官方页粘贴运行"取价脚本"，再回来导入。', '#e53935');
+                return;
+            }
+            if (obj.cur) overlay.querySelector('#pd-mp-cur').value = String(obj.cur).toUpperCase();
+            const fill = (prefix, p) => {
+                if (!p) return;
+                [['min', 'min'], ['avg', 'avg'], ['qty_avg', 'qavg'], ['max', 'max']].forEach(([k, id]) => {
+                    const v = p[k];
+                    if (v != null) { const inp = overlay.querySelector(`#pd-mp-${prefix}-${id}`); if (inp) inp.value = v; }
+                });
+            };
+            fill('l6', obj.l6);
+            fill('cs', obj.cs);
+            setHint('已从剪贴板导入，核对后点保存', '#2e7d32');
+        });
+        sheet.querySelector('#pd-mp-copy').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(BL_PRICE_BOOKMARKLET);
+                setHint('取价脚本已复制！请到已打开的官方页，把地址栏整段替换成这段脚本并回车。', '#1565c0');
+            } catch (e) {
+                setHint('复制失败，请在官方页手动粘贴脚本', '#e53935');
+            }
+        });
+
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+        document.body.classList.add('modal-open');
+    });
+}
+
+// ===== 详情页关闭 + 父级卡片局部刷新 =====
+// 关闭详情模态框（遮罩点击 / 返回按钮 / 保存后 / 删除后都统一走这里）
+// 同时只刷新父级页面中该零件的卡片，不整表刷新，避免滚动位置被重置
+async function closePartDetail(part) {
+    // 先移除当前详情 modal，避免后续 showPartDetail 叠在旧的 modal 上
+    const detailOverlay = document.querySelector('.modal-overlay .part-detail-modal')
+        ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+        : null;
+    if (detailOverlay) detailOverlay.remove();
+
+    if (!part || part.id == null) return;
+
+    // 从数据库重新拉取最新状态（数量 / 状态 / 名称 / 颜色ID）
+    let fresh = part;
+    try {
+        fresh = await getPartById(part.id);
+        if (!fresh) return; // 已被删除，跳过（删除场景会单独处理）
+    } catch (e) {
+        console.warn('[closePartDetail] 刷新零件失败，使用内存快照:', e);
+    }
+    refreshPartCardsInParents(fresh);
+}
+
+// 父级可能出现的零件卡片容器：盒子零件列表 + 搜索结果
+// 仅更新 data-id / data-part-id 匹配的那一个卡片，避免 loadParts 整表刷新丢滚动
+async function refreshPartCardsInParents(part) {
+    if (!part) return;
+    const partId = part.id;
+
+    // 1. 盒子零件列表 (.part-card[data-id])
+    const partsListCard = document.querySelector(`#parts-list .part-card[data-id="${partId}"]`);
+    if (partsListCard) {
+        await updatePartsListCard(partsListCard, part);
+    }
+
+    // 2. 搜索结果 (.search-result-card[data-part-id])
+    const searchCard = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+    if (searchCard) {
+        await updateSearchResultCard(searchCard, part);
+    }
+
+    // 同步更新 selectedBox 的零件数量角标（如果存在）
+    if (partsListCard) {
+        const list = document.getElementById('parts-list');
+        if (list) {
+            const count = list.querySelectorAll('.part-card').length;
+            document.getElementById('part-count').textContent = count;
+        }
+    }
+}
+
+// 更新 #parts-list 中的单个 part-card（数量 / 状态 / 名称 / 颜色 / 图片）
+async function updatePartsListCard(card, part) {
+    let colorName = '未知颜色';
+    try {
+        const colorMap = {};
+        const colors = await getAllColors();
+        colors.forEach(c => colorMap[c.id] = c);
+        const color = colorMap[part.color_id];
+        if (color && color.name) colorName = color.name;
+    } catch (e) { /* 忽略，使用默认 */ }
+
+    const qty = Number(part.quantity) || 0;
+    const qtyClass = qty >= 50 ? 'qty-green' : qty >= 10 ? 'qty-orange' : 'qty-red';
+    card.querySelector('.part-num').textContent = part.part_num;
+    card.querySelector('.part-name').textContent = part.name || '';
+    card.querySelector('.part-color').textContent = colorName;
+    const statusEl = card.querySelector('.part-new-status');
+    statusEl.textContent = part.is_new ? '新' : '旧';
+    statusEl.className = 'part-new-status ' + (part.is_new ? 'new' : 'used');
+    const qtyEl = card.querySelector('.part-quantity');
+    qtyEl.textContent = qty;
+    qtyEl.className = 'part-quantity ' + qtyClass;
+
+    // 图片：异步获取并替换
+    const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+    const imageContainer = card.querySelector('.part-image');
+    if (imgUrl) {
+        const escapedUrl = imgUrl.replace(/"/g, '&quot;');
+        const partNumEsc = String(part.part_num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        imageContainer.innerHTML = `<img src="${escapedUrl}" alt="${part.name || ''}"
+            onload="autoCachePartImage('${partNumEsc}', ${part.color_id}, this)"
+            onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
+    } else {
+        imageContainer.innerHTML = '<div class="no-image">暂无图片</div>';
+    }
+}
+
+// 更新搜索结果中的单个 search-result-card（数量 / 状态 / 名称 / 颜色 / 图片）
+async function updateSearchResultCard(card, part) {
+    let colorName = '未知颜色';
+    try {
+        const colorMap = {};
+        const colors = await getAllColors();
+        colors.forEach(c => colorMap[c.id] = c);
+        const color = colorMap[part.color_id];
+        if (color && color.name) colorName = color.name;
+    } catch (e) { /* 忽略 */ }
+
+    const qty = Number(part.quantity) || 0;
+    const qtyClass = qty >= 50 ? 'qty-green' : qty >= 10 ? 'qty-orange' : 'qty-red';
+
+    card.querySelector('.src-name').textContent = part.name || '';
+    card.querySelector('.src-color-name').textContent = colorName;
+    const statusEl = card.querySelector('.src-status');
+    statusEl.textContent = part.is_new ? '新' : '旧';
+    statusEl.title = part.is_new ? '新品' : '旧品';
+    statusEl.className = 'src-status ' + (part.is_new ? 'new' : 'used');
+    const qtyEl = card.querySelector('.src-qty');
+    qtyEl.textContent = qty;
+    qtyEl.className = 'src-qty ' + qtyClass;
+
+    // 图片
+    const imgUrl = await getPartImageUrl(part.part_num, part.color_id);
+    const imageContainer = card.querySelector('.src-image');
+    if (imgUrl) {
+        imageContainer.innerHTML = `<img src="${imgUrl}" alt="${part.name || ''}" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=src-no-image>暂无</div>'">`;
+    } else {
+        imageContainer.innerHTML = '<div class="src-no-image">暂无</div>';
+    }
+}
+
 async function showPartDetail(part) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
-
     const sheet = document.createElement('div');
     sheet.className = 'modal-content part-detail-modal';
 
@@ -4868,10 +5308,8 @@ async function showPartDetail(part) {
     try {
         imgUrl = await getPartImageUrl(part.part_num, part.color_id);
         hasCustomImage = !!(await getPartImageFromOfflineCache(part.part_num, part.color_id));
-        // 立即尝试缓存图片（不等待 onload）
-        if (imgUrl && !hasCustomImage) {
-            tryCachePartImage(part.part_num, part.color_id, imgUrl);
-        }
+        // 缓存时机：图片在零件卡片/详情 <img> onload 成功时即写入离线缓存（见 autoCachePartImage）。
+        // 这里不再主动预取，避免每次进入详情都重复触发“缓存中”与重复网络请求。
     } catch (e) {
         console.warn('获取RB图片URL失败:', e);
     }
@@ -4906,10 +5344,13 @@ async function showPartDetail(part) {
             <div class="pd-title-btns">
                 <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
                 <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
-                <button class="pd-close-btn" onclick="this.closest('.modal-overlay').remove()">返</button>
+                <button class="pd-close-btn" id="pd-close-btn">返</button>
             </div>
         </div>
         <div class="pd-row pd-image-row" id="pd-image-swipe">
+            <div class="pd-price-panel" id="pd-price-panel">
+                <div class="pd-price-loading">价格加载中...</div>
+            </div>
             <div class="pd-image-content">
                 ${imageHtml}
             </div>
@@ -4953,6 +5394,16 @@ async function showPartDetail(part) {
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
+    // 点击详情页以外的区域（遮罩层）→ 关闭详情并刷新父级该零件卡片
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closePartDetail(part);
+    });
+
+    // “返”按钮 → 关闭详情并刷新父级该零件卡片
+    sheet.querySelector('#pd-close-btn').addEventListener('click', () => {
+        closePartDetail(part);
+    });
+
     // 初始化数量调整
     let currentQty = qty;
     const qtyEl = sheet.querySelector('#pd-qty-val');
@@ -4982,11 +5433,11 @@ async function showPartDetail(part) {
     saveBtn.addEventListener('click', async () => {
         const success = await updatePart(partId, { quantity: currentQty });
         if (success) {
-            overlay.remove();
-            if (selectedBox) {
-                await loadParts(selectedBox.id);
-            }
-            updateSearchResultQuantity(partId, currentQty);
+            // 详情页保持打开（数量已通过 +/- 按钮实时更新过）
+            // 只刷新父级该零件的卡片（不整表刷新，避免滚动位置丢失）
+            const updatedPart = { ...part, quantity: currentQty };
+            await refreshPartCardsInParents(updatedPart);
+            showToast('已保存');
         } else {
             alert('保存失败');
         }
@@ -5035,30 +5486,59 @@ async function showPartDetail(part) {
     statusEl.addEventListener('touchend', cancelStatusLongPress);
     statusEl.addEventListener('touchmove', cancelStatusLongPress);
 
-    // 图片左滑显示变更按钮
+    // 图片滑动手势：左滑显示右侧"变更图片"按钮（图片左对齐页面）；右滑显示左侧"BL价格"面板（图片右对齐页面，右滑图片查询价格）
+    // 价格数据源：离线 BL-price.json 已由系统启动时加载到本地 rb_prices。
+    // 零件图片为正方形并居中，可移动距离 = (行宽 - 正方形边长)/2，左右面板宽度取此距离，
+    // 保证右滑后图片右对齐页面、左滑后图片左对齐页面，同时价格区域更窄、图片保持可见。
     const imageSwipe = sheet.querySelector('#pd-image-swipe');
     const imageContent = imageSwipe.querySelector('.pd-image-content');
     const imageAction = imageSwipe.querySelector('.pd-image-action');
-    const actionWidth = 90;
-    let startX = 0, currentX = 0, isSwiping = false, isOpen = false;
+    const pricePanel = imageSwipe.querySelector('#pd-price-panel');
+    const IMG_SIDE = 168;                     // 正方形图片边长(px)
+    const rowWidth = imageSwipe.clientWidth || 356;
+    const swipeWidth = Math.max(80, Math.round((rowWidth - IMG_SIDE) / 2)); // 移动距离/面板宽度(px)
+    let startX = 0, currentX = 0, isSwiping = false;
+    let isActionOpen = false;    // 右侧操作区是否打开（左滑）
+    let isPanelOpen = false;     // 左侧价格面板是否打开（右滑）
+    let panelRendered = false;
+
+    // 左右面板宽度 = 图片可移动对齐距离的 2 倍（即整行扣除图片边长后的全部余下空间）。
+    // 这样右滑打开价格区时，价格区占满余下空间并左对齐页面，图片紧贴页面右侧、不留空隙。
+    const panelWidth = swipeWidth * 2;
+    pricePanel.style.width = panelWidth + 'px';
+    imageAction.style.width = panelWidth + 'px';
+
+    function renderSwipe() {
+        // currentX 区间：[-swipeWidth, +swipeWidth]
+        // 图片左边缘   = swipeWidth + currentX（居中→左对齐 / 右对齐 随滑动线性过渡）
+        // 价格面板左边缘 = 2*currentX - panelWidth（关闭时整体移出左侧，打开时左对齐页面）
+        // 操作面板左边缘 = 2*currentX + panelWidth（关闭时整体移出右侧，打开时贴图片右侧）
+        imageContent.style.transform = `translateX(${swipeWidth + currentX}px)`;
+        imageAction.style.transform = `translateX(${2 * currentX + panelWidth}px)`;
+        pricePanel.style.transform = `translateX(${2 * currentX - panelWidth}px)`;
+    }
 
     imageContent.style.transition = 'transform 0.25s ease';
     imageAction.style.transition = 'transform 0.25s ease';
+    pricePanel.style.transition = 'transform 0.25s ease';
 
     imageSwipe.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
         startX = e.touches[0].clientX;
         isSwiping = true;
         imageContent.style.transition = 'none';
         imageAction.style.transition = 'none';
+        pricePanel.style.transition = 'none';
+        currentX = isPanelOpen ? swipeWidth : (isActionOpen ? -swipeWidth : 0);
+        renderSwipe();
     }, { passive: true });
 
     imageSwipe.addEventListener('touchmove', (e) => {
-        if (!isSwiping) return;
+        if (!isSwiping || e.touches.length !== 1) return;
         const dx = e.touches[0].clientX - startX;
-        let baseX = isOpen ? -actionWidth : 0;
-        currentX = Math.max(-actionWidth, Math.min(0, baseX + dx));
-        imageContent.style.transform = `translateX(${currentX}px)`;
-        imageAction.style.transform = `translateX(${currentX + actionWidth}px)`;
+        const baseX = isPanelOpen ? swipeWidth : (isActionOpen ? -swipeWidth : 0);
+        currentX = Math.max(-swipeWidth, Math.min(swipeWidth, baseX + dx));
+        renderSwipe();
     }, { passive: true });
 
     imageSwipe.addEventListener('touchend', () => {
@@ -5066,19 +5546,29 @@ async function showPartDetail(part) {
         isSwiping = false;
         imageContent.style.transition = 'transform 0.25s ease';
         imageAction.style.transition = 'transform 0.25s ease';
-        if (currentX < -actionWidth / 2) {
-            isOpen = true;
-            imageContent.style.transform = `translateX(-${actionWidth}px)`;
-            imageAction.style.transform = `translateX(0)`;
+        pricePanel.style.transition = 'transform 0.25s ease';
+
+        if (currentX > swipeWidth / 2) {
+            // 右滑：打开左侧价格面板，图片右对齐页面
+            isPanelOpen = true;
+            isActionOpen = false;
+            currentX = swipeWidth;
+            if (!panelRendered) renderBLPricePanel(pricePanel, part).finally(() => { panelRendered = true; });
+        } else if (currentX < -swipeWidth / 2) {
+            // 左滑：打开右侧操作区，图片左对齐页面
+            isPanelOpen = false;
+            isActionOpen = true;
+            currentX = -swipeWidth;
         } else {
-            isOpen = false;
-            imageContent.style.transform = 'translateX(0)';
-            imageAction.style.transform = `translateX(${actionWidth}px)`;
+            isPanelOpen = false;
+            isActionOpen = false;
+            currentX = 0;
         }
+        renderSwipe();
     }, { passive: true });
 
-    // 初始化变更按钮位置（隐藏在右侧）
-    imageAction.style.transform = `translateX(${actionWidth}px)`;
+    // 初始化位置：图片居中，右侧操作移出、左侧价格面板隐藏
+    renderSwipe();
 
     // 合并按钮点击事件
     const mergeBtn = sheet.querySelector('#pd-merge-btn');
@@ -5118,7 +5608,7 @@ function changePartStatus(part) {
     box.querySelector('#status-cancel').onclick = () => overlay.remove();
 }
 
-// 应用状态变更：更新数据库 + 详情状态栏 + 列表/搜索显示
+// 应用状态变更：更新数据库 + 详情状态栏 + 父级单个卡片（不整表刷新）
 async function applyPartStatus(part, isNew) {
     if (Boolean(part.is_new) === Boolean(isNew)) return;
     const success = await updatePart(part.id, { is_new: isNew });
@@ -5136,12 +5626,8 @@ async function applyPartStatus(part, isNew) {
             statusEl.className = 'pd-status ' + (isNew ? 'pd-status-new' : 'pd-status-used');
         }
     }
-    // 更新搜索结果卡片
-    updateSearchResultStatus(part.id, isNew);
-    // 刷新当前盒子零件列表
-    if (selectedBox) {
-        await loadParts(selectedBox.id);
-    }
+    // 只刷新父级中的单个零件卡片（不整表刷新，避免滚动位置丢失）
+    await refreshPartCardsInParents(part);
     showToast(isNew ? '已设为新品' : '已设为旧品');
 }
 
@@ -5159,14 +5645,21 @@ async function changePartImage(partNum, colorId) {
 async function showPartImageUrl(partNum, colorId) {
     const giteeUrl = buildPartsImgUrl(partNum, colorId);
     let cached = false, giteeOk = false, rbUrls = [];
+    let cacheEntry = null, cacheDiag = '';
     try {
-        [cached, giteeOk, rbUrls] = await Promise.all([
-            getPartImageFromOfflineCache(partNum, colorId).then(r => !!r),
+        [cacheEntry, giteeOk, rbUrls] = await Promise.all([
+            getPartImageFromOfflineCache(partNum, colorId),
             checkPartsImgOnGitee(partNum, colorId),
             getRBPartImageUrls(partNum, colorId)
         ]);
+        cached = !!cacheEntry;
+        cacheDiag = cacheEntry
+            ? `已命中 · ${cacheEntry.type}/${cacheEntry.status}`
+            : `未命中 · 最近写入错误: ${_lastCacheWriteError || '无'}`;
+        console.log('【图片URL诊断】', partNum, colorId, 'giteeUrl=', giteeUrl, 'cached=', cached, 'cacheEntry=', cacheEntry, '_lastCacheWriteError=', _lastCacheWriteError);
     } catch (e) {
         console.warn('获取零件图片URL失败:', e);
+        cacheDiag = '查询出错已回退 · ' + (e && e.message);
     }
     const rbUrl = rbUrls.length ? rbUrls[0] : null;
     // 当前生效URL（与详情页 getPartImageUrl 三级读取顺序一致）
@@ -5196,6 +5689,7 @@ async function showPartImageUrl(partNum, colorId) {
         <div class="modal-body">
             <div style="font-size:13px;color:#666;margin-bottom:8px;">型号：${partNum}　颜色ID：${colorId}</div>
             ${row('① 离线缓存区', cached ? '已缓存' : '未缓存', cached, giteeUrl)}
+            <div style="font-size:11px;color:#999;margin:4px 0 12px;word-break:break-all;">诊断：${cacheDiag}</div>
             ${row('② Gitee', giteeOk ? '存在' : '不存在', giteeOk, giteeUrl)}
             ${row('③ RB数据库', rbUrl ? `${rbUrls.length}条记录` : '无记录', !!rbUrl, rbUrl || '（无）')}
             ${rbUrls.length > 1 ? `
@@ -6107,6 +6601,10 @@ async function refreshPartDetailWithCustomImage(partNum, colorId) {
         );
         
         if (part) {
+            // 先关闭可能还残留的详情 modal，再刷新父级卡片的图片，最后重新打开详情
+            const oldDetail = document.querySelector('.part-detail-modal');
+            if (oldDetail) oldDetail.closest('.modal-overlay').remove();
+            await refreshPartCardsInParents(part);
             await showPartDetail(part);
         } else {
             alert('图片已更新，请刷新页面查看');
@@ -6126,15 +6624,20 @@ async function deletePartConfirm(partId) {
             const success = await deletePart(numericPartId);
             if (success) {
                 // 关闭详情弹窗
-                const overlay = document.querySelector('.modal-overlay.active');
-                if (overlay) overlay.remove();
-                // 刷新零件列表
-                if (selectedBox) {
-                    await loadParts(selectedBox.id);
+                const detailOverlay = document.querySelector('.modal-overlay .part-detail-modal')
+                    ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+                    : document.querySelector('.modal-overlay.active');
+                if (detailOverlay) detailOverlay.remove();
+
+                // 只从父级中移除该零件卡片，不整表刷新
+                const partsListCard = document.querySelector(`#parts-list .part-card[data-id="${partId}"]`);
+                if (partsListCard) {
+                    partsListCard.remove();
+                    const count = document.querySelectorAll('#parts-list .part-card').length;
+                    document.getElementById('part-count').textContent = count;
                 }
-                // 从搜索结果中移除该零件卡片
-                const card = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
-                if (card) card.remove();
+                const searchCard = document.querySelector(`.search-result-card[data-part-id="${partId}"]`);
+                if (searchCard) searchCard.remove();
             } else {
                 alert('删除零件失败');
             }
@@ -6271,18 +6774,26 @@ async function showMergePartSelector(currentPart) {
             return;
         }
 
-        // 关闭弹窗
+        // 关闭合并弹窗
         overlay.remove();
         // 关闭详情弹窗
-        const detailOverlay = document.querySelector('.modal-overlay.active');
+        const detailOverlay = document.querySelector('.modal-overlay .part-detail-modal')
+            ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+            : document.querySelector('.modal-overlay.active');
         if (detailOverlay) detailOverlay.remove();
-        // 刷新零件列表
-        if (selectedBox) {
-            await loadParts(selectedBox.id);
+
+        // 只更新目标零件卡片（数量已增加）、移除源零件卡片，不整表刷新
+        const refreshedTarget = await getPartById(selectedTargetId);
+        if (refreshedTarget) refreshPartCardsInParents(refreshedTarget);
+
+        const partsListCard = document.querySelector(`#parts-list .part-card[data-id="${currentPart.id}"]`);
+        if (partsListCard) {
+            partsListCard.remove();
+            const count = document.querySelectorAll('#parts-list .part-card').length;
+            document.getElementById('part-count').textContent = count;
         }
-        // 从搜索结果中移除当前零件卡片
-        const card = document.querySelector(`.search-result-card[data-part-id="${currentPart.id}"]`);
-        if (card) card.remove();
+        const sourceSearchCard = document.querySelector(`.search-result-card[data-part-id="${currentPart.id}"]`);
+        if (sourceSearchCard) sourceSearchCard.remove();
 
         alert(`合并成功！已将 ${currentPart.quantity} 个零件合并到目标零件，新数量为 ${newQty}`);
     });
@@ -6708,6 +7219,24 @@ async function doConfirmCSVImport() {
 
 async function initializeApp() {
     try {
+        // ============ 手机竖屏锁定检测 ============
+        function checkPhoneOrientation() {
+            const overlay = document.getElementById('phoneRotateOverlay');
+            if (!overlay) return;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const isNarrow = Math.min(w, h) < 768;  // 短边 < 768 视为手机级屏幕
+            const isLandscape = w > h;
+            if (isNarrow && isLandscape) {
+                overlay.classList.add('show');
+            } else {
+                overlay.classList.remove('show');
+            }
+        }
+        checkPhoneOrientation();
+        window.addEventListener('orientationchange', () => setTimeout(checkPhoneOrientation, 100));
+        window.addEventListener('resize', checkPhoneOrientation);
+
         const P = 46;
         document.documentElement.style.setProperty('--P', P);
         document.documentElement.style.setProperty('--card-width', (2 * P) + 'px');
@@ -6725,6 +7254,9 @@ async function initializeApp() {
         
         // 初始化零件页左右滑动手势
         initPartsSwipeGesture();
+
+        // AA区logo长按1秒：强制刷新版本
+        initLogoForceRefresh();
         
         // 监听颜色ID输入框变化，手动输入时也更新按钮样式
         const colorIdInput = document.getElementById('search-color-id');
@@ -6779,6 +7311,37 @@ async function loadRBOnStartup() {
                 }
             } catch (e) {
                 console.warn('补充加载重量数据失败:', e.message);
+            }
+            // 升级场景：旧库无 BL 颜色表数据，补充加载 bl_colors.json
+            try {
+                const blColorsCount = await countRecords(RB_STORES.BL_COLORS);
+                if (blColorsCount === 0) {
+                    const blColorResult = await loadBLColorsToRBDB();
+                    if (blColorResult.success) {
+                        console.log(`补充加载 BL 颜色表: ${blColorResult.count}条`);
+                    }
+                }
+            } catch (e) {
+                console.warn('补充加载 BL 颜色表失败:', e.message);
+            }
+            // RB↔BL 颜色映射表：每次启动都强制用最新 RB_BL_colors.csv 覆盖（clear + reload）。
+            // 原因：iOS Safari 不同版本间 IndexedDB key 类型（number 0 vs string "0"）不一致，
+            // 旧数据可能导致 Black 等 id=0 的颜色查询永远 miss；每次重建能彻底规避。
+            try {
+                const rbMapResult = await loadRBBLMappingToRBDB();
+                if (rbMapResult && rbMapResult.success) {
+                    console.log(`RB↔BL 颜色映射表已刷新: ${rbMapResult.count}条`);
+                }
+            } catch (e) {
+                console.warn('RB↔BL 颜色映射表刷新失败:', e.message);
+            }
+            // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
+            loadIDAbcOnStartup();
+            // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（先清旧离线记录再全量读入，非阻塞）
+            if (typeof loadBLPriceLibraryToRBDb === 'function') {
+                loadBLPriceLibraryToRBDb().then(r => {
+                    if (r && r.success) console.log(`离线价格库补充加载: 清理 ${r.cleared} 条 / 读入 ${r.total} 条${r.kept ? ` / 保留 ${r.kept} 条手动` : ''}`);
+                }).catch(e => console.warn('离线价格库补充加载失败:', e));
             }
             showRBStatusHint('rb-ready');
             return;
@@ -6857,6 +7420,33 @@ async function loadRBOnStartup() {
             console.warn('零件别名映射加载失败（不影响RB主库）:', error.message);
         }
 
+        // 可选：加载 BL 颜色表（bl_colors.json → rb_bl_colors），供颜色映射使用。
+        // 若仓库暂无或导入失败，不阻塞 RB 主库与 ready 状态。
+        try {
+            const blColorResult = await loadBLColorsToRBDB();
+            console.log(`BL 颜色表加载成功: ${blColorResult.count} 条`);
+        } catch (error) {
+            console.warn('BL 颜色表可选加载失败（不影响RB主库）:', error.message);
+        }
+
+        // 可选：加载 RB↔BL 颜色映射表（RB_BL_colors.csv → rb_bl_map），供颜色ID直接映射使用。
+        // 若仓库暂无或导入失败，不阻塞 RB 主库与 ready 状态。
+        try {
+            const rbMapResult = await loadRBBLMappingToRBDB();
+            console.log(`RB↔BL 颜色映射表加载成功: ${rbMapResult.count} 条`);
+        } catch (error) {
+            console.warn('RB↔BL 颜色映射表可选加载失败（不影响RB主库）:', error.message);
+        }
+
+        // 加载型号英文词汇（ID_Abc.json）到离线缓冲区（非阻塞）
+        loadIDAbcOnStartup();
+        // 加载离线 Bricklink 价格库 BL-price.json → rb_prices（先清旧离线记录再全量读入，非阻塞）
+        if (typeof loadBLPriceLibraryToRBDb === 'function') {
+            loadBLPriceLibraryToRBDb().then(r => {
+                if (r && r.success) console.log(`离线价格库加载: 清理 ${r.cleared} 条 / 读入 ${r.total} 条${r.kept ? ` / 保留 ${r.kept} 条手动` : ''}`);
+            }).catch(e => console.warn('离线价格库加载失败:', e));
+        }
+
         if (successCount === csvFiles.length) {
             console.log('RB数据库建立成功');
             showRBStatusHint('rb-ready');
@@ -6918,7 +7508,7 @@ function showRBStatusHint(status) {
     // 异步获取统计数据并更新
     if (status === 'rb-ready' || status === 'rb-partial') {
         getRBStats().then(stats => {
-            const totalCount = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
+            const totalCount = stats ? Object.entries(stats).reduce((sum, [k, v]) => k.startsWith('_') ? sum : sum + v, 0) : 0;
             if (status === 'rb-ready' && totalCount === 0) {
                 hint.textContent = messages['rb-empty'].text;
                 hint.style.color = messages['rb-empty'].color;
@@ -6927,6 +7517,111 @@ function showRBStatusHint(status) {
             }
         }).catch(e => console.error('获取RB统计失败:', e));
     }
+}
+
+// ===== 型号英文词汇（ID_Abc.json）=====
+
+// 遍历 BL-parts 表，抽取 ITEMID 中的字母片段（英文词，含单个字母），按出现次数去重排序后
+// 1) 推送到 Gitee parts-rb 仓库的 ID_Abc.json；2) 写入本地离线缓冲区 rb_id_abc。
+async function buildIDAbcJson() {
+    try {
+        let blParts = [];
+        try {
+            blParts = await getAll(RB_STORES.BL_PARTS);
+        } catch (e) {
+            console.warn('读取 BL-parts 失败:', e.message);
+        }
+        if (!blParts || blParts.length === 0) {
+            alert('BL-parts 数据为空，请先执行"更新RB"加载 BL-parts 后再生成词汇。');
+            return;
+        }
+
+        // 统计每个字母片段在 ITEMID 中出现的次数
+        const countMap = {};
+        for (const row of blParts) {
+            const itemId = String(row.ITEMID == null ? '' : row.ITEMID).trim();
+            if (!itemId) continue;
+            const matches = itemId.match(/[A-Za-z]+/g);
+            if (!matches) continue;
+            for (const m of matches) {
+                const word = m.toLowerCase();
+                countMap[word] = (countMap[word] || 0) + 1;
+            }
+        }
+
+        const records = Object.keys(countMap)
+            .map(word => ({ word, count: countMap[word] }))
+            .sort((a, b) => (b.count - a.count) || a.word.localeCompare(b.word));
+
+        if (records.length === 0) {
+            alert('未从 BL-parts 中提取到任何英文词汇。');
+            return;
+        }
+
+        // 1) 推送到 Gitee parts-rb
+        await uploadIDAbcToGitee(records);
+        // 2) 同步本地离线缓冲区
+        await importIDAbcToRBDb(records);
+
+        const preview = records.slice(0, 10).map(r => r.word).join('、');
+        alert(`已生成 ${records.length} 个英文词汇并保存到 Gitee ID_Abc.json，同时更新了本地词库。\n\n高频示例：${preview}…`);
+    } catch (error) {
+        console.error('生成型号英文词汇失败:', error);
+        alert('生成失败: ' + (error.message || error));
+    }
+}
+
+// 启动时把 Gitee 的 ID_Abc.json 加载到本地离线缓冲区（非阻塞，失败不影响主流程）
+async function loadIDAbcOnStartup() {
+    try {
+        const records = await fetchIDAbcJson();
+        if (!records || records.length === 0) return;
+        const result = await importIDAbcToRBDb(records);
+        if (result.success) {
+            console.log(`型号英文词汇离线缓冲区加载成功: ${result.count} 条`);
+        }
+    } catch (error) {
+        console.warn('型号英文词汇离线加载失败（不影响主流程）:', error.message);
+    }
+}
+
+// 在「零件清单」型号输入弹窗下半部内嵌英文词库（三行自动换行、垂直滚动）
+async function initQ4IDAbcLibrary(overlay) {
+    const wrapEl = overlay ? overlay.querySelector('#q4-popup-idabc-wrap') : null;
+    if (!wrapEl) return;
+
+    let records = await getIDAbcRecords();
+    if (!records || records.length === 0) {
+        try {
+            records = await fetchIDAbcJson();
+            if (records && records.length) await importIDAbcToRBDb(records);
+        } catch (e) {
+            records = [];
+        }
+    }
+
+    if (!records || records.length === 0) {
+        wrapEl.innerHTML = '<div class="id-abc-empty">英文词汇库为空（可在系统设置-其他-型号英文生成）</div>';
+        return;
+    }
+
+    // 按 ID_Abc 顺序显示
+    const words = records.map(r => r.word);
+    wrapEl.innerHTML = words.map(w =>
+        `<span class="id-abc-chip" data-word="${w}">${w}</span>`
+    ).join('');
+
+    // 点选词后填入型号输入框
+    const input = overlay.querySelector('#q4-popup-input');
+    wrapEl.querySelectorAll('.id-abc-chip').forEach(el => {
+        el.addEventListener('click', () => {
+            const word = el.getAttribute('data-word');
+            if (input) {
+                input.value = (input.value || '') + word;
+                input.focus();
+            }
+        });
+    });
 }
 
 async function initializeDatabase() {
@@ -7124,6 +7819,68 @@ function clearCache() {
 
 function reloadApp() {
     if (confirm('确定要重启应用吗？')) {
+        location.reload();
+    }
+}
+
+// 在 AA 区 logo 图片上长按约 1 秒：强制刷新版本。
+// 动作：注销 Service Worker + 清空站点缓存（保留零件图片离线缓存 part-images-cache-v2）+ 缓存破弃后重载页面。
+// 重载后 loadRBOnStartup 会自动用最新 BL-price.json 等 Gitee 文件刷新离线数据，实现“新代码 + 新数据”。
+function initLogoForceRefresh() {
+    const logoImg = document.querySelector('.aa-area .logo img');
+    if (!logoImg) return;
+    const LONG_PRESS_MS = 1000;
+    let timer = null;
+
+    const start = (e) => {
+        e.preventDefault();
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(forceRefreshVersion, LONG_PRESS_MS);
+    };
+    const cancel = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+    };
+
+    // 触屏优先；touchstart 里 preventDefault 会抑制后续合成 mouse 事件，避免重复触发
+    logoImg.addEventListener('touchstart', start, { passive: false });
+    logoImg.addEventListener('touchend', cancel);
+    logoImg.addEventListener('touchmove', cancel);
+    logoImg.addEventListener('touchcancel', cancel);
+    // 桌面端兜底
+    logoImg.addEventListener('mousedown', start);
+    logoImg.addEventListener('mouseup', cancel);
+    logoImg.addEventListener('mouseleave', cancel);
+    // 屏蔽 iOS 长按图片的呼出菜单
+    logoImg.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+// 强制刷新版本：注销 SW、清站点缓存（保留零件图片离线缓存）、缓存破弃后重载页面
+async function forceRefreshVersion() {
+    try {
+        // 顶部提示
+        const hint = document.createElement('div');
+        hint.textContent = '正在强制刷新版本…';
+        hint.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99999;background:#333;color:#fff;padding:6px 16px;border-radius:16px;font-size:13px;opacity:0.95;';
+        document.body.appendChild(hint);
+
+        // 注销 Service Worker，确保下次加载不走旧 SW 缓存
+        if ('serviceWorker' in navigator) {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(regs.map(r => r.unregister()));
+            } catch (e) { console.warn('注销Service Worker失败:', e); }
+        }
+        // 清空站点缓存（保留零件图片离线缓存，避免重新下载图片）
+        if ('caches' in window) {
+            try {
+                const keys = await caches.keys();
+                await Promise.all(keys.filter(k => k !== 'part-images-cache-v2').map(k => caches.delete(k)));
+            } catch (e) { console.warn('清除缓存失败:', e); }
+        }
+        // 缓存破弃后强制重载，重新拉取最新静态资源与离线数据
+        window.location.href = window.location.pathname + '?v=' + Date.now();
+    } catch (e) {
+        console.error('强制刷新版本失败:', e);
         location.reload();
     }
 }
@@ -7608,6 +8365,56 @@ async function updateRB() {
             importResults['part_aliases'] = false;
         }
 
+        // 可选：加载 BL 颜色表（bl_colors.json → rb_bl_colors）
+        try {
+            updateProgress(0.96, '读取 BL 颜色表...', 'bl_colors.json');
+            const blColorResult = await loadBLColorsToRBDB();
+            importResults['bl_colors'] = blColorResult.success;
+            updateProgress(0.98, `BL 颜色表 - ${blColorResult.success ? '导入成功' : '导入失败'}`, `${blColorResult.count}条`);
+        } catch (error) {
+            console.warn('BL 颜色表加载失败（不影响RB主库）:', error.message);
+            importResults['bl_colors'] = false;
+        }
+
+        // 可选：加载 RB↔BL 颜色映射表（RB_BL_colors.csv → rb_bl_map）
+        try {
+            updateProgress(0.985, '读取 RB↔BL 颜色映射表...', 'RB_BL_colors.csv');
+            const rbMapResult = await loadRBBLMappingToRBDB();
+            importResults['rb_bl_map'] = rbMapResult.success;
+            updateProgress(0.99, `RB↔BL 颜色映射表 - ${rbMapResult.success ? '导入成功' : '导入失败'}`, `${rbMapResult.count}条`);
+        } catch (error) {
+            console.warn('RB↔BL 颜色映射表加载失败（不影响RB主库）:', error.message);
+            importResults['rb_bl_map'] = false;
+        }
+
+        // 加载最新离线 Bricklink 价格库（BL-price.json → rb_prices）
+        // 策略：先清理 source='offline' 的旧缓存，再全量读入，确保无污染；
+        // source='manual' 和 source='bl-server' 的记录不被清理
+        let blPriceResult = { success: false, total: 0, added: 0, cleared: 0, kept: 0 };
+        try {
+            updateProgress(0.993, '清理旧离线价格缓存...', 'source=offline');
+            if (typeof loadBLPriceLibraryToRBDb === 'function') {
+                blPriceResult = await loadBLPriceLibraryToRBDb();
+            }
+            importResults['bl_price'] = !(blPriceResult && blPriceResult.error);
+            const _added = blPriceResult ? (blPriceResult.added || 0) : 0;
+            const _total = blPriceResult ? (blPriceResult.total || 0) : 0;
+            const _cleared = blPriceResult ? (blPriceResult.cleared || 0) : 0;
+            const _kept = blPriceResult ? (blPriceResult.kept || 0) : 0;
+            const _kbs = (blPriceResult && blPriceResult.keptBySource) || {};
+            const _keptDetail = [];
+            if (_kbs.manual) _keptDetail.push(`${_kbs.manual} 条手动`);
+            if (_kbs['bl-server']) _keptDetail.push(`${_kbs['bl-server']} 条服务端`);
+            const _detail = `清理 ${_cleared} 条旧离线 · 读入 ${_total} 条${_keptDetail.length ? ' · 保留 ' + _keptDetail.join(' + ') : ''}`;
+            updateProgress(0.999,
+                `离线价格库 - ${blPriceResult && !blPriceResult.error ? '导入成功' : '读取失败'}`,
+                _detail);
+        } catch (error) {
+            console.warn('离线价格库加载失败（不影响RB主库）:', error.message);
+            importResults['bl_price'] = false;
+            updateProgress(0.999, '离线价格库 - 读取失败', error.message);
+        }
+
         // 显示结果
         updateProgress(1, '更新完成！', '');
 
@@ -7623,6 +8430,14 @@ async function updateRB() {
             statsHtml += `<div>关系: ${stats.rb_part_relationships || 0} 条</div>`;
             statsHtml += `<div>重量: ${stats.rb_weights || 0} 条</div>`;
             statsHtml += `<div>BL-parts: ${stats.rb_bl_parts || 0} 条</div>`;
+            statsHtml += `<div>RB↔BL颜色映射: ${stats.rb_bl_map || 0} 条</div>`;
+            const _ptotal = stats._rb_prices_total || 0;
+            const _pmat = stats.rb_prices || 0;
+            if (_ptotal === _pmat) {
+                statsHtml += `<div>BL价格: ${_pmat} 条（全部匹配库存）</div>`;
+            } else {
+                statsHtml += `<div>BL价格库: ${_ptotal} 条 · 匹配库存: ${_pmat} 条</div>`;
+            }
             statsHtml += '</div>';
         }
 
@@ -7722,8 +8537,11 @@ async function loadStats() {
         document.getElementById('stat-repos').textContent = repos.length;
         
         let totalBoxes = 0;
-        let totalParts = 0;
         let totalQuantity = 0;
+        // N1：零件种类（仅按零件型号去重，忽略颜色与 is_new 状态）
+        const partNumSet = new Set();
+        // N2：零件种类（按零件型号+颜色去重，忽略 is_new 状态）
+        const partColorSet = new Set();
         
         for (const repo of repos) {
             const boxes = await getBoxes(repo.id);
@@ -7731,13 +8549,19 @@ async function loadStats() {
             
             for (const box of boxes) {
                 const parts = await getParts(box.id);
-                totalParts += parts.length;
                 totalQuantity += parts.reduce((sum, p) => sum + (p.quantity || 0), 0);
+                for (const p of parts) {
+                    const pn = String(p.part_num != null ? p.part_num : '').trim();
+                    if (pn === '') continue;
+                    partNumSet.add(pn);
+                    partColorSet.add(pn + '\u0000' + (p.color_id != null ? p.color_id : ''));
+                }
             }
         }
         
         document.getElementById('stat-boxes').textContent = totalBoxes;
-        document.getElementById('stat-parts').textContent = totalParts;
+        document.getElementById('stat-parts').textContent = partNumSet.size;         // N1 零件型号去重
+        document.getElementById('stat-parts-color').textContent = partColorSet.size;  // N2 型号+颜色去重
         document.getElementById('stat-total-qty').textContent = totalQuantity;
     } catch (error) {
         console.error('加载统计信息失败:', error);
@@ -7959,8 +8783,14 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
             response = await fetch(imgElement.src, { mode: 'no-cors' });
         }
         if (response) {
-            await savePartImageToOfflineCache(partNum, colorId, response);
-            showToast('✅ 图片已缓存到本地');
+            // 只有真正写入成功才提示成功，避免写入被拒收（如非图片响应）时仍谎称"已缓存"
+            const ok = await savePartImageToOfflineCache(partNum, colorId, response);
+            if (ok) {
+                console.log('✅ 已写入离线缓存:', partNum, colorId, response.type + '/' + response.status, imgElement.src);
+                showToast('✅ 图片已缓存到本地');
+            } else {
+                console.warn('零件图片未写入离线缓存（写入被拒收）:', partNum, colorId, response.type, response.status, 'reason=', _lastCacheWriteError);
+            }
         }
     } catch (e) {
         // 静默失败，不影响用户使用
@@ -7969,7 +8799,6 @@ async function autoCachePartImage(partNum, colorId, imgElement) {
 
 // 立即尝试缓存图片（不等待 onload），在 showPartDetail 中调用
 async function tryCachePartImage(partNum, colorId, url) {
-    showToast('🔄 缓存中: ' + partNum + '_' + colorId);  // 确认函数被调用
     try {
         const cached = await getPartImageFromOfflineCache(partNum, colorId);
         if (cached) return;
@@ -7985,9 +8814,13 @@ async function tryCachePartImage(partNum, colorId, url) {
             const ok = await savePartImageToOfflineCache(partNum, colorId, response);
             if (ok) {
                 showToast('✅ 图片已离线缓存');
+            } else if (_lastCacheWriteError && _lastCacheWriteError.indexOf('返回字节非图片') >= 0) {
+                // 该色块图不存在于图床/数据库，或服务器返回了非图片（如 200 HTML 错误页/未识别新格式），
+                // 属正常的变体缺失，静默跳过，不当作缓存失败报警
+                console.warn('图片变体不可用，跳过缓存:', partNum, colorId, url, _lastCacheWriteError);
             } else {
-                showToast('⚠️ 缓存写入失败 [type=' + response.type + ' status=' + response.status + ']');
-                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url);
+                showToast('⚠️ 缓存写入失败 [' + response.type + '/' + response.status + (_lastCacheWriteError ? ' ' + _lastCacheWriteError : '') + ']');
+                console.error('savePartImageToOfflineCache returned false', partNum, colorId, url, 'reason=', _lastCacheWriteError);
             }
         }
     } catch (e) {
@@ -8007,9 +8840,317 @@ let listParts = [];
 let listModel = '';
 let listColor = '';
 let listQty = 1;
+// 当前清单文件名（未打开时为临时文件名 List+时间.csv）
+let currentListFileName = '';
+// 清单文件 IndexedDB 存储名
+const LIST_FILES_DB = 'rb_list_files';
+const LIST_FILES_STORE = 'files';
 
-// 型号输入弹窗的键盘模式（numeric=数字键盘 / text=英文全键盘）
-let _q4InputMode = 'numeric';
+// 生成临时文件名：List + YYYYMMDDHHmmss + .csv
+function generateTempFileName() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `List${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.csv`;
+}
+
+// 更新文件名显示行
+function updateListFileNameDisplay() {
+    const el = document.getElementById('list-filename-text');
+    if (el) el.textContent = currentListFileName || generateTempFileName();
+}
+
+// 初始化清单文件 IndexedDB（若未创建）
+function openListFilesDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(LIST_FILES_DB, 1);
+        req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(LIST_FILES_STORE)) {
+                db.createObjectStore(LIST_FILES_STORE, { keyPath: 'name' });
+            }
+        };
+        req.onsuccess = (e) => resolve(e.target.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 保存清单文件到 IndexedDB
+async function saveListFile(name, parts) {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readwrite');
+        tx.objectStore(LIST_FILES_STORE).put({ name, parts, updatedAt: Date.now() });
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 从 IndexedDB 读取清单文件
+async function loadListFile(name) {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readonly');
+        const req = tx.objectStore(LIST_FILES_STORE).get(name);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 列出所有已保存的清单文件
+async function listListFiles() {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readonly');
+        const req = tx.objectStore(LIST_FILES_STORE).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 删除清单文件
+async function deleteListFile(name) {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readwrite');
+        tx.objectStore(LIST_FILES_STORE).delete(name);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 简单 CSV 导出（不含 BOM，UTF-8）
+function exportListToCSV(parts) {
+    const header = 'part_num,color_id,quantity';
+    const rows = (parts || []).map(p => {
+        const pn = (p.part_num == null ? '' : String(p.part_num)).replace(/"/g, '""');
+        const ci = (p.colorId != null ? p.colorId : (p.color_id != null ? p.color_id : '')).toString().replace(/"/g, '""');
+        const qy = (p.quantity == null ? 0 : p.quantity);
+        return `${pn},${ci},${qy}`;
+    });
+    return '\uFEFF' + [header, ...rows].join('\n'); // 加 BOM 以便 Excel 正确识别 UTF-8
+}
+
+// 简单 CSV 导入（只识别 part_num, color_id, quantity 三列）
+function importListFromCSV(text) {
+    // 去掉 BOM
+    if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (!lines.length) return [];
+
+    // 解析 CSV 行（简单实现，不处理引号内逗号）
+    function parseCSVLine(line) {
+        const result = [];
+        let cur = '';
+        let inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+                else inQuote = !inQuote;
+            } else if (ch === ',' && !inQuote) {
+                result.push(cur); cur = '';
+            } else cur += ch;
+        }
+        result.push(cur);
+        return result;
+    }
+
+    const header = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+    const idx = {
+        part_num: header.indexOf('part_num'),
+        color_id: header.indexOf('color_id'),
+        quantity: header.indexOf('quantity')
+    };
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+        const cells = parseCSVLine(lines[i]);
+        const part_num = idx.part_num >= 0 ? cells[idx.part_num].trim() : '';
+        const colorId = idx.color_id >= 0 ? cells[idx.color_id].trim() : '';
+        const quantity = idx.quantity >= 0 ? parseInt(cells[idx.quantity].trim(), 10) || 1 : 1;
+        if (part_num) out.push(normalizeListPart({ part_num, colorId, quantity }));
+    }
+    return out;
+}
+
+// 弹出清单文件管理弹窗
+async function showListFileManager() {
+    // 先关闭已有的
+    document.querySelectorAll('.list-file-modal-overlay').forEach(n => n.remove());
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active list-file-modal-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const files = await listListFiles();
+    const filesHTML = files.length
+        ? files.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(f => {
+            const date = f.updatedAt ? new Date(f.updatedAt) : null;
+            const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : '';
+            return `
+            <div class="list-file-item">
+                <div class="list-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+                <div class="list-file-meta">${(f.parts || []).length}项 · ${dateStr}</div>
+                <div class="list-file-actions">
+                    <button class="lfa-btn lfa-open" data-name="${escapeHtml(f.name)}">打开</button>
+                    <button class="lfa-btn lfa-rename" data-name="${escapeHtml(f.name)}">重命名</button>
+                    <button class="lfa-btn lfa-del" data-name="${escapeHtml(f.name)}">删除</button>
+                </div>
+            </div>`;
+        }).join('')
+        : '<div class="list-file-empty">暂无已保存的清单</div>';
+
+    overlay.innerHTML = `
+        <div class="modal-content list-file-modal">
+            <div class="modal-header">
+                <span class="modal-title">清单管理</span>
+                <div class="modal-actions">
+                    <button class="btn-cancel" data-close>关闭</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="list-file-toolbar">
+                    <button class="lft-btn lft-new">新建</button>
+                    <button class="lft-btn lft-save">保存</button>
+                    <button class="lft-btn lft-save-as">另存为</button>
+                    <button class="lft-btn lft-export">导出CSV</button>
+                    <button class="lft-btn lft-import">导入CSV</button>
+                    <input type="file" id="lft-import-input" accept=".csv,text/csv" style="display:none;">
+                </div>
+                <div class="list-file-current">
+                    <span class="lfc-label">当前：</span>
+                    <span class="lfc-name" id="lfc-current-name">${escapeHtml(currentListFileName || generateTempFileName())}</span>
+                </div>
+                <div class="list-file-list">${filesHTML}</div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // 绑定事件
+    overlay.querySelector('[data-close]').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('.lft-new').addEventListener('click', async () => {
+        if (listParts.length && !confirm('新建将清空当前清单，继续？')) return;
+        listParts = [];
+        currentListFileName = generateTempFileName();
+        renderListParts();
+        updateListFileNameDisplay();
+        updateListHint('当前清单为空，可添加零件');
+        showToast('已新建清单');
+        overlay.remove();
+    });
+
+    overlay.querySelector('.lft-save').addEventListener('click', async () => {
+        try {
+            const name = currentListFileName || generateTempFileName();
+            await saveListFile(name, listParts);
+            currentListFileName = name;
+            updateListFileNameDisplay();
+            showToast('已保存：' + name);
+            overlay.remove();
+        } catch (e) {
+            showToast('保存失败：' + e.message);
+        }
+    });
+
+    overlay.querySelector('.lft-save-as').addEventListener('click', async () => {
+        const name = prompt('输入文件名（.csv 可选）：', currentListFileName || generateTempFileName());
+        if (!name) return;
+        let finalName = name.trim();
+        if (!/\.csv$/i.test(finalName)) finalName += '.csv';
+        try {
+            await saveListFile(finalName, listParts);
+            currentListFileName = finalName;
+            updateListFileNameDisplay();
+            showToast('已另存为：' + finalName);
+            overlay.remove();
+        } catch (e) {
+            showToast('另存失败：' + e.message);
+        }
+    });
+
+    overlay.querySelector('.lft-export').addEventListener('click', () => {
+        const name = currentListFileName || generateTempFileName();
+        const csv = exportListToCSV(listParts);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        showToast('已导出：' + name);
+    });
+
+    const fileInput = overlay.querySelector('#lft-import-input');
+    overlay.querySelector('.lft-import').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const parts = importListFromCSV(text);
+            if (listParts.length && !confirm('导入将替换当前清单，继续？')) { e.target.value = ''; return; }
+            listParts = parts;
+            currentListFileName = file.name;
+            renderListParts();
+            updateListFileNameDisplay();
+            showToast('已导入：' + file.name);
+            overlay.remove();
+        } catch (err) {
+            showToast('导入失败：' + err.message);
+        } finally {
+            e.target.value = '';
+        }
+    });
+
+    // 文件项事件委托
+    overlay.querySelectorAll('.list-file-item').forEach(item => {
+        const name = item.querySelector('.lfa-open').dataset.name;
+        item.querySelector('.lfa-open').addEventListener('click', async () => {
+            try {
+                const file = await loadListFile(name);
+                if (!file) { showToast('文件不存在'); return; }
+                listParts = (file.parts || []).map(normalizeListPart);
+                currentListFileName = name;
+                renderListParts();
+                updateListFileNameDisplay();
+                updateListHint(`已打开：${name}（${listParts.length}项）`);
+                showToast('已打开：' + name);
+                overlay.remove();
+            } catch (e) { showToast('打开失败：' + e.message); }
+        });
+        item.querySelector('.lfa-rename').addEventListener('click', async () => {
+            const newName = prompt('输入新文件名：', name);
+            if (!newName || newName === name) return;
+            let finalName = newName.trim();
+            if (!/\.csv$/i.test(finalName)) finalName += '.csv';
+            try {
+                const file = await loadListFile(name);
+                if (!file) return;
+                await saveListFile(finalName, file.parts || []);
+                await deleteListFile(name);
+                if (currentListFileName === name) {
+                    currentListFileName = finalName;
+                    updateListFileNameDisplay();
+                }
+                showToast('已重命名为：' + finalName);
+                overlay.remove();
+            } catch (e) { showToast('重命名失败：' + e.message); }
+        });
+        item.querySelector('.lfa-del').addEventListener('click', async () => {
+            if (!confirm(`确认删除清单 "${name}"？`)) return;
+            try {
+                await deleteListFile(name);
+                if (currentListFileName === name) {
+                    currentListFileName = generateTempFileName();
+                    updateListFileNameDisplay();
+                }
+                showToast('已删除');
+                overlay.remove();
+            } catch (e) { showToast('删除失败：' + e.message); }
+        });
+    });
+}
 
 // 滚动锁定（输入法弹出时固定页面不移动）
 let _scrollLockCount = 0;
@@ -8028,9 +9169,12 @@ function unlockScroll() {
     }
 }
 
-// 打开清单页面（Q1 标题+返回 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
+// 打开清单页面（Q1 标题+返回+清单管理 / Q1b 文件名 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
 function openListPage() {
     if (document.getElementById('list-page-overlay')) return;
+
+    // 首次打开时初始化临时文件名
+    if (!currentListFileName) currentListFileName = generateTempFileName();
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active list-page-overlay';
@@ -8043,7 +9187,13 @@ function openListPage() {
         <div class="list-page">
             <div class="list-q1">
                 <span class="list-title">零件清单</span>
-                <button class="list-back-btn" onclick="closeListPage()">返回</button>
+                <div class="list-q1-right">
+                    <button class="list-mgmt-btn" onclick="showListFileManager()">清单管理</button>
+                    <button class="list-back-btn" onclick="closeListPage()">返回</button>
+                </div>
+            </div>
+            <div class="list-filename-row">
+                <span class="list-filename-text" id="list-filename-text">${escapeHtml(currentListFileName)}</span>
             </div>
             <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
             <div class="list-q3" id="list-q3"></div>
@@ -8130,6 +9280,16 @@ async function renderListParts() {
             <div class="lpc-right">
                 <div class="lpc-repo-label"></div>
                 <div class="lpc-repo-total"></div>
+                <div class="lpc-repo-detail" style="display:none;">
+                    <div class="lpc-repo-row lpc-repo-row-new">
+                        <span class="lpc-repo-new">新</span>
+                        <span class="lpc-repo-new-qty">0</span>
+                    </div>
+                    <div class="lpc-repo-row lpc-repo-row-used">
+                        <span class="lpc-repo-used">旧</span>
+                        <span class="lpc-repo-used-qty">0</span>
+                    </div>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -8205,17 +9365,27 @@ async function enrichListPartCard(card, part) {
         });
     }
 
-    // ④ 该零件在系统各仓库的数量总数（点击可查看各仓库详情）
+    // ④ 该零件（按型号+颜色匹配）在系统各仓库的数量总数（点击可查看各仓库详情，区分新/旧状态）
     try {
-        const summary = await getListPartRepoSummary(partNum);
+        const summary = await getListPartRepoSummary(partNum, colorId);
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
+        const detailEl = card.querySelector('.lpc-repo-detail');
+        const newQtyEl = card.querySelector('.lpc-repo-new-qty');
+        const usedQtyEl = card.querySelector('.lpc-repo-used-qty');
         if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共：` : '';
         if (totalEl) {
             totalEl.textContent = summary.total;
+            // 显示新/旧数量详情
+            if (detailEl && summary.repoCount) {
+                detailEl.style.display = 'flex';
+                if (newQtyEl) newQtyEl.textContent = summary.totalNew;
+                if (usedQtyEl) usedQtyEl.textContent = summary.totalUsed;
+            }
             if (summary.repoCount) {
-                totalEl.title = '点击查看各仓库数量';
-                totalEl.addEventListener('click', () => showListPartRepoDetail(partNum));
+                totalEl.title = '点击查看各仓库数量（按型号+颜色匹配）';
+                totalEl.style.cursor = 'pointer';
+                totalEl.addEventListener('click', () => showListPartRepoDetail(partNum, colorId));
             } else {
                 totalEl.title = '系统暂无该零件库存';
             }
@@ -8225,13 +9395,13 @@ async function enrichListPartCard(card, part) {
     }
 }
 
-// 搜索该零件在系统各仓库的数量汇总（按 part_num 精确匹配，跨仓库）
-async function getListPartRepoSummary(partNum) {
+// 搜索该零件在系统各仓库的数量汇总（按 part_num + color_id 精确匹配，跨仓库，区分新/旧状态）
+async function getListPartRepoSummary(partNum, colorId) {
     try {
         const [repos, boxes, parts] = await Promise.all([
             getRepositories(),
             supabaseRequest('boxes', { select: 'id,repository_id' }),
-            supabaseRequest('parts', { select: 'id,part_num,quantity,box_id' })
+            supabaseRequest('parts', { select: 'id,part_num,color_id,is_new,quantity,box_id' })
         ]);
         const boxRepoMap = {};
         (boxes || []).forEach((b) => { boxRepoMap[b.id] = b.repository_id; });
@@ -8240,33 +9410,51 @@ async function getListPartRepoSummary(partNum) {
         const perRepo = {};
         (parts || []).forEach((p) => {
             if (p.part_num !== partNum) return;
+            // 如果指定了颜色，则过滤颜色匹配的记录
+            if (colorId != null && colorId !== '' && String(p.color_id) !== String(colorId)) return;
             const rid = boxRepoMap[p.box_id];
             if (rid == null) return;
-            perRepo[rid] = (perRepo[rid] || 0) + (p.quantity || 0);
+            if (!perRepo[rid]) { perRepo[rid] = { newQty: 0, usedQty: 0, total: 0 }; }
+            const qty = p.quantity || 0;
+            if (p.is_new) {
+                perRepo[rid].newQty += qty;
+            } else {
+                perRepo[rid].usedQty += qty;
+            }
+            perRepo[rid].total += qty;
         });
         const entries = Object.keys(perRepo).map((id) => ({
             id: Number(id),
             name: repoNameMap[id] || ('仓库' + id),
-            quantity: perRepo[id]
+            newQty: perRepo[id].newQty,
+            usedQty: perRepo[id].usedQty,
+            quantity: perRepo[id].total
         }));
         const total = entries.reduce((s, e) => s + e.quantity, 0);
-        return { repos: entries, total: total, repoCount: entries.length };
+        const totalNew = entries.reduce((s, e) => s + e.newQty, 0);
+        const totalUsed = entries.reduce((s, e) => s + e.usedQty, 0);
+        return { repos: entries, total: total, totalNew: totalNew, totalUsed: totalUsed, repoCount: entries.length };
     } catch (error) {
         console.error('获取清单零件仓库汇总失败:', error.message);
-        return { repos: [], total: 0, repoCount: 0 };
+        return { repos: [], total: 0, totalNew: 0, totalUsed: 0, repoCount: 0 };
     }
 }
 
-// 弹窗显示该零件在各个仓库的数量详情
-async function showListPartRepoDetail(partNum) {
-    const summary = await getListPartRepoSummary(partNum);
+// 弹窗显示该零件在各个仓库的数量详情（区分新/旧状态）
+async function showListPartRepoDetail(partNum, colorId) {
+    const summary = await getListPartRepoSummary(partNum, colorId);
     const rows = summary.repos.length
         ? summary.repos.map((r) => `
             <div class="repo-detail-row">
                 <span class="repo-detail-name">${escapeHtml(r.name)}</span>
                 <span class="repo-detail-qty">${escapeHtml(r.quantity)}</span>
+                <div class="repo-detail-status">
+                    <span class="repo-detail-new">新:${escapeHtml(r.newQty)}</span>
+                    <span class="repo-detail-used">旧:${escapeHtml(r.usedQty)}</span>
+                </div>
             </div>`).join('')
         : '<div class="repo-detail-empty">系统暂无该零件库存</div>';
+    const colorHint = (colorId != null && colorId !== '') ? `（颜色ID:${escapeHtml(String(colorId))}）` : '';
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -8274,13 +9462,14 @@ async function showListPartRepoDetail(partNum) {
     sheet.className = 'modal-content repo-detail-modal';
     sheet.innerHTML = `
         <div class="modal-header">
-            <span class="modal-title">${escapeHtml(partNum)} 仓库分布</span>
+            <span class="modal-title">${escapeHtml(partNum)}${colorHint} 仓库分布</span>
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
             </div>
         </div>
         <div class="modal-body">
             <div class="repo-detail-list">${rows}</div>
+            ${summary.repos.length ? `<div class="repo-detail-total">总计：<span class="repo-detail-total-qty">${summary.total}</span> <span class="repo-detail-total-new">新${summary.totalNew}</span> <span class="repo-detail-total-used">旧${summary.totalUsed}</span></div>` : ''}
         </div>
     `;
     overlay.appendChild(sheet);
@@ -8355,15 +9544,15 @@ function refreshQ4Labels() {
 
 // 点击 Q4 标签，弹窗输入对应值（避免页面内输入框触发输入法导致画面跳动）
 function editQ4Value(field) {
-    _q4InputMode = 'numeric';
     let title, value, inputType, im;
     if (field === 'model') { title = '请输入型号'; value = listModel; inputType = 'text'; im = 'numeric'; }
     else if (field === 'color') { title = '请输入颜色'; value = listColor; inputType = 'text'; im = 'numeric'; }
     else { title = '请输入数量'; value = String(listQty); inputType = 'number'; im = ''; }
 
-    // 型号输入可能需要英文字母，提供键盘模式切换按钮（数字/英文）
-    const toggleBtn = field === 'model'
-        ? '<button class="q4-popup-mode" type="button" onclick="toggleQ4InputMode(this)">ABC</button>'
+    // 型号输入时才显示内嵌英文词库（三行自动换行、垂直滚动），点选词填入输入框
+    const idAbcSection = field === 'model'
+        ? `<div class="id-abc-inline-label">型号英文词库</div>
+           <div class="id-abc-wrap" id="q4-popup-idabc-wrap"></div>`
         : '';
 
     const overlay = document.createElement('div');
@@ -8376,11 +9565,11 @@ function editQ4Value(field) {
         <div class="q4-popup">
             <div class="q4-popup-title">${title}</div>
             <input class="q4-popup-input" id="q4-popup-input" type="${inputType}" inputmode="${im}" min="${inputType === 'number' ? 1 : ''}" value="${value}">
-            ${toggleBtn}
             <div class="q4-popup-actions">
                 <button class="q4-popup-btn" onclick="cancelQ4Input(this)">取消</button>
                 <button class="q4-popup-btn q4-popup-btn-confirm" onclick="confirmQ4Input(this)">确定</button>
             </div>
+            ${idAbcSection}
         </div>
     `;
     document.body.appendChild(overlay);
@@ -8390,6 +9579,11 @@ function editQ4Value(field) {
     input.focus();
     if (input.select) input.select();
 
+    // 型号输入：加载内嵌英文词库
+    if (field === 'model') {
+        initQ4IDAbcLibrary(overlay);
+    }
+
     // 键盘回车/打勾键：顺带触发弹窗“确定”按钮
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -8398,18 +9592,6 @@ function editQ4Value(field) {
             confirmQ4Input(confirmBtn);
         }
     });
-}
-
-// 型号输入弹窗：在 数字键盘 / 英文键盘 之间切换
-function toggleQ4InputMode(btn) {
-    const ov = btn.closest('.modal-overlay');
-    const input = ov ? ov.querySelector('#q4-popup-input') : null;
-    _q4InputMode = (_q4InputMode === 'numeric') ? 'text' : 'numeric';
-    if (input) {
-        input.setAttribute('inputmode', _q4InputMode);
-        btn.textContent = (_q4InputMode === 'numeric') ? 'ABC' : '123';
-        input.focus();
-    }
 }
 
 function cancelQ4Input(btn) {
@@ -8447,6 +9629,7 @@ window.pickColor = pickColor;
 window.addListPartFromSelector = addListPartFromSelector;
 window.refreshQ4Labels = refreshQ4Labels;
 window.editQ4Value = editQ4Value;
-window.toggleQ4InputMode = toggleQ4InputMode;
 window.confirmQ4Input = confirmQ4Input;
 window.cancelQ4Input = cancelQ4Input;
+window.showListFileManager = showListFileManager;
+window.updateListFileNameDisplay = updateListFileNameDisplay;
