@@ -9372,7 +9372,7 @@ async function renderListParts() {
                             <div class="lpc-color-name"></div>
                         </div>
                         <div class="lpc-qty-wrap">
-                            <div class="lpc-qty-label">数量：</div>
+                            <div class="lpc-qty-label">数量</div>
                             <div class="lpc-qty">${escapeHtml(p.quantity != null ? p.quantity : '')}</div>
                         </div>
                     </div>
@@ -9538,7 +9538,12 @@ function fitListQtyText(el) {
 }
 
 // 异步补全单个清单零件卡片：零件名称、颜色名称、图片、仓库数量汇总
+// 带 token 校验：多次快速 render 时，旧 enrich 结果不会覆盖新 DOM
+let _listEnrichSeq = 0;
 async function enrichListPartCard(card, part) {
+    const token = ++_listEnrichSeq;
+    card.dataset.enrichToken = token;
+
     const rawPartNum = part.part_num != null ? String(part.part_num).trim() : '';
     const colorId = part.colorId;
     let effectivePartNum = rawPartNum;
@@ -9547,12 +9552,13 @@ async function enrichListPartCard(card, part) {
     if (rawPartNum && typeof resolvePartAlias === 'function') {
         try {
             const resolved = await resolvePartAlias(rawPartNum);
+            if (card.dataset.enrichToken !== String(token)) return; // DOM 已换
             if (resolved && String(resolved) !== rawPartNum) {
                 effectivePartNum = String(resolved).trim();
-                // 只在 DOM 上加个 data 标记方便调试，不显示给用户
                 card.dataset.resolvedPartNum = effectivePartNum;
             }
         } catch (e) { /* ignore */ }
+        if (card.dataset.enrichToken !== String(token)) return;
     }
 
     // ① 零件名称（优先查别名解析后的 RB 标准型号）
@@ -9561,18 +9567,22 @@ async function enrichListPartCard(card, part) {
     if (typeof getPartByNum === 'function' && effectivePartNum) {
         try {
             const rbPart = await getPartByNum(effectivePartNum);
+            if (card.dataset.enrichToken !== String(token)) return; // DOM 已换
             if (nameEl && rbPart) {
                 if (rbPart.name) {
                     nameEl.textContent = rbPart.name;
+                    nameEl.style.color = '';
                     nameResolved = true;
                 } else {
                     const alt = rbPart.name_en || rbPart.nameEn || rbPart.part_name || rbPart.description;
-                    if (alt) { nameEl.textContent = alt; nameResolved = true; }
+                    if (alt) { nameEl.textContent = alt; nameEl.style.color = ''; nameResolved = true; }
                 }
             }
         } catch (e) { /* ignore */ }
     }
-    if (nameEl && !nameResolved && effectivePartNum) {
+    // 兜底：RB 查不到就显示 Part #xxx，防止名称行空白
+    if (card.dataset.enrichToken !== String(token)) return;
+    if (nameEl && !nameResolved && rawPartNum) {
         nameEl.textContent = 'Part #' + rawPartNum;
         nameEl.style.color = '#999';
     }
@@ -9580,6 +9590,7 @@ async function enrichListPartCard(card, part) {
     // ② 颜色名称（RB 数据库）
     if (colorId != null && colorId !== '' && typeof getColorById === 'function') {
         getColorById(colorId).then((color) => {
+            if (card.dataset.enrichToken !== String(token)) return;
             const cnEl = card.querySelector('.lpc-color-name');
             if (color && color.name && cnEl) cnEl.textContent = color.name;
         }).catch(() => {});
@@ -9588,6 +9599,7 @@ async function enrichListPartCard(card, part) {
     // ③ 零件图片（用原始 rawPartNum，因为图片 API 可能识别别名型号）
     if (typeof getPartImageUrl === 'function') {
         getPartImageUrl(rawPartNum, colorId || 0).then((url) => {
+            if (card.dataset.enrichToken !== String(token)) return;
             const imgWrap = card.querySelector('.lpc-img');
             if (!imgWrap) return;
             if (url) {
@@ -9599,23 +9611,25 @@ async function enrichListPartCard(card, part) {
                 imgWrap.innerHTML = '<div class="no-image">暂无图片</div>';
             }
         }).catch(() => {
+            if (card.dataset.enrichToken !== String(token)) return;
             const imgWrap = card.querySelector('.lpc-img');
             if (imgWrap) imgWrap.innerHTML = '<div class="no-image">暂无图片</div>';
         });
     }
 
-    // ④ 仓库汇总：同时查原始型号（入库时存的）+ 别名解析后的标准型号，两边库存加总
+    // ④ 仓库汇总：同时查原始型号 + 别名解析后的标准型号，两边库存加总
     try {
         let summary;
         if (effectivePartNum && effectivePartNum !== rawPartNum) {
-            // 有别名映射：原始型号和 RB 标准型号都查，去重合并
             const [sRaw, sStd] = await Promise.all([
                 getListPartRepoSummary(rawPartNum, colorId),
                 getListPartRepoSummary(effectivePartNum, colorId),
             ]);
+            if (card.dataset.enrichToken !== String(token)) return;
             summary = mergeRepoSummaries(sRaw, sStd);
         } else {
             summary = await getListPartRepoSummary(rawPartNum, colorId);
+            if (card.dataset.enrichToken !== String(token)) return;
         }
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
