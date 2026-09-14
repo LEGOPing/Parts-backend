@@ -5247,19 +5247,6 @@ body {
     font-family: monospace;
 }
 
-/* Q2：信息提示区 */
-.list-q2 {
-    flex: 0 0 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    padding: 0 12px;
-    font-size: 12px;
-    color: var(--dark-gray-color);
-    box-sizing: border-box;
-    border-bottom: 1px solid #eee;
-}
-
 /* Q3：零件清单区（可滚动，充满剩余空间） */
 .list-q3 {
     flex: 1;
@@ -5279,8 +5266,38 @@ body {
     padding: 24px 0;
 }
 
-/* 零件卡片：高72px，左图(72px)/中信息(自适应)/右仓库汇总(64px) */
+/* 卡片 wrapper：左滑容器，右侧放删除按钮 */
+.lpc-wrapper {
+    position: relative;
+    height: 76px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.lpc-delete-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 64px;
+    height: 76px;
+    background: #F44336;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+
+/* 零件卡片：滑动主体 */
 .list-part-card {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
@@ -5290,7 +5307,8 @@ body {
     border-radius: 8px;
     box-sizing: border-box;
     padding-right: 2px; /* 给右侧留出 2px 空间，避免状态标签被圆角裁切 */
-    overflow: visible; /* 改为 visible，防止右侧状态被圆角裁切 */
+    overflow: visible; /* 防止右侧状态被圆角裁切 */
+    touch-action: pan-y; /* 允许垂直滚动，水平拖动由 JS 处理 */
 }
 
 /* 左：零件图片（固定 76px） */

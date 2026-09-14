@@ -8918,7 +8918,28 @@ async function deleteListFile(name) {
     });
 }
 
-// 简单 CSV 导出（不含 BOM，UTF-8）
+// 异步导出 CSV（含 part_num/color_id/quantity + 仓库汇总信息）
+async function exportListToCSVAsync(parts) {
+    const header = 'part_num,color_id,quantity,repo_count,repo_total,total_new,total_used';
+    const rows = [];
+    for (const p of (parts || [])) {
+        const pn = (p.part_num == null ? '' : String(p.part_num)).replace(/"/g, '""');
+        const ci = (p.colorId != null ? p.colorId : (p.color_id != null ? p.color_id : '')).toString().replace(/"/g, '""');
+        const qy = (p.quantity == null ? 0 : p.quantity);
+        let repoCount = 0, repoTotal = 0, totalNew = 0, totalUsed = 0;
+        try {
+            const s = await getListPartRepoSummary(p.part_num, p.colorId);
+            repoCount = s.repoCount || 0;
+            repoTotal = s.total || 0;
+            totalNew = s.totalNew || 0;
+            totalUsed = s.totalUsed || 0;
+        } catch (e) {}
+        rows.push(`${pn},${ci},${qy},${repoCount},${repoTotal},${totalNew},${totalUsed}`);
+    }
+    return '\uFEFF' + [header, ...rows].join('\n');
+}
+
+// 简单 CSV 导出（不含仓库信息，仅保存清单内容）
 function exportListToCSV(parts) {
     const header = 'part_num,color_id,quantity';
     const rows = (parts || []).map(p => {
@@ -8927,7 +8948,7 @@ function exportListToCSV(parts) {
         const qy = (p.quantity == null ? 0 : p.quantity);
         return `${pn},${ci},${qy}`;
     });
-    return '\uFEFF' + [header, ...rows].join('\n'); // 加 BOM 以便 Excel 正确识别 UTF-8
+    return '\uFEFF' + [header, ...rows].join('\n');
 }
 
 // 简单 CSV 导入（只识别 part_num, color_id, quantity 三列）
@@ -9069,16 +9090,21 @@ async function showListFileManager() {
         }
     });
 
-    overlay.querySelector('.lft-export').addEventListener('click', () => {
+    overlay.querySelector('.lft-export').addEventListener('click', async () => {
         const name = currentListFileName || generateTempFileName();
-        const csv = exportListToCSV(listParts);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = name;
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a); URL.revokeObjectURL(url);
-        showToast('已导出：' + name);
+        showToast('正在查询仓库信息...');
+        try {
+            const csv = await exportListToCSVAsync(listParts);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+            showToast('已导出：' + name);
+        } catch (e) {
+            showToast('导出失败：' + e.message);
+        }
     });
 
     const fileInput = overlay.querySelector('#lft-import-input');
@@ -9195,7 +9221,6 @@ function openListPage() {
             <div class="list-filename-row">
                 <span class="list-filename-text" id="list-filename-text">${escapeHtml(currentListFileName)}</span>
             </div>
-            <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
             <div class="list-q3" id="list-q3"></div>
             <div class="list-q4">
                 <div class="q4-cell q4-model">
@@ -9245,7 +9270,7 @@ function updateListHint(text) {
     if (el) el.textContent = text;
 }
 
-// 渲染 Q3 零件清单区（零件卡片：左图/中信息/右仓库汇总）
+// 渲染 Q3 零件清单区（零件卡片：左图/中信息/右仓库汇总，支持左滑删除）
 async function renderListParts() {
     const q3 = document.getElementById('list-q3');
     if (!q3) return;
@@ -9259,48 +9284,162 @@ async function renderListParts() {
         const partNum = p.part_num != null ? p.part_num : '';
         const colorId = p.colorId != null ? p.colorId : '';
         return `
-        <div class="list-part-card" data-part-num="${escapeHtml(partNum)}" data-color-id="${escapeHtml(colorId)}">
-            <div class="lpc-left">
-                <div class="lpc-img"><div class="no-image">加载中...</div></div>
-            </div>
-            <div class="lpc-mid">
-                <div class="lpc-num">${escapeHtml(partNum)}</div>
-                <div class="lpc-name"></div>
-                <div class="lpc-row3">
-                    <div class="lpc-color">
-                        <div class="lpc-color-id">${escapeHtml(colorId)}</div>
-                        <div class="lpc-color-name"></div>
-                    </div>
-                    <div class="lpc-qty-wrap">
-                        <div class="lpc-qty-label">数量：</div>
-                        <div class="lpc-qty">${escapeHtml(p.quantity != null ? p.quantity : '')}</div>
+        <div class="lpc-wrapper" data-part-num="${escapeHtml(partNum)}" data-color-id="${escapeHtml(colorId)}" data-idx="">
+            <div class="lpc-delete-btn">删除</div>
+            <div class="list-part-card">
+                <div class="lpc-left">
+                    <div class="lpc-img"><div class="no-image">加载中...</div></div>
+                </div>
+                <div class="lpc-mid">
+                    <div class="lpc-num">${escapeHtml(partNum)}</div>
+                    <div class="lpc-name"></div>
+                    <div class="lpc-row3">
+                        <div class="lpc-color">
+                            <div class="lpc-color-id">${escapeHtml(colorId)}</div>
+                            <div class="lpc-color-name"></div>
+                        </div>
+                        <div class="lpc-qty-wrap">
+                            <div class="lpc-qty-label">数量：</div>
+                            <div class="lpc-qty">${escapeHtml(p.quantity != null ? p.quantity : '')}</div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="lpc-right">
-                <div class="lpc-repo-label"></div>
-                <div class="lpc-repo-total"></div>
-                <div class="lpc-repo-detail" style="display:none;">
-                    <div class="lpc-repo-row lpc-repo-row-new">
-                        <span class="lpc-repo-new">新</span>
-                        <span class="lpc-repo-new-qty">0</span>
-                    </div>
-                    <div class="lpc-repo-row lpc-repo-row-used">
-                        <span class="lpc-repo-used">旧</span>
-                        <span class="lpc-repo-used-qty">0</span>
+                <div class="lpc-right">
+                    <div class="lpc-repo-label"></div>
+                    <div class="lpc-repo-total"></div>
+                    <div class="lpc-repo-detail" style="display:none;">
+                        <div class="lpc-repo-row lpc-repo-row-new">
+                            <span class="lpc-repo-new">新</span>
+                            <span class="lpc-repo-new-qty">0</span>
+                        </div>
+                        <div class="lpc-repo-row lpc-repo-row-used">
+                            <span class="lpc-repo-used">旧</span>
+                            <span class="lpc-repo-used-qty">0</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>`;
     }).join('');
 
+    // 给每个 wrapper 设置索引并绑定左滑
+    const wrappers = q3.querySelectorAll('.lpc-wrapper');
+    wrappers.forEach((wrap, i) => {
+        wrap.dataset.idx = i;
+        attachSwipeDelete(wrap);
+        // 删除按钮点击
+        wrap.querySelector('.lpc-delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(wrap.dataset.idx, 10);
+            if (!isNaN(idx) && idx >= 0 && idx < listParts.length) {
+                listParts.splice(idx, 1);
+                renderListParts();
+            }
+        });
+    });
+
     // 数量文本较多时自动缩小字体，避免超出边界
     q3.querySelectorAll('.lpc-qty').forEach(fitListQtyText);
 
     // 异步补全各卡片：零件名称/颜色名称/图片/仓库数量汇总
     listParts.forEach((p, i) => {
-        const card = q3.children[i];
-        if (card) enrichListPartCard(card, p);
+        const wrap = wrappers[i];
+        if (wrap) enrichListPartCard(wrap.querySelector('.list-part-card'), p);
+    });
+}
+
+// 给卡片绑定左滑手势（触摸 + 鼠标拖拽）
+function attachSwipeDelete(wrap) {
+    let startX = 0, startY = 0, curX = 0, dragging = false, lockedAxis = null;
+    const DELETE_WIDTH = 64; // 暴露的删除按钮宽度
+    const card = wrap.querySelector('.list-part-card');
+
+    const closeSwipe = () => {
+        card.style.transition = 'transform 0.25s ease';
+        card.style.transform = 'translateX(0)';
+        setTimeout(() => { card.style.transition = ''; }, 260);
+    };
+    const openSwipe = () => {
+        card.style.transition = 'transform 0.25s ease';
+        card.style.transform = `translateX(-${DELETE_WIDTH}px)`;
+        setTimeout(() => { card.style.transition = ''; }, 260);
+    };
+
+    const onStart = (x, y) => {
+        startX = x; startY = y; curX = 0; dragging = true; lockedAxis = null;
+        // 关闭其它已打开的
+        document.querySelectorAll('.lpc-wrapper.swiped').forEach(w => {
+            if (w !== wrap) {
+                w.classList.remove('swiped');
+                const c = w.querySelector('.list-part-card');
+                c.style.transition = 'transform 0.25s ease';
+                c.style.transform = 'translateX(0)';
+                setTimeout(() => { c.style.transition = ''; }, 260);
+            }
+        });
+    };
+    const onMove = (x, y) => {
+        if (!dragging) return;
+        const dx = x - startX, dy = y - startY;
+        if (lockedAxis === null) {
+            if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+            lockedAxis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        }
+        if (lockedAxis !== 'x') return;
+        curX = dx;
+        // 已左滑打开状态下，向右滑可关闭
+        const opened = wrap.classList.contains('swiped');
+        let translate;
+        if (opened) {
+            translate = -DELETE_WIDTH + Math.max(0, Math.min(DELETE_WIDTH + 40, curX + DELETE_WIDTH));
+        } else {
+            translate = Math.min(40, curX); // 右滑不开启，只允许左滑
+        }
+        if (curX < 0 && !opened) translate = Math.max(-DELETE_WIDTH - 20, curX);
+        card.style.transition = 'none';
+        card.style.transform = `translateX(${translate}px)`;
+    };
+    const onEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        const opened = wrap.classList.contains('swiped');
+        if (opened) {
+            if (curX > DELETE_WIDTH * 0.4) {
+                wrap.classList.remove('swiped'); closeSwipe();
+            } else {
+                openSwipe();
+            }
+        } else {
+            if (curX < -DELETE_WIDTH * 0.4) {
+                wrap.classList.add('swiped'); openSwipe();
+            } else {
+                closeSwipe();
+            }
+        }
+    };
+
+    // Touch
+    wrap.addEventListener('touchstart', (e) => {
+        const t = e.touches[0];
+        onStart(t.clientX, t.clientY);
+    }, { passive: true });
+    wrap.addEventListener('touchmove', (e) => {
+        const t = e.touches[0];
+        onMove(t.clientX, t.clientY);
+    }, { passive: true });
+    wrap.addEventListener('touchend', onEnd);
+
+    // Mouse（桌面端支持）
+    let mouseDown = false;
+    wrap.addEventListener('mousedown', (e) => { mouseDown = true; onStart(e.clientX, e.clientY); });
+    document.addEventListener('mousemove', (e) => { if (mouseDown) onMove(e.clientX, e.clientY); });
+    document.addEventListener('mouseup', () => { if (mouseDown) { mouseDown = false; onEnd(); } });
+
+    // 点击空白处关闭已打开的卡片
+    wrap.addEventListener('click', (e) => {
+        if (wrap.classList.contains('swiped') && !e.target.closest('.lpc-delete-btn')) {
+            wrap.classList.remove('swiped'); closeSwipe();
+        }
     });
 }
 
