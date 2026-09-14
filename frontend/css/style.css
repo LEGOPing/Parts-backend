@@ -5374,8 +5374,8 @@ body {
 }
 
 .lpc-name {
-    flex: 0 1 auto;
-    max-height: 36px;
+    flex: 0 0 36px;
+    height: 36px;
     font-size: 9px;
     color: #333;
     line-height: 12px;
@@ -5389,8 +5389,9 @@ body {
 }
 
 .lpc-row3 {
-    flex: 0 0 22px;
-    height: 22px;
+    /* 卡片 1/3 高度：84 / 3 = 28px */
+    flex: 0 0 28px;
+    height: 28px;
     display: flex;
     align-items: stretch;
 }
@@ -5398,7 +5399,7 @@ body {
 .lpc-color {
     flex: 1 1 auto;
     min-width: 0;
-    height: 100%;
+    height: 28px;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -5427,14 +5428,15 @@ body {
     box-sizing: border-box;
 }
 
+/* 数量列：竖排 —— 上 "数量:"(8px) / 下 数字(12px bold) */
 .lpc-qty-wrap {
-    flex: 0 0 46px;
-    width: 46px;
-    height: 22px;
+    flex: 0 0 52px;
+    width: 52px;
+    height: 28px;
     display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 2px;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
     box-sizing: border-box;
     padding-left: 2px;
     overflow: hidden;
@@ -5442,19 +5444,18 @@ body {
 
 .lpc-qty-label {
     flex: 0 0 auto;
-    font-size: 9px;
+    font-size: 8px;
     color: #555;
-    line-height: 14px;
+    line-height: 10px;
     white-space: nowrap;
 }
 
 .lpc-qty {
-    flex: 1 1 auto;
-    font-size: 16px;
+    flex: 0 0 auto;
+    font-size: 12px;
     font-weight: bold;
     color: var(--black-color);
-    line-height: 22px;
-    text-align: right;
+    line-height: 16px;
     white-space: nowrap;
     overflow: hidden;
     box-sizing: border-box;
@@ -5504,7 +5505,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1px;
-    margin-top: 1px;
+    margin-top: -3px;
     overflow: visible;
 }
 
