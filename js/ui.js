@@ -8840,6 +8840,317 @@ let listParts = [];
 let listModel = '';
 let listColor = '';
 let listQty = 1;
+// 当前清单文件名（未打开时为临时文件名 List+时间.csv）
+let currentListFileName = '';
+// 清单文件 IndexedDB 存储名
+const LIST_FILES_DB = 'rb_list_files';
+const LIST_FILES_STORE = 'files';
+
+// 生成临时文件名：List + YYYYMMDDHHmmss + .csv
+function generateTempFileName() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `List${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.csv`;
+}
+
+// 更新文件名显示行
+function updateListFileNameDisplay() {
+    const el = document.getElementById('list-filename-text');
+    if (el) el.textContent = currentListFileName || generateTempFileName();
+}
+
+// 初始化清单文件 IndexedDB（若未创建）
+function openListFilesDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(LIST_FILES_DB, 1);
+        req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(LIST_FILES_STORE)) {
+                db.createObjectStore(LIST_FILES_STORE, { keyPath: 'name' });
+            }
+        };
+        req.onsuccess = (e) => resolve(e.target.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 保存清单文件到 IndexedDB
+async function saveListFile(name, parts) {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readwrite');
+        tx.objectStore(LIST_FILES_STORE).put({ name, parts, updatedAt: Date.now() });
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 从 IndexedDB 读取清单文件
+async function loadListFile(name) {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readonly');
+        const req = tx.objectStore(LIST_FILES_STORE).get(name);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 列出所有已保存的清单文件
+async function listListFiles() {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readonly');
+        const req = tx.objectStore(LIST_FILES_STORE).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 删除清单文件
+async function deleteListFile(name) {
+    const db = await openListFilesDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(LIST_FILES_STORE, 'readwrite');
+        tx.objectStore(LIST_FILES_STORE).delete(name);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// 简单 CSV 导出（不含 BOM，UTF-8）
+function exportListToCSV(parts) {
+    const header = 'part_num,color_id,quantity';
+    const rows = (parts || []).map(p => {
+        const pn = (p.part_num == null ? '' : String(p.part_num)).replace(/"/g, '""');
+        const ci = (p.colorId != null ? p.colorId : (p.color_id != null ? p.color_id : '')).toString().replace(/"/g, '""');
+        const qy = (p.quantity == null ? 0 : p.quantity);
+        return `${pn},${ci},${qy}`;
+    });
+    return '\uFEFF' + [header, ...rows].join('\n'); // 加 BOM 以便 Excel 正确识别 UTF-8
+}
+
+// 简单 CSV 导入（只识别 part_num, color_id, quantity 三列）
+function importListFromCSV(text) {
+    // 去掉 BOM
+    if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (!lines.length) return [];
+
+    // 解析 CSV 行（简单实现，不处理引号内逗号）
+    function parseCSVLine(line) {
+        const result = [];
+        let cur = '';
+        let inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+                else inQuote = !inQuote;
+            } else if (ch === ',' && !inQuote) {
+                result.push(cur); cur = '';
+            } else cur += ch;
+        }
+        result.push(cur);
+        return result;
+    }
+
+    const header = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+    const idx = {
+        part_num: header.indexOf('part_num'),
+        color_id: header.indexOf('color_id'),
+        quantity: header.indexOf('quantity')
+    };
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+        const cells = parseCSVLine(lines[i]);
+        const part_num = idx.part_num >= 0 ? cells[idx.part_num].trim() : '';
+        const colorId = idx.color_id >= 0 ? cells[idx.color_id].trim() : '';
+        const quantity = idx.quantity >= 0 ? parseInt(cells[idx.quantity].trim(), 10) || 1 : 1;
+        if (part_num) out.push(normalizeListPart({ part_num, colorId, quantity }));
+    }
+    return out;
+}
+
+// 弹出清单文件管理弹窗
+async function showListFileManager() {
+    // 先关闭已有的
+    document.querySelectorAll('.list-file-modal-overlay').forEach(n => n.remove());
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active list-file-modal-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const files = await listListFiles();
+    const filesHTML = files.length
+        ? files.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(f => {
+            const date = f.updatedAt ? new Date(f.updatedAt) : null;
+            const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : '';
+            return `
+            <div class="list-file-item">
+                <div class="list-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+                <div class="list-file-meta">${(f.parts || []).length}项 · ${dateStr}</div>
+                <div class="list-file-actions">
+                    <button class="lfa-btn lfa-open" data-name="${escapeHtml(f.name)}">打开</button>
+                    <button class="lfa-btn lfa-rename" data-name="${escapeHtml(f.name)}">重命名</button>
+                    <button class="lfa-btn lfa-del" data-name="${escapeHtml(f.name)}">删除</button>
+                </div>
+            </div>`;
+        }).join('')
+        : '<div class="list-file-empty">暂无已保存的清单</div>';
+
+    overlay.innerHTML = `
+        <div class="modal-content list-file-modal">
+            <div class="modal-header">
+                <span class="modal-title">清单管理</span>
+                <div class="modal-actions">
+                    <button class="btn-cancel" data-close>关闭</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="list-file-toolbar">
+                    <button class="lft-btn lft-new">新建</button>
+                    <button class="lft-btn lft-save">保存</button>
+                    <button class="lft-btn lft-save-as">另存为</button>
+                    <button class="lft-btn lft-export">导出CSV</button>
+                    <button class="lft-btn lft-import">导入CSV</button>
+                    <input type="file" id="lft-import-input" accept=".csv,text/csv" style="display:none;">
+                </div>
+                <div class="list-file-current">
+                    <span class="lfc-label">当前：</span>
+                    <span class="lfc-name" id="lfc-current-name">${escapeHtml(currentListFileName || generateTempFileName())}</span>
+                </div>
+                <div class="list-file-list">${filesHTML}</div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // 绑定事件
+    overlay.querySelector('[data-close]').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('.lft-new').addEventListener('click', async () => {
+        if (listParts.length && !confirm('新建将清空当前清单，继续？')) return;
+        listParts = [];
+        currentListFileName = generateTempFileName();
+        renderListParts();
+        updateListFileNameDisplay();
+        updateListHint('当前清单为空，可添加零件');
+        showToast('已新建清单');
+        overlay.remove();
+    });
+
+    overlay.querySelector('.lft-save').addEventListener('click', async () => {
+        try {
+            const name = currentListFileName || generateTempFileName();
+            await saveListFile(name, listParts);
+            currentListFileName = name;
+            updateListFileNameDisplay();
+            showToast('已保存：' + name);
+            overlay.remove();
+        } catch (e) {
+            showToast('保存失败：' + e.message);
+        }
+    });
+
+    overlay.querySelector('.lft-save-as').addEventListener('click', async () => {
+        const name = prompt('输入文件名（.csv 可选）：', currentListFileName || generateTempFileName());
+        if (!name) return;
+        let finalName = name.trim();
+        if (!/\.csv$/i.test(finalName)) finalName += '.csv';
+        try {
+            await saveListFile(finalName, listParts);
+            currentListFileName = finalName;
+            updateListFileNameDisplay();
+            showToast('已另存为：' + finalName);
+            overlay.remove();
+        } catch (e) {
+            showToast('另存失败：' + e.message);
+        }
+    });
+
+    overlay.querySelector('.lft-export').addEventListener('click', () => {
+        const name = currentListFileName || generateTempFileName();
+        const csv = exportListToCSV(listParts);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        showToast('已导出：' + name);
+    });
+
+    const fileInput = overlay.querySelector('#lft-import-input');
+    overlay.querySelector('.lft-import').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const parts = importListFromCSV(text);
+            if (listParts.length && !confirm('导入将替换当前清单，继续？')) { e.target.value = ''; return; }
+            listParts = parts;
+            currentListFileName = file.name;
+            renderListParts();
+            updateListFileNameDisplay();
+            showToast('已导入：' + file.name);
+            overlay.remove();
+        } catch (err) {
+            showToast('导入失败：' + err.message);
+        } finally {
+            e.target.value = '';
+        }
+    });
+
+    // 文件项事件委托
+    overlay.querySelectorAll('.list-file-item').forEach(item => {
+        const name = item.querySelector('.lfa-open').dataset.name;
+        item.querySelector('.lfa-open').addEventListener('click', async () => {
+            try {
+                const file = await loadListFile(name);
+                if (!file) { showToast('文件不存在'); return; }
+                listParts = (file.parts || []).map(normalizeListPart);
+                currentListFileName = name;
+                renderListParts();
+                updateListFileNameDisplay();
+                updateListHint(`已打开：${name}（${listParts.length}项）`);
+                showToast('已打开：' + name);
+                overlay.remove();
+            } catch (e) { showToast('打开失败：' + e.message); }
+        });
+        item.querySelector('.lfa-rename').addEventListener('click', async () => {
+            const newName = prompt('输入新文件名：', name);
+            if (!newName || newName === name) return;
+            let finalName = newName.trim();
+            if (!/\.csv$/i.test(finalName)) finalName += '.csv';
+            try {
+                const file = await loadListFile(name);
+                if (!file) return;
+                await saveListFile(finalName, file.parts || []);
+                await deleteListFile(name);
+                if (currentListFileName === name) {
+                    currentListFileName = finalName;
+                    updateListFileNameDisplay();
+                }
+                showToast('已重命名为：' + finalName);
+                overlay.remove();
+            } catch (e) { showToast('重命名失败：' + e.message); }
+        });
+        item.querySelector('.lfa-del').addEventListener('click', async () => {
+            if (!confirm(`确认删除清单 "${name}"？`)) return;
+            try {
+                await deleteListFile(name);
+                if (currentListFileName === name) {
+                    currentListFileName = generateTempFileName();
+                    updateListFileNameDisplay();
+                }
+                showToast('已删除');
+                overlay.remove();
+            } catch (e) { showToast('删除失败：' + e.message); }
+        });
+    });
+}
 
 // 滚动锁定（输入法弹出时固定页面不移动）
 let _scrollLockCount = 0;
@@ -8858,9 +9169,12 @@ function unlockScroll() {
     }
 }
 
-// 打开清单页面（Q1 标题+返回 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
+// 打开清单页面（Q1 标题+返回+清单管理 / Q1b 文件名 / Q2 提示 / Q3 零件列表 / Q4 按钮区）
 function openListPage() {
     if (document.getElementById('list-page-overlay')) return;
+
+    // 首次打开时初始化临时文件名
+    if (!currentListFileName) currentListFileName = generateTempFileName();
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active list-page-overlay';
@@ -8873,7 +9187,13 @@ function openListPage() {
         <div class="list-page">
             <div class="list-q1">
                 <span class="list-title">零件清单</span>
-                <button class="list-back-btn" onclick="closeListPage()">返回</button>
+                <div class="list-q1-right">
+                    <button class="list-mgmt-btn" onclick="showListFileManager()">清单管理</button>
+                    <button class="list-back-btn" onclick="closeListPage()">返回</button>
+                </div>
+            </div>
+            <div class="list-filename-row">
+                <span class="list-filename-text" id="list-filename-text">${escapeHtml(currentListFileName)}</span>
             </div>
             <div class="list-q2" id="list-q2">当前清单为空，可添加零件</div>
             <div class="list-q3" id="list-q3"></div>
@@ -8961,8 +9281,14 @@ async function renderListParts() {
                 <div class="lpc-repo-label"></div>
                 <div class="lpc-repo-total"></div>
                 <div class="lpc-repo-detail" style="display:none;">
-                    <span class="lpc-repo-new">新<span class="lpc-repo-new-qty">0</span></span>
-                    <span class="lpc-repo-used">旧<span class="lpc-repo-used-qty">0</span></span>
+                    <div class="lpc-repo-row lpc-repo-row-new">
+                        <span class="lpc-repo-new">新</span>
+                        <span class="lpc-repo-new-qty">0</span>
+                    </div>
+                    <div class="lpc-repo-row lpc-repo-row-used">
+                        <span class="lpc-repo-used">旧</span>
+                        <span class="lpc-repo-used-qty">0</span>
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -9305,3 +9631,5 @@ window.refreshQ4Labels = refreshQ4Labels;
 window.editQ4Value = editQ4Value;
 window.confirmQ4Input = confirmQ4Input;
 window.cancelQ4Input = cancelQ4Input;
+window.showListFileManager = showListFileManager;
+window.updateListFileNameDisplay = updateListFileNameDisplay;
