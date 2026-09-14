@@ -9587,13 +9587,16 @@ async function enrichListPartCard(card, part) {
         nameEl.style.color = '#666';
     }
 
-    // ② 颜色名称（RB 数据库）
+    // ② 颜色名称（RB 数据库）—— 注意：IndexedDB 颜色键是 integer，必须 Number 化
     if (colorId != null && colorId !== '' && typeof getColorById === 'function') {
-        getColorById(colorId).then((color) => {
-            if (card.dataset.enrichToken !== String(token)) return;
-            const cnEl = card.querySelector('.lpc-color-name');
-            if (color && color.name && cnEl) cnEl.textContent = color.name;
-        }).catch(() => {});
+        const colorIdNum = Number(colorId);
+        if (!isNaN(colorIdNum)) {
+            getColorById(colorIdNum).then((color) => {
+                if (card.dataset.enrichToken !== String(token)) return;
+                const cnEl = card.querySelector('.lpc-color-name');
+                if (color && color.name && cnEl) cnEl.textContent = color.name;
+            }).catch(() => {});
+        }
     }
 
     // ③ 零件图片（用原始 rawPartNum，因为图片 API 可能识别别名型号）
@@ -9776,9 +9779,16 @@ async function showListPartRepoDetail(partNum, colorId, aliasPartNum) {
 
 // 将各种来源的零件对象规范化为清单卡片所需结构
 function normalizeListPart(p) {
+    let rawColorId = (p.colorId != null ? p.colorId : (p.color_id != null ? p.color_id : ''));
+    // 统一 colorId 类型：CSV/UI 传入可能是 string "0"，但 IndexedDB RB 颜色键是 number 0，
+    // 必须转成 Number 才能命中 getColorById。空串保持为空串（无颜色）。
+    if (rawColorId !== '' && rawColorId != null) {
+        const n = Number(rawColorId);
+        rawColorId = isNaN(n) ? rawColorId : n;
+    }
     return {
         part_num: p.part_num,
-        colorId: (p.colorId != null ? p.colorId : (p.color_id != null ? p.color_id : '')),
+        colorId: rawColorId,
         quantity: (p.quantity != null ? p.quantity : 1)
     };
 }
