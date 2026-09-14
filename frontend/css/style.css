@@ -5197,7 +5197,9 @@ body {
     border-radius: 6px;
     cursor: pointer;
     font-size: 12px;
-    padding: 6px 10px;
+    padding: 0 10px;
+    height: 31px;
+    min-height: 31px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5208,7 +5210,7 @@ body {
 
 .list-back-btn {
     width: 46px;
-    aspect-ratio: 3 / 2;
+    height: 31px;
     background: #F44336;
     color: white;
     border: none;
@@ -5223,13 +5225,14 @@ body {
     white-space: nowrap;
 }
 
-/* Q1b：文件名显示行（标题行下方，8px 蓝色） */
+/* Q1b：文件名 + 清单统计行 */
 .list-filename-row {
     flex: 0 0 auto;
     height: 16px;
     min-height: 16px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 0 12px;
     box-sizing: border-box;
     background: #f5faff;
@@ -5238,6 +5241,8 @@ body {
 }
 
 .list-filename-text {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 8px;
     color: #2196F3;
     line-height: 16px;
@@ -5245,6 +5250,15 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     font-family: monospace;
+}
+
+.list-filename-stats {
+    flex: 0 0 auto;
+    margin-left: 8px;
+    font-size: 8px;
+    color: #000;
+    line-height: 16px;
+    white-space: nowrap;
 }
 
 /* Q3：零件清单区（可滚动，充满剩余空间） */

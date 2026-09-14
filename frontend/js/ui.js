@@ -8857,6 +8857,22 @@ function generateTempFileName() {
 function updateListFileNameDisplay() {
     const el = document.getElementById('list-filename-text');
     if (el) el.textContent = currentListFileName || generateTempFileName();
+    updateListStatsDisplay();
+}
+
+// 更新清单统计：零件品种数 + 零件总数量
+function updateListStatsDisplay() {
+    const el = document.getElementById('list-filename-stats');
+    if (!el) return;
+    const variety = new Set();
+    let totalQty = 0;
+    for (const p of (listParts || [])) {
+        const num = p.part_num || '';
+        const cid = p.colorId != null ? String(p.colorId) : '';
+        if (num) variety.add(num + '\u0000' + cid);
+        totalQty += (p.quantity || 0);
+    }
+    el.textContent = `零件品种：${variety.size}  零件数量：${totalQty}`;
 }
 
 // 初始化清单文件 IndexedDB（若未创建）
@@ -9293,6 +9309,7 @@ function openListPage() {
             </div>
             <div class="list-filename-row">
                 <span class="list-filename-text" id="list-filename-text">${escapeHtml(currentListFileName)}</span>
+                <span class="list-filename-stats" id="list-filename-stats"></span>
             </div>
             <div class="list-q3" id="list-q3"></div>
             <div class="list-q4">
@@ -9411,6 +9428,9 @@ async function renderListParts() {
 
     // 数量文本较多时自动缩小字体，避免超出边界
     q3.querySelectorAll('.lpc-qty').forEach(fitListQtyText);
+
+    // 刷新文件名行右边的统计（零件品种/总数量）
+    updateListStatsDisplay();
 
     // 异步补全各卡片：零件名称/颜色名称/图片/仓库数量汇总
     listParts.forEach((p, i) => {
