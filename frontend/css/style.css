@@ -5269,7 +5269,7 @@ body {
 /* 卡片 wrapper：左滑容器，右侧放删除按钮 */
 .lpc-wrapper {
     position: relative;
-    height: 76px;
+    height: 84px;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -5280,7 +5280,7 @@ body {
     right: 0;
     bottom: 0;
     width: 64px;
-    height: 76px;
+    height: 84px;
     background: #F44336;
     color: white;
     border: none;
@@ -5301,25 +5301,27 @@ body {
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
-    height: 76px;
+    height: 84px;
     background: #ffffff;
     border: 1px solid #e8e8e8;
     border-radius: 8px;
     box-sizing: border-box;
-    padding-right: 2px; /* 给右侧留出 2px 空间，避免状态标签被圆角裁切 */
-    overflow: visible; /* 防止右侧状态被圆角裁切 */
-    touch-action: pan-y; /* 允许垂直滚动，水平拖动由 JS 处理 */
+    padding-right: 2px;
+    overflow: visible;
+    touch-action: pan-y;
 }
 
-/* 左：零件图片（固定 76px） */
+/* 左：零件图片（缩窄 + 内边距，避免挡住左下角圆角和底线） */
 .lpc-left {
-    flex: 0 0 76px;
-    width: 76px;
-    height: 76px;
+    flex: 0 0 64px;
+    width: 64px;
+    height: 84px;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    padding: 4px 6px; /* 四周留白，避免图片贴边盖住圆角/底线 */
+    box-sizing: border-box;
 }
 
 .lpc-img {
@@ -5351,21 +5353,21 @@ body {
 .lpc-mid {
     flex: 1 1 auto;
     min-width: 0;
-    height: 76px;
+    height: 84px;
     display: flex;
     flex-direction: column;
-    padding: 0 6px;
+    padding: 2px 6px;
     box-sizing: border-box;
     overflow: hidden;
 }
 
 .lpc-num {
-    flex: 0 0 18px;
-    height: 18px;
+    flex: 0 0 16px;
+    height: 16px;
     font-size: 12px;
     font-weight: bold;
     color: #2196F3;
-    line-height: 18px;
+    line-height: 16px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -5373,22 +5375,22 @@ body {
 
 .lpc-name {
     flex: 0 1 auto;
-    max-height: 30px;
+    max-height: 36px;
     font-size: 9px;
     color: #333;
-    line-height: 1.25;
+    line-height: 12px;
     word-break: break-all;
     white-space: normal;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     box-sizing: border-box;
 }
 
 .lpc-row3 {
-    flex: 0 0 28px;
-    height: 28px;
+    flex: 0 0 22px;
+    height: 22px;
     display: flex;
     align-items: stretch;
 }
@@ -5398,61 +5400,60 @@ body {
     min-width: 0;
     height: 100%;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
     overflow: hidden;
 }
 
 .lpc-color-id {
-    flex: 0 0 14px;
-    height: 14px;
+    flex: 0 0 auto;
     font-size: 11px;
     font-weight: bold;
     color: #4CAF50;
     line-height: 14px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .lpc-color-name {
-    flex: 0 0 12px;
-    height: 12px;
-    font-size: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 9px;
     color: #555;
-    line-height: 12px;
-    word-break: break-all;
+    line-height: 14px;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     box-sizing: border-box;
 }
 
 .lpc-qty-wrap {
     flex: 0 0 46px;
     width: 46px;
-    height: 100%;
+    height: 22px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
     box-sizing: border-box;
     padding-left: 2px;
     overflow: hidden;
 }
 
 .lpc-qty-label {
-    flex: 0 0 12px;
-    height: 12px;
-    font-size: 8px;
+    flex: 0 0 auto;
+    font-size: 9px;
     color: #555;
-    line-height: 12px;
-    text-align: left;
+    line-height: 14px;
     white-space: nowrap;
 }
 
 .lpc-qty {
     flex: 1 1 auto;
-    height: 24px;
     font-size: 16px;
     font-weight: bold;
     color: var(--black-color);
-    line-height: 24px;
+    line-height: 22px;
     text-align: right;
     white-space: nowrap;
     overflow: hidden;
@@ -5463,7 +5464,7 @@ body {
 .lpc-right {
     flex: 0 0 64px;
     width: 64px;
-    height: 76px;
+    height: 84px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
