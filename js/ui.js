@@ -9604,9 +9604,19 @@ async function enrichListPartCard(card, part) {
         });
     }
 
-    // ④ 仓库汇总（用 effectivePartNum，确保别名也能查到库存）
+    // ④ 仓库汇总：同时查原始型号（入库时存的）+ 别名解析后的标准型号，两边库存加总
     try {
-        const summary = await getListPartRepoSummary(effectivePartNum, colorId);
+        let summary;
+        if (effectivePartNum && effectivePartNum !== rawPartNum) {
+            // 有别名映射：原始型号和 RB 标准型号都查，去重合并
+            const [sRaw, sStd] = await Promise.all([
+                getListPartRepoSummary(rawPartNum, colorId),
+                getListPartRepoSummary(effectivePartNum, colorId),
+            ]);
+            summary = mergeRepoSummaries(sRaw, sStd);
+        } else {
+            summary = await getListPartRepoSummary(rawPartNum, colorId);
+        }
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
         const detailEl = card.querySelector('.lpc-repo-detail');
@@ -9623,7 +9633,8 @@ async function enrichListPartCard(card, part) {
             if (summary.repoCount) {
                 totalEl.title = '点击查看各仓库数量（按型号+颜色匹配）';
                 totalEl.style.cursor = 'pointer';
-                totalEl.addEventListener('click', () => showListPartRepoDetail(effectivePartNum, colorId));
+                // 打开详情弹窗也合并两边库存
+                totalEl.addEventListener('click', () => showListPartRepoDetail(rawPartNum, colorId, effectivePartNum));
             } else {
                 totalEl.title = '系统暂无该零件库存';
             }
@@ -9631,6 +9642,32 @@ async function enrichListPartCard(card, part) {
     } catch (e) {
         console.error('获取清单零件仓库汇总失败:', e);
     }
+}
+
+// 合并两个仓库汇总（同一仓库的数量累加，新/旧分开）
+function mergeRepoSummaries(a, b) {
+    const map = {};
+    const add = (repo) => {
+        if (!repo) return;
+        const key = repo.id;
+        if (!map[key]) {
+            map[key] = { id: repo.id, name: repo.name, newQty: 0, usedQty: 0, quantity: 0 };
+        }
+        map[key].newQty += repo.newQty || 0;
+        map[key].usedQty += repo.usedQty || 0;
+        map[key].quantity += repo.quantity || 0;
+    };
+    (a.repos || []).forEach(add);
+    (b.repos || []).forEach(add);
+    const entries = Object.values(map);
+    const total = entries.reduce((s, e) => s + e.quantity, 0);
+    return {
+        repos: entries,
+        total,
+        totalNew: entries.reduce((s, e) => s + e.newQty, 0),
+        totalUsed: entries.reduce((s, e) => s + e.usedQty, 0),
+        repoCount: entries.length,
+    };
 }
 
 // 搜索该零件在系统各仓库的数量汇总（按 part_num + color_id 精确匹配，跨仓库，区分新/旧状态）
@@ -9679,8 +9716,17 @@ async function getListPartRepoSummary(partNum, colorId) {
 }
 
 // 弹窗显示该零件在各个仓库的数量详情（区分新/旧状态）
-async function showListPartRepoDetail(partNum, colorId) {
-    const summary = await getListPartRepoSummary(partNum, colorId);
+async function showListPartRepoDetail(partNum, colorId, aliasPartNum) {
+    let summary;
+    if (aliasPartNum && String(aliasPartNum) !== String(partNum)) {
+        const [sRaw, sStd] = await Promise.all([
+            getListPartRepoSummary(partNum, colorId),
+            getListPartRepoSummary(aliasPartNum, colorId),
+        ]);
+        summary = mergeRepoSummaries(sRaw, sStd);
+    } else {
+        summary = await getListPartRepoSummary(partNum, colorId);
+    }
     const rows = summary.repos.length
         ? summary.repos.map((r) => `
             <div class="repo-detail-row">
