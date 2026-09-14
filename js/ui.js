@@ -9543,26 +9543,27 @@ async function enrichListPartCard(card, part) {
     const colorId = part.colorId;
     const key = partNum != null ? String(partNum).trim() : '';
 
-    // ① 零件名称（RB 数据库）
+    // ① 零件名称（RB 数据库）+ fallback
+    const nameEl = card.querySelector('.lpc-name');
+    let nameResolved = false;
     if (typeof getPartByNum === 'function' && key) {
         try {
             const rbPart = await getPartByNum(key);
-            const nameEl = card.querySelector('.lpc-name');
-            if (nameEl) {
-                if (rbPart && rbPart.name) {
+            if (nameEl && rbPart) {
+                if (rbPart.name) {
                     nameEl.textContent = rbPart.name;
-                } else if (rbPart) {
-                    // 兼容：如果字段名不是 name，尝试常见别名
-                    const alt = rbPart.name_en || rbPart.nameEn || rbPart.part_name || rbPart.description;
-                    if (alt) nameEl.textContent = alt;
-                    else console.debug('[list] no name field for', key, 'keys:', Object.keys(rbPart));
+                    nameResolved = true;
                 } else {
-                    console.debug('[list] getPartByNum returned null for key:', key);
+                    const alt = rbPart.name_en || rbPart.nameEn || rbPart.part_name || rbPart.description;
+                    if (alt) { nameEl.textContent = alt; nameResolved = true; }
                 }
             }
-        } catch (e) {
-            console.debug('[list] getPartByNum error for', key, e);
-        }
+        } catch (e) { /* ignore */ }
+    }
+    if (nameEl && !nameResolved && key) {
+        // RB 数据库里查不到该零件时的兜底占位，避免名称行空白
+        nameEl.textContent = 'Part #' + key;
+        nameEl.style.color = '#999'; // 灰色提示这是 fallback
     }
 
     // ② 颜色名称（RB 数据库）
