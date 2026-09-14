@@ -105,7 +105,7 @@ body {
 .bb-area {
     background-color: var(--primary-color);
     padding: 0 4px;
-    height: 84px;
+    height: 90px;
     display: flex;
     align-items: center;
 }
@@ -3227,7 +3227,7 @@ body {
     }
     .bb-area .nav button {
         width: 120px;
-        height: 84px;
+        height: 90px;
         font-size: 14px;
     }
     .bb-area .nav button.active {
@@ -3267,7 +3267,7 @@ body {
     .repository-card {
         width: calc((100% - 50px) / 6);
         min-width: 140px;
-        height: 84px;
+        height: 90px;
     }
     .repo-card-name {
         font-size: 17px;
@@ -5269,7 +5269,7 @@ body {
 /* 卡片 wrapper：左滑容器，右侧放删除按钮 */
 .lpc-wrapper {
     position: relative;
-    height: 84px;
+    height: 90px;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -5280,7 +5280,7 @@ body {
     right: 0;
     bottom: 0;
     width: 64px;
-    height: 84px;
+    height: 90px;
     background: #F44336;
     color: white;
     border: none;
@@ -5301,7 +5301,7 @@ body {
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
-    height: 84px;
+    height: 90px;
     background: #ffffff;
     border: 1px solid #e8e8e8;
     border-radius: 8px;
@@ -5315,7 +5315,7 @@ body {
 .lpc-left {
     flex: 0 0 64px;
     width: 64px;
-    height: 84px;
+    height: 90px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5353,7 +5353,7 @@ body {
 .lpc-mid {
     flex: 1 1 auto;
     min-width: 0;
-    height: 84px;
+    height: 90px;
     display: flex;
     flex-direction: column;
     padding: 2px 6px;
@@ -5389,21 +5389,22 @@ body {
 }
 
 .lpc-row3 {
-    /* 卡片 1/3 高度：84 / 3 = 28px */
-    flex: 0 0 28px;
-    height: 28px;
+    /* 卡片 1/3 高度 + 6px = 34px（给数量区更充裕空间） */
+    flex: 0 0 34px;
+    height: 34px;
     display: flex;
-    align-items: stretch;
+    align-items: flex-start; /* 颜色和数量顶部对齐 */
 }
 
 .lpc-color {
     flex: 1 1 auto;
     min-width: 0;
-    height: 28px;
+    height: 34px;
     display: flex;
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     gap: 4px;
+    padding-top: 2px; /* 让顶部有点呼吸感 */
     overflow: hidden;
 }
 
@@ -5428,17 +5429,19 @@ body {
     box-sizing: border-box;
 }
 
-/* 数量列：竖排 —— 上 "数量:"(8px) / 下 数字(12px bold) */
+/* 数量列：竖排 —— 上 "数量"(8px 右对齐) / 下 数字(12px bold 右对齐) */
 .lpc-qty-wrap {
     flex: 0 0 52px;
     width: 52px;
-    height: 28px;
+    height: 34px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 2px;
     box-sizing: border-box;
     padding-left: 2px;
+    padding-top: 2px; /* 与颜色区的 padding-top 对齐 */
     overflow: hidden;
 }
 
@@ -5455,7 +5458,7 @@ body {
     font-size: 12px;
     font-weight: bold;
     color: var(--black-color);
-    line-height: 16px;
+    line-height: 18px;
     white-space: nowrap;
     overflow: hidden;
     box-sizing: border-box;
@@ -5465,7 +5468,7 @@ body {
 .lpc-right {
     flex: 0 0 64px;
     width: 64px;
-    height: 84px;
+    height: 90px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
@@ -5484,6 +5487,8 @@ body {
     align-items: center;
     overflow: hidden;
     white-space: nowrap;
+    padding-top: 2px; /* 与左侧"数量"/颜色行顶部对齐 */
+    box-sizing: border-box;
 }
 
 .lpc-repo-total {
