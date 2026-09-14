@@ -9363,32 +9363,30 @@ async function renderListParts() {
                 <div class="lpc-left">
                     <div class="lpc-img"><div class="no-image">加载中...</div></div>
                 </div>
-                <div class="lpc-mid">
-                    <div class="lpc-num">${escapeHtml(partNum)}</div>
-                    <div class="lpc-name" style="color:#666">Part #${escapeHtml(partNum)}</div>
-                    <div class="lpc-row3">
-                        <div class="lpc-color">
-                            <div class="lpc-color-id">${escapeHtml(colorId)}</div>
-                            <div class="lpc-color-name"></div>
+                <div class="lpc-right">
+                    <div class="lpc-top">
+                        <div class="lpc-info">
+                            <div class="lpc-num">${escapeHtml(partNum)}</div>
+                            <div class="lpc-name" style="color:#666">Part #${escapeHtml(partNum)}</div>
+                            <div class="lpc-color-line">
+                                <span class="lpc-color-id">${escapeHtml(colorId)}</span>
+                                <span class="lpc-color-name"></span>
+                            </div>
                         </div>
                         <div class="lpc-qty-wrap">
-                            <div class="lpc-qty-label">数量</div>
+                            <div class="lpc-qty-label">数量:</div>
                             <div class="lpc-qty">${escapeHtml(p.quantity != null ? p.quantity : '')}</div>
                         </div>
                     </div>
-                </div>
-                <div class="lpc-right">
-                    <div class="lpc-repo-label"></div>
-                    <div class="lpc-repo-total"></div>
-                    <div class="lpc-repo-detail" style="display:none;">
-                        <div class="lpc-repo-row lpc-repo-row-new">
-                            <span class="lpc-repo-new">新</span>
-                            <span class="lpc-repo-new-qty">0</span>
-                        </div>
-                        <div class="lpc-repo-row lpc-repo-row-used">
-                            <span class="lpc-repo-used">旧</span>
-                            <span class="lpc-repo-used-qty">0</span>
-                        </div>
+                    <div class="lpc-inv">
+                        <div class="lpc-inv-cell"></div>
+                        <div class="lpc-inv-cell lpc-repo-label"></div>
+                        <div class="lpc-inv-cell">新</div>
+                        <div class="lpc-inv-cell">旧</div>
+                        <div class="lpc-inv-cell">库存</div>
+                        <div class="lpc-inv-cell lpc-repo-total">0</div>
+                        <div class="lpc-inv-cell"><span class="lpc-repo-new-qty">0</span></div>
+                        <div class="lpc-inv-cell"><span class="lpc-repo-used-qty">0</span></div>
                     </div>
                 </div>
             </div>
@@ -9636,25 +9634,21 @@ async function enrichListPartCard(card, part) {
         }
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
-        const detailEl = card.querySelector('.lpc-repo-detail');
+        const qtyWrap = card.querySelector('.lpc-qty-wrap');
         const newQtyEl = card.querySelector('.lpc-repo-new-qty');
         const usedQtyEl = card.querySelector('.lpc-repo-used-qty');
-        if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共：` : '';
-        if (totalEl) {
-            totalEl.textContent = summary.total;
-            if (detailEl && summary.repoCount) {
-                detailEl.style.display = 'flex';
-                if (newQtyEl) newQtyEl.textContent = summary.totalNew;
-                if (usedQtyEl) usedQtyEl.textContent = summary.totalUsed;
-            }
-            if (summary.repoCount) {
-                totalEl.title = '点击查看各仓库数量（按型号+颜色匹配）';
-                totalEl.style.cursor = 'pointer';
-                // 打开详情弹窗也合并两边库存
-                totalEl.addEventListener('click', () => showListPartRepoDetail(rawPartNum, colorId, effectivePartNum));
-            } else {
-                totalEl.title = '系统暂无该零件库存';
-            }
+        if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共` : '';
+        if (totalEl) totalEl.textContent = summary.total;
+        if (newQtyEl) newQtyEl.textContent = summary.totalNew;
+        if (usedQtyEl) usedQtyEl.textContent = summary.totalUsed;
+        // 点击 LPn（数量区）查看库存详情
+        const clickTarget = qtyWrap || totalEl;
+        if (clickTarget && summary.repoCount) {
+            clickTarget.title = '点击查看各仓库数量（按型号+颜色匹配）';
+            clickTarget.style.cursor = 'pointer';
+            clickTarget.addEventListener('click', () => showListPartRepoDetail(rawPartNum, colorId, effectivePartNum));
+        } else if (clickTarget) {
+            clickTarget.title = '系统暂无该零件库存';
         }
     } catch (e) {
         console.error('获取清单零件仓库汇总失败:', e);
