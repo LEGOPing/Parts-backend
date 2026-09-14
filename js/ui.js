@@ -9539,16 +9539,28 @@ function fitListQtyText(el) {
 
 // 异步补全单个清单零件卡片：零件名称、颜色名称、图片、仓库数量汇总
 async function enrichListPartCard(card, part) {
-    const partNum = part.part_num;
+    const rawPartNum = part.part_num != null ? String(part.part_num).trim() : '';
     const colorId = part.colorId;
-    const key = partNum != null ? String(partNum).trim() : '';
+    let effectivePartNum = rawPartNum;
 
-    // ① 零件名称（RB 数据库）+ fallback
+    // 第 0 步：零件别名解析（4073 → 6141 这种）
+    if (rawPartNum && typeof resolvePartAlias === 'function') {
+        try {
+            const resolved = await resolvePartAlias(rawPartNum);
+            if (resolved && String(resolved) !== rawPartNum) {
+                effectivePartNum = String(resolved).trim();
+                // 只在 DOM 上加个 data 标记方便调试，不显示给用户
+                card.dataset.resolvedPartNum = effectivePartNum;
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // ① 零件名称（优先查别名解析后的 RB 标准型号）
     const nameEl = card.querySelector('.lpc-name');
     let nameResolved = false;
-    if (typeof getPartByNum === 'function' && key) {
+    if (typeof getPartByNum === 'function' && effectivePartNum) {
         try {
-            const rbPart = await getPartByNum(key);
+            const rbPart = await getPartByNum(effectivePartNum);
             if (nameEl && rbPart) {
                 if (rbPart.name) {
                     nameEl.textContent = rbPart.name;
@@ -9560,10 +9572,9 @@ async function enrichListPartCard(card, part) {
             }
         } catch (e) { /* ignore */ }
     }
-    if (nameEl && !nameResolved && key) {
-        // RB 数据库里查不到该零件时的兜底占位，避免名称行空白
-        nameEl.textContent = 'Part #' + key;
-        nameEl.style.color = '#999'; // 灰色提示这是 fallback
+    if (nameEl && !nameResolved && effectivePartNum) {
+        nameEl.textContent = 'Part #' + rawPartNum;
+        nameEl.style.color = '#999';
     }
 
     // ② 颜色名称（RB 数据库）
@@ -9574,14 +9585,14 @@ async function enrichListPartCard(card, part) {
         }).catch(() => {});
     }
 
-    // ③ 零件图片（复用全局 getPartImageUrl 三级读取；onload 时自动写入离线缓存）
+    // ③ 零件图片（用原始 rawPartNum，因为图片 API 可能识别别名型号）
     if (typeof getPartImageUrl === 'function') {
-        getPartImageUrl(partNum, colorId || 0).then((url) => {
+        getPartImageUrl(rawPartNum, colorId || 0).then((url) => {
             const imgWrap = card.querySelector('.lpc-img');
             if (!imgWrap) return;
             if (url) {
                 const escUrl = url.replace(/"/g, '&quot;');
-                const partNumEsc = String(partNum).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const partNumEsc = String(rawPartNum).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const colorIdNum = colorId || 0;
                 imgWrap.innerHTML = `<img src="${escUrl}" alt="" onload="autoCachePartImage('${partNumEsc}', ${colorIdNum}, this)" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=no-image>暂无图片</div>'">`;
             } else {
@@ -9593,9 +9604,9 @@ async function enrichListPartCard(card, part) {
         });
     }
 
-    // ④ 该零件（按型号+颜色匹配）在系统各仓库的数量总数（点击可查看各仓库详情，区分新/旧状态）
+    // ④ 仓库汇总（用 effectivePartNum，确保别名也能查到库存）
     try {
-        const summary = await getListPartRepoSummary(partNum, colorId);
+        const summary = await getListPartRepoSummary(effectivePartNum, colorId);
         const labelEl = card.querySelector('.lpc-repo-label');
         const totalEl = card.querySelector('.lpc-repo-total');
         const detailEl = card.querySelector('.lpc-repo-detail');
@@ -9604,7 +9615,6 @@ async function enrichListPartCard(card, part) {
         if (labelEl) labelEl.textContent = summary.repoCount ? `${summary.repoCount}个仓库共：` : '';
         if (totalEl) {
             totalEl.textContent = summary.total;
-            // 显示新/旧数量详情
             if (detailEl && summary.repoCount) {
                 detailEl.style.display = 'flex';
                 if (newQtyEl) newQtyEl.textContent = summary.totalNew;
@@ -9613,7 +9623,7 @@ async function enrichListPartCard(card, part) {
             if (summary.repoCount) {
                 totalEl.title = '点击查看各仓库数量（按型号+颜色匹配）';
                 totalEl.style.cursor = 'pointer';
-                totalEl.addEventListener('click', () => showListPartRepoDetail(partNum, colorId));
+                totalEl.addEventListener('click', () => showListPartRepoDetail(effectivePartNum, colorId));
             } else {
                 totalEl.title = '系统暂无该零件库存';
             }
