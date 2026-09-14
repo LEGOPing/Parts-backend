@@ -9541,13 +9541,28 @@ function fitListQtyText(el) {
 async function enrichListPartCard(card, part) {
     const partNum = part.part_num;
     const colorId = part.colorId;
+    const key = partNum != null ? String(partNum).trim() : '';
 
     // ① 零件名称（RB 数据库）
-    if (typeof getPartByNum === 'function') {
-        getPartByNum(partNum).then((rbPart) => {
+    if (typeof getPartByNum === 'function' && key) {
+        try {
+            const rbPart = await getPartByNum(key);
             const nameEl = card.querySelector('.lpc-name');
-            if (rbPart && rbPart.name && nameEl) nameEl.textContent = rbPart.name;
-        }).catch(() => {});
+            if (nameEl) {
+                if (rbPart && rbPart.name) {
+                    nameEl.textContent = rbPart.name;
+                } else if (rbPart) {
+                    // 兼容：如果字段名不是 name，尝试常见别名
+                    const alt = rbPart.name_en || rbPart.nameEn || rbPart.part_name || rbPart.description;
+                    if (alt) nameEl.textContent = alt;
+                    else console.debug('[list] no name field for', key, 'keys:', Object.keys(rbPart));
+                } else {
+                    console.debug('[list] getPartByNum returned null for key:', key);
+                }
+            }
+        } catch (e) {
+            console.debug('[list] getPartByNum error for', key, e);
+        }
     }
 
     // ② 颜色名称（RB 数据库）
