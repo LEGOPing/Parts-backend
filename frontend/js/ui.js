@@ -9761,18 +9761,24 @@ async function showListPartRepoDetail(partNum, colorId, aliasPartNum) {
     } else {
         summary = await getListPartRepoSummary(partNum, colorId);
     }
+    // 解析颜色名称
+    let colorName = '';
+    const colorIdNum = Number(colorId);
+    if (!isNaN(colorIdNum)) {
+        try {
+            const c = await getColorById(colorIdNum);
+            if (c) colorName = c.color_name || '';
+        } catch (e) { /* ignore */ }
+    }
     const rows = summary.repos.length
         ? summary.repos.map((r) => `
             <div class="repo-detail-row">
                 <span class="repo-detail-name">${escapeHtml(r.name)}</span>
                 <span class="repo-detail-qty">${escapeHtml(r.quantity)}</span>
-                <div class="repo-detail-status">
-                    <span class="repo-detail-new">新:${escapeHtml(r.newQty)}</span>
-                    <span class="repo-detail-used">旧:${escapeHtml(r.usedQty)}</span>
-                </div>
+                <span class="repo-detail-new">${escapeHtml(r.newQty)}</span>
+                <span class="repo-detail-used">${escapeHtml(r.usedQty)}</span>
             </div>`).join('')
         : '<div class="repo-detail-empty">系统暂无该零件库存</div>';
-    const colorHint = (colorId != null && colorId !== '') ? `（颜色ID:${escapeHtml(String(colorId))}）` : '';
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -9780,14 +9786,21 @@ async function showListPartRepoDetail(partNum, colorId, aliasPartNum) {
     sheet.className = 'modal-content repo-detail-modal';
     sheet.innerHTML = `
         <div class="modal-header">
-            <span class="modal-title">${escapeHtml(partNum)}${colorHint} 仓库分布</span>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+            <div class="repo-detail-hd-row1">
+                <span class="repo-detail-model">${escapeHtml(partNum)}</span>
+                <span class="repo-detail-title">库存分布</span>
+            </div>
+            <div class="repo-detail-hd-row2">
+                <span class="repo-detail-cid">${escapeHtml(colorId != null ? String(colorId) : '')}</span>
+                <span class="repo-detail-cname">${escapeHtml(colorName)}</span>
             </div>
         </div>
         <div class="modal-body">
             <div class="repo-detail-list">${rows}</div>
             ${summary.repos.length ? `<div class="repo-detail-total">总计：<span class="repo-detail-total-qty">${summary.total}</span> <span class="repo-detail-total-new">新${summary.totalNew}</span> <span class="repo-detail-total-used">旧${summary.totalUsed}</span></div>` : ''}
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">关闭</button>
         </div>
     `;
     overlay.appendChild(sheet);

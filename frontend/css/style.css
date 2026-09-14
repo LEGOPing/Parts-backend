@@ -5545,21 +5545,64 @@ body {
 
 /* 仓库分布详情弹窗 */
 .repo-detail-modal {
-    width: 76%;
-    max-width: 300px;
+    width: 86%;
+    max-width: 360px;
 }
 
+/* 弹窗头部 */
+.repo-detail-hd-row1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+}
+
+.repo-detail-model {
+    font-size: 16px;
+    font-weight: bold;
+    color: #2196F3;
+}
+
+.repo-detail-title {
+    font-size: 15px;
+    color: #000;
+}
+
+.repo-detail-hd-row2 {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 2px 0 4px;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 4px;
+}
+
+.repo-detail-cid {
+    font-size: 12px;
+    color: #333;
+    font-weight: bold;
+}
+
+.repo-detail-cname {
+    font-size: 10px;
+    color: #000;
+}
+
+/* 仓库库存列表：4 列 */
 .repo-detail-list {
     max-height: 50vh;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .repo-detail-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 4px;
+    display: grid;
+    grid-template-columns: 72px 1fr auto auto;
+    gap: 4px;
+    padding: 6px 0;
     border-bottom: 1px solid #f0f0f0;
+    align-items: center;
 }
 
 .repo-detail-name {
@@ -5568,12 +5611,26 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: left;
 }
 
 .repo-detail-qty {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: bold;
-    color: var(--black-color);
+    color: #000;
+    text-align: right;
+}
+
+.repo-detail-new {
+    font-size: 11px;
+    color: #2e7d32;
+    text-align: right;
+}
+
+.repo-detail-used {
+    font-size: 11px;
+    color: #e65100;
+    text-align: right;
 }
 
 .repo-detail-empty {
@@ -5581,22 +5638,6 @@ body {
     text-align: center;
     color: var(--dark-gray-color);
     font-size: 13px;
-}
-
-.repo-detail-status {
-    display: flex;
-    gap: 4px;
-    font-size: 11px;
-}
-
-.repo-detail-new {
-    color: #2e7d32;
-    font-weight: 500;
-}
-
-.repo-detail-used {
-    color: #e65100;
-    font-weight: 500;
 }
 
 .repo-detail-total {
