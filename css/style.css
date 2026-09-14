@@ -105,7 +105,7 @@ body {
 .bb-area {
     background-color: var(--primary-color);
     padding: 0 4px;
-    height: 90px;
+    height: 84px;
     display: flex;
     align-items: center;
 }
@@ -3085,7 +3085,7 @@ body {
 
     /* 头部更大气 */
     .header-content {
-        height: 90px;
+        height: 84px;
     }
     .logo img {
         height: 90px !important;
@@ -3102,7 +3102,7 @@ body {
     .title {
         top: 0;
         right: calc(50% - 235px);
-        height: 90px;
+        height: 84px;
     }
     .logo {
         top: 0;
@@ -3227,7 +3227,7 @@ body {
     }
     .bb-area .nav button {
         width: 120px;
-        height: 90px;
+        height: 84px;
         font-size: 14px;
     }
     .bb-area .nav button.active {
@@ -3267,7 +3267,7 @@ body {
     .repository-card {
         width: calc((100% - 50px) / 6);
         min-width: 140px;
-        height: 90px;
+        height: 84px;
     }
     .repo-card-name {
         font-size: 17px;
@@ -5269,7 +5269,7 @@ body {
 /* 卡片 wrapper：左滑容器，右侧放删除按钮 */
 .lpc-wrapper {
     position: relative;
-    height: 90px;
+    height: 84px;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -5280,7 +5280,7 @@ body {
     right: 0;
     bottom: 0;
     width: 64px;
-    height: 90px;
+    height: 84px;
     background: #F44336;
     color: white;
     border: none;
@@ -5301,7 +5301,7 @@ body {
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
-    height: 90px;
+    height: 84px;
     background: #ffffff;
     border: 1px solid #e8e8e8;
     border-radius: 8px;
@@ -5315,7 +5315,7 @@ body {
 .lpc-left {
     flex: 0 0 72px;
     width: 72px;
-    height: 90px;
+    height: 84px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5353,7 +5353,7 @@ body {
 .lpc-right {
     flex: 1 1 auto;
     min-width: 0;
-    height: 90px;
+    height: 84px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
@@ -5361,21 +5361,21 @@ body {
     gap: 0;
 }
 
-/* RP Top：56px，LPi + LPn 左右并排 */
+/* RP Top：50px，LPi + LPn 左右并排 */
 .lpc-top {
-    flex: 0 0 56px;
-    height: 56px;
+    flex: 0 0 auto;
+    height: 50px;
     display: flex;
     align-items: stretch;
     gap: 4px;
     min-width: 0;
 }
 
-/* LPi：左信息区（弹性），4 行合计 56px */
+/* LPi：左信息区（弹性），4 行合计 50px */
 .lpc-info {
     flex: 1 1 auto;
     min-width: 0;
-    height: 56px;
+    height: 50px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
@@ -5386,7 +5386,7 @@ body {
 .lpc-num {
     flex: 0 0 16px;
     height: 16px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: bold;
     color: #2196F3;
     line-height: 16px;
@@ -5395,13 +5395,13 @@ body {
     text-overflow: ellipsis;
 }
 
-/* LPi row 2+3：名称 各 12px = 24px，合计与其他行凑 56 */
+/* LPi row 2+3：名称 各 10px = 20px */
 .lpc-name {
-    flex: 0 0 24px;
-    height: 24px;
+    flex: 0 0 20px;
+    height: 20px;
     font-size: 8px;
     color: #333;
-    line-height: 12px;
+    line-height: 10px;
     word-break: break-all;
     white-space: normal;
     display: -webkit-box;
@@ -5411,12 +5411,12 @@ body {
     box-sizing: border-box;
 }
 
-/* LPi row 4：颜色 16px */
+/* LPi row 4：颜色 14px，上对齐 */
 .lpc-color-line {
-    flex: 0 0 16px;
-    height: 16px;
+    flex: 0 0 14px;
+    height: 14px;
     display: flex;
-    align-items: baseline; /* 让 ID 和名称底部对齐 */
+    align-items: flex-start;
     gap: 4px;
     overflow: hidden;
 }
@@ -5426,16 +5426,16 @@ body {
     font-size: 12px;
     font-weight: bold;
     color: #64B5F6; /* 浅蓝色 */
-    line-height: 16px;
+    line-height: 14px;
     white-space: nowrap;
 }
 
 .lpc-color-name {
     flex: 1 1 auto;
     min-width: 0;
-    font-size: 8px;
+    font-size: 12px;
     color: #333;
-    line-height: 16px;
+    line-height: 14px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -5445,7 +5445,7 @@ body {
 .lpc-qty-wrap {
     flex: 0 0 80px;
     width: 80px;
-    height: 56px;
+    height: 50px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -5455,7 +5455,7 @@ body {
 }
 
 .lpc-qty-label {
-    flex: 0 0 12px;
+    flex: 0 0 auto;
     height: 12px;
     font-size: 8px;
     color: #333;
@@ -5469,7 +5469,6 @@ body {
     font-size: 14px;
     font-weight: bold;
     color: #000;
-    line-height: 44px;
     text-align: right;
     white-space: nowrap;
     overflow: hidden;
@@ -5480,10 +5479,10 @@ body {
 .lpc-inv {
     flex: 1 1 auto;
     min-height: 0;
-    height: 34px;
+    height: 30px;
     display: grid;
-    grid-template-columns: 1fr 60px 60px 60px;
-    grid-template-rows: 12px 16px;
+    grid-template-columns: 1fr 64px 64px 64px;
+    grid-template-rows: 10px 14px;
     column-gap: 2px;
     row-gap: 2px;
     box-sizing: border-box;
@@ -5507,6 +5506,7 @@ body {
 .lpc-inv > :nth-child(-n+4) {
     justify-content: center;
     text-align: center;
+    align-items: center;
 }
 
 /* col 1 row 1：空 */
@@ -5514,19 +5514,27 @@ body {
     justify-content: flex-start;
 }
 
-/* col 1 row 2："库存" 标签 */
-.lpc-inv > :nth-child(5) {
-    justify-content: flex-start;
-    font-size: 12px;
+/* row 2 数据行：全部上对齐 */
+.lpc-inv > :nth-child(n+5) {
+    align-items: flex-start;
+    font-size: 14px;
+    font-weight: normal;
+    color: #9e9e9e;
 }
 
-/* row 2 数据列：右对齐 + 12px */
-.lpc-inv > :nth-child(n+5) {
-    font-size: 12px;
-    font-weight: normal;
+/* col 1 row 2："现有库存" 标签，8px 上对齐 */
+.lpc-inv > :nth-child(5) {
+    justify-content: flex-start;
+    font-size: 8px;
+    padding-top: 1px;
+}
+
+/* col 2/3/4 row 2：右对齐 */
+.lpc-inv > :nth-child(6),
+.lpc-inv > :nth-child(7),
+.lpc-inv > :nth-child(8) {
     justify-content: flex-end;
     text-align: right;
-    color: #9e9e9e;
 }
 
 .lpc-repo-total {
@@ -5535,17 +5543,11 @@ body {
 
 .lpc-repo-new-qty,
 .lpc-repo-used-qty {
-    font-size: 12px;
+    font-size: 14px;
     color: #9e9e9e;
 }
 
-.lpc-repo-new-qty {
-    color: #2e7d32;
-}
-
-.lpc-repo-used-qty {
-    color: #e65100;
-}
+/* 去掉新/旧状态的彩色，统一用灰色 */
 
 /* 仓库分布详情弹窗 */
 .repo-detail-modal {
@@ -6069,7 +6071,7 @@ body {
     left: 50%;
     transform: translateX(-50%);
     width: 60px;
-    height: 90px;
+    height: 84px;
     background: #333;
     border-radius: 10px;
     border: 4px solid #333;
