@@ -3222,6 +3222,37 @@ body {
     .form-row {
         flex-wrap: nowrap;
     }
+
+    /* ---- 清单页面适配（iPad 竖屏） ---- */
+    .list-page {
+        max-width: 720px;
+    }
+    .lpc-wrapper { height: 112px; }
+    .lpc-delete-btn { width: 76px; height: 112px; font-size: 16px; }
+    .list-part-card { height: 112px; }
+    .lpc-left { flex-basis: 80px; width: 80px; height: 112px; padding: 6px 8px; }
+    .lpc-mid { height: 112px; padding: 4px 8px; }
+    .lpc-num { flex-basis: 18px; height: 18px; font-size: 15px; line-height: 18px; }
+    .lpc-name { flex-basis: 42px; height: 42px; font-size: 11px; line-height: 14px; }
+    .lpc-row3 { flex-basis: 44px; height: 44px; padding-top: 4px; }
+    .lpc-color { height: 44px; gap: 6px; padding-top: 4px; }
+    .lpc-color-id { font-size: 14px; line-height: 16px; }
+    .lpc-color-name { font-size: 11px; line-height: 16px; }
+    .lpc-qty-wrap { flex-basis: 62px; width: 62px; height: 44px; padding-left: 4px; padding-top: 4px; gap: 4px; }
+    .lpc-qty-label { font-size: 11px; line-height: 12px; }
+    .lpc-qty { font-size: 15px; line-height: 20px; }
+    .lpc-right { flex-basis: 80px; width: 80px; height: 112px; padding: 0 4px 0 6px; }
+    .lpc-repo-label { flex-basis: 18px; height: 18px; font-size: 10px; line-height: 14px; }
+    .lpc-repo-total { font-size: 17px; }
+    .lpc-repo-row { font-size: 11px; line-height: 14px; height: 14px; }
+    .lpc-repo-new, .lpc-repo-used { width: 18px; height: 12px; font-size: 10px; line-height: 12px; flex-basis: 18px; }
+    .lpc-repo-new-qty, .lpc-repo-used-qty { font-size: 11px; line-height: 14px; }
+    .list-q1 { flex-basis: 54px; height: 54px; padding: 0 14px; }
+    .list-title { font-size: 30px; }
+    .list-mgmt-btn { font-size: 15px; padding: 8px 14px; }
+    .list-back-btn { width: 54px; }
+    .list-filename-row { height: 20px; min-height: 20px; padding: 0 16px; }
+    .list-filename-text { font-size: 10px; line-height: 20px; }
 }
 
 /* ============ iPad 横屏 / 大平板 / 桌面：≥ 1024px ============ */
@@ -3395,6 +3426,37 @@ body {
     .form-row {
         flex-wrap: nowrap;
     }
+
+    /* ---- 清单页面适配（iPad 横屏 / 桌面） ---- */
+    .list-page {
+        max-width: 880px;
+    }
+    .lpc-wrapper { height: 128px; }
+    .lpc-delete-btn { width: 84px; height: 128px; font-size: 17px; }
+    .list-part-card { height: 128px; }
+    .lpc-left { flex-basis: 92px; width: 92px; height: 128px; padding: 8px 10px; }
+    .lpc-mid { height: 128px; padding: 6px 10px; }
+    .lpc-num { flex-basis: 20px; height: 20px; font-size: 16px; line-height: 20px; }
+    .lpc-name { flex-basis: 48px; height: 48px; font-size: 12px; line-height: 15px; }
+    .lpc-row3 { flex-basis: 50px; height: 50px; padding-top: 4px; }
+    .lpc-color { height: 50px; gap: 8px; padding-top: 6px; }
+    .lpc-color-id { font-size: 15px; line-height: 18px; }
+    .lpc-color-name { font-size: 12px; line-height: 18px; }
+    .lpc-qty-wrap { flex-basis: 68px; width: 68px; height: 50px; padding-left: 6px; padding-top: 6px; gap: 4px; }
+    .lpc-qty-label { font-size: 12px; line-height: 14px; }
+    .lpc-qty { font-size: 16px; line-height: 22px; }
+    .lpc-right { flex-basis: 92px; width: 92px; height: 128px; padding: 0 6px 0 8px; }
+    .lpc-repo-label { flex-basis: 20px; height: 20px; font-size: 11px; line-height: 16px; }
+    .lpc-repo-total { font-size: 19px; }
+    .lpc-repo-row { font-size: 12px; line-height: 16px; height: 16px; }
+    .lpc-repo-new, .lpc-repo-used { width: 20px; height: 14px; font-size: 11px; line-height: 14px; flex-basis: 20px; }
+    .lpc-repo-new-qty, .lpc-repo-used-qty { font-size: 12px; line-height: 16px; }
+    .list-q1 { flex-basis: 60px; height: 60px; padding: 0 16px; }
+    .list-title { font-size: 32px; }
+    .list-mgmt-btn { font-size: 16px; padding: 10px 16px; }
+    .list-back-btn { width: 56px; }
+    .list-filename-row { height: 22px; min-height: 22px; padding: 0 18px; }
+    .list-filename-text { font-size: 11px; line-height: 22px; }
 }
 
 /* 名称搜索精度设置弹窗：六格橙色色块横条 */
