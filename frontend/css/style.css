@@ -105,7 +105,7 @@ body {
 .bb-area {
     background-color: var(--primary-color);
     padding: 0 4px;
-    height: 84px;
+    height: 90px;
     display: flex;
     align-items: center;
 }
@@ -3078,40 +3078,76 @@ body {
 
 /* ============ iPad 竖屏：768px - 1023px（含 portrait） ============ */
 @media (min-width: 768px) and (max-width: 1023px) {
+    /* AA 左 + BB 右 + CC 下：grid 布局 */
     .container {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto 1fr;
+        grid-template-areas:
+            "aa bb"
+            "cc cc";
         max-width: 100%;
         margin: 0 auto;
     }
+    .aa-area { grid-area: aa; padding: 10px 12px; }
+    .bb-area { grid-area: bb; align-self: end; height: auto; padding: 0 4px 10px 4px; }
+    .cc-area { grid-area: cc; }
 
-    /* 头部更大气 */
-    .header-content {
-        height: 84px;
+    /* AA 区：logo 左 + 标题右，底部对齐 */
+    .aa-area .header-content {
+        position: relative;
+        width: 100%;
+        height: 90px;
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
     }
-    .logo img {
+    .aa-area .logo {
+        position: relative;
+        top: auto;
+        bottom: auto;
+        left: auto;
+    }
+    .aa-area .logo img {
         height: 90px !important;
         width: 90px !important;
         max-height: 90px !important;
         max-width: 90px !important;
     }
-    .title-main {
+    .aa-area .title {
+        position: relative;
+        top: auto;
+        bottom: auto;
+        right: auto;
+        height: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0;
+    }
+    .aa-area .title-main {
+        position: relative;
+        top: auto;
+        right: auto;
+        transform: none;
         font-size: 40px;
+        margin: 0;
+        line-height: 1;
+        white-space: nowrap;
     }
-    .title-sub {
+    .aa-area .title-sub {
+        position: relative;
+        top: auto;
+        right: auto;
         font-size: 20px;
-    }
-    .title {
-        top: 0;
-        right: calc(50% - 235px);
-        height: 84px;
-    }
-    .logo {
-        top: 0;
-        left: calc(50% - 235px);
+        margin: 0;
+        line-height: 1;
+        white-space: nowrap;
     }
 
-    /* 导航按钮增大 */
-    .bb-area {
-        height: 100px;
+    /* BB 区导航按钮右下对齐 */
+    .bb-area .nav {
+        justify-content: flex-end;
     }
     .bb-area .nav button {
         width: 110px;
@@ -3190,44 +3226,80 @@ body {
 
 /* ============ iPad 横屏 / 大平板 / 桌面：≥ 1024px ============ */
 @media (min-width: 1024px) {
+    /* AA 左 + BB 右 + CC 下：grid 布局 */
     .container {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto 1fr;
+        grid-template-areas:
+            "aa bb"
+            "cc cc";
         max-width: 1400px;
         margin: 0 auto;
     }
+    .aa-area { grid-area: aa; padding: 10px 12px; }
+    .bb-area { grid-area: bb; align-self: end; height: auto; padding: 0 4px 10px 4px; }
+    .cc-area { grid-area: cc; }
 
-    /* 头部更舒展 */
-    .header-content {
+    /* AA 区：logo 左 + 标题右，底部对齐 */
+    .aa-area .header-content {
+        position: relative;
+        width: 100%;
         height: 96px;
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
     }
-    .logo img {
+    .aa-area .logo {
+        position: relative;
+        top: auto;
+        bottom: auto;
+        left: auto;
+    }
+    .aa-area .logo img {
         height: 96px !important;
         width: 96px !important;
         max-height: 96px !important;
         max-width: 96px !important;
     }
-    .title-main {
+    .aa-area .title {
+        position: relative;
+        top: auto;
+        bottom: auto;
+        right: auto;
+        height: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0;
+    }
+    .aa-area .title-main {
+        position: relative;
+        top: auto;
+        right: auto;
+        transform: none;
         font-size: 44px;
+        margin: 0;
+        line-height: 1;
+        white-space: nowrap;
     }
-    .title-sub {
+    .aa-area .title-sub {
+        position: relative;
+        top: auto;
+        right: auto;
         font-size: 22px;
-    }
-    .title {
-        top: 0;
-        right: calc(50% - 260px);
-        height: 96px;
-    }
-    .logo {
-        top: 0;
-        left: calc(50% - 260px);
+        margin: 0;
+        line-height: 1;
+        white-space: nowrap;
     }
 
-    /* 导航按钮更大更清晰 */
-    .bb-area {
-        height: 108px;
+    /* BB 区导航按钮右下对齐 */
+    .bb-area .nav {
+        justify-content: flex-end;
     }
     .bb-area .nav button {
         width: 120px;
-        height: 84px;
+        height: 90px;
         font-size: 14px;
     }
     .bb-area .nav button.active {
@@ -3267,7 +3339,7 @@ body {
     .repository-card {
         width: calc((100% - 50px) / 6);
         min-width: 140px;
-        height: 84px;
+        height: 90px;
     }
     .repo-card-name {
         font-size: 17px;
@@ -5197,9 +5269,7 @@ body {
     border-radius: 6px;
     cursor: pointer;
     font-size: 12px;
-    padding: 0 10px;
-    height: 31px;
-    min-height: 31px;
+    padding: 6px 10px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5210,7 +5280,7 @@ body {
 
 .list-back-btn {
     width: 46px;
-    height: 31px;
+    aspect-ratio: 3 / 2;
     background: #F44336;
     color: white;
     border: none;
@@ -5225,14 +5295,13 @@ body {
     white-space: nowrap;
 }
 
-/* Q1b：文件名 + 清单统计行 */
+/* Q1b：文件名显示行（标题行下方，8px 蓝色） */
 .list-filename-row {
     flex: 0 0 auto;
     height: 16px;
     min-height: 16px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 0 12px;
     box-sizing: border-box;
     background: #f5faff;
@@ -5241,8 +5310,6 @@ body {
 }
 
 .list-filename-text {
-    flex: 1 1 auto;
-    min-width: 0;
     font-size: 8px;
     color: #2196F3;
     line-height: 16px;
@@ -5250,15 +5317,6 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     font-family: monospace;
-}
-
-.list-filename-stats {
-    flex: 0 0 auto;
-    margin-left: 8px;
-    font-size: 8px;
-    color: #000;
-    line-height: 16px;
-    white-space: nowrap;
 }
 
 /* Q3：零件清单区（可滚动，充满剩余空间） */
@@ -5283,7 +5341,7 @@ body {
 /* 卡片 wrapper：左滑容器，右侧放删除按钮 */
 .lpc-wrapper {
     position: relative;
-    height: 84px;
+    height: 90px;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -5294,7 +5352,7 @@ body {
     right: 0;
     bottom: 0;
     width: 64px;
-    height: 84px;
+    height: 90px;
     background: #F44336;
     color: white;
     border: none;
@@ -5315,7 +5373,7 @@ body {
     display: flex;
     align-items: stretch;
     flex: 0 0 auto;
-    height: 84px;
+    height: 90px;
     background: #ffffff;
     border: 1px solid #e8e8e8;
     border-radius: 8px;
@@ -5325,16 +5383,16 @@ body {
     touch-action: pan-y;
 }
 
-/* 左：LP 零件图片区，固定 72px */
+/* 左：零件图片（缩窄 + 内边距，避免挡住左下角圆角和底线） */
 .lpc-left {
-    flex: 0 0 72px;
-    width: 72px;
-    height: 84px;
+    flex: 0 0 64px;
+    width: 64px;
+    height: 90px;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    padding: 4px 6px;
+    padding: 4px 6px; /* 四周留白，避免图片贴边盖住圆角/底线 */
     box-sizing: border-box;
 }
 
@@ -5363,44 +5421,22 @@ body {
     color: var(--dark-gray-color);
 }
 
-/* RP：右区（弹性） */
-.lpc-right {
+/* 中：信息区（非固定宽度） */
+.lpc-mid {
     flex: 1 1 auto;
     min-width: 0;
-    height: 84px;
+    height: 90px;
     display: flex;
     flex-direction: column;
-    box-sizing: border-box;
-    padding: 2px 6px 2px 4px;
-    gap: 0;
-}
-
-/* RP Top：50px，LPi + LPn 左右并排 */
-.lpc-top {
-    flex: 0 0 auto;
-    height: 50px;
-    display: flex;
-    align-items: stretch;
-    gap: 4px;
-    min-width: 0;
-}
-
-/* LPi：左信息区（弹性），4 行合计 50px */
-.lpc-info {
-    flex: 1 1 auto;
-    min-width: 0;
-    height: 50px;
-    display: flex;
-    flex-direction: column;
+    padding: 2px 6px;
     box-sizing: border-box;
     overflow: hidden;
 }
 
-/* LPi row 1：型号 16px */
 .lpc-num {
     flex: 0 0 16px;
     height: 16px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
     color: #2196F3;
     line-height: 16px;
@@ -5409,37 +5445,46 @@ body {
     text-overflow: ellipsis;
 }
 
-/* LPi row 2+3：名称 各 10px = 20px */
 .lpc-name {
-    flex: 0 0 20px;
-    height: 20px;
-    font-size: 8px;
+    flex: 0 0 36px;
+    height: 36px;
+    font-size: 9px;
     color: #333;
-    line-height: 10px;
+    line-height: 12px;
     word-break: break-all;
     white-space: normal;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     box-sizing: border-box;
 }
 
-/* LPi row 4：颜色 14px，上对齐 */
-.lpc-color-line {
-    flex: 0 0 14px;
-    height: 14px;
+.lpc-row3 {
+    /* 卡片 1/3 高度 + 6px = 34px（给数量区更充裕空间） */
+    flex: 0 0 34px;
+    height: 34px;
     display: flex;
+    align-items: flex-start; /* 颜色和数量顶部对齐 */
+}
+
+.lpc-color {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 34px;
+    display: flex;
+    flex-direction: row;
     align-items: flex-start;
     gap: 4px;
+    padding-top: 2px; /* 让顶部有点呼吸感 */
     overflow: hidden;
 }
 
 .lpc-color-id {
     flex: 0 0 auto;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
-    color: #64B5F6; /* 浅蓝色 */
+    color: #4CAF50;
     line-height: 14px;
     white-space: nowrap;
 }
@@ -5447,162 +5492,163 @@ body {
 .lpc-color-name {
     flex: 1 1 auto;
     min-width: 0;
-    font-size: 12px;
-    color: #333;
+    font-size: 9px;
+    color: #555;
     line-height: 14px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    box-sizing: border-box;
 }
 
-/* LPn：右数量区，固定 80px，点击查看库存 */
+/* 数量列：竖排 —— 上 "数量"(8px 右对齐) / 下 数字(12px bold 右对齐) */
 .lpc-qty-wrap {
-    flex: 0 0 80px;
-    width: 80px;
-    height: 50px;
+    flex: 0 0 52px;
+    width: 52px;
+    height: 34px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     justify-content: flex-start;
+    gap: 2px;
     box-sizing: border-box;
-    cursor: pointer;
+    padding-left: 2px;
+    padding-top: 2px; /* 与颜色区的 padding-top 对齐 */
+    overflow: hidden;
 }
 
 .lpc-qty-label {
     flex: 0 0 auto;
-    height: 12px;
     font-size: 8px;
-    color: #333;
-    line-height: 12px;
+    color: #555;
+    line-height: 10px;
     white-space: nowrap;
 }
 
 .lpc-qty {
-    flex: 1 1 auto;
-    min-height: 0;
-    font-size: 14px;
+    flex: 0 0 auto;
+    font-size: 12px;
     font-weight: bold;
-    color: #000;
-    text-align: right;
+    color: var(--black-color);
+    line-height: 18px;
     white-space: nowrap;
     overflow: hidden;
     box-sizing: border-box;
 }
 
-/* LPr：库存信息，2 行 × 4 列，grid */
-.lpc-inv {
-    flex: 1 1 auto;
-    min-height: 0;
-    height: 30px;
-    display: grid;
-    grid-template-columns: 1fr 64px 64px 64px;
-    grid-template-rows: 10px 14px;
-    column-gap: 2px;
-    row-gap: 2px;
+/* 右：仓库汇总（固定 64px，点击查看各仓库数量） */
+.lpc-right {
+    flex: 0 0 64px;
+    width: 64px;
+    height: 90px;
+    display: flex;
+    flex-direction: column;
     box-sizing: border-box;
-    padding-top: 2px;
-    padding-bottom: 2px;
-    overflow: hidden;
+    padding: 0 2px 0 4px; /* 右侧 2px padding 防止圆角遮挡 */
+    border-left: 1px solid #eee;
+    overflow: visible;
 }
 
-.lpc-inv-cell {
+.lpc-repo-label {
+    flex: 0 0 14px;
+    height: 14px;
+    font-size: 8px;
+    color: #9e9e9e;
+    line-height: 10px;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    text-align: right;
-    font-size: 8px;
-    color: #9e9e9e;
-    line-height: 1;
-    white-space: nowrap;
     overflow: hidden;
-}
-
-/* row 2 数据行：上对齐 + 14px，文字仍右对齐 */
-.lpc-inv > :nth-child(n+5) {
-    align-items: flex-start;
-    font-size: 14px;
-    font-weight: normal;
-    color: #9e9e9e;
-}
-
-/* col 1 row 2："现有库存" 标签，8px 上对齐 */
-.lpc-inv > :nth-child(5) {
-    font-size: 8px;
-    padding-top: 1px;
+    white-space: nowrap;
+    padding-top: 2px; /* 与左侧"数量"/颜色行顶部对齐 */
+    box-sizing: border-box;
 }
 
 .lpc-repo-total {
+    flex: 1 1 auto;
+    min-height: 0;
+    font-size: 14px;
+    font-weight: normal;
+    color: #9e9e9e;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
     cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.lpc-repo-detail {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: -3px;
+    overflow: visible;
+}
+
+.lpc-repo-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9px;
+    line-height: 12px;
+    height: 12px;
+    color: #9e9e9e;
+}
+
+.lpc-repo-new,
+.lpc-repo-used {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 10px;
+    border-radius: 3px;
+    font-weight: normal;
+    font-size: 8px;
+    line-height: 10px;
+    flex: 0 0 14px;
+    text-align: center;
 }
 
 .lpc-repo-new-qty,
 .lpc-repo-used-qty {
-    font-size: 14px;
+    font-size: 9px;
+    font-weight: normal;
     color: #9e9e9e;
+    flex: 1 1 auto;
+    text-align: right;
+    line-height: 12px;
+    margin-left: 2px;
 }
 
-/* 去掉新/旧状态的彩色，统一用灰色 */
+.lpc-repo-new {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.lpc-repo-used {
+    background-color: #fff3e0;
+    color: #e65100;
+}
 
 /* 仓库分布详情弹窗 */
 .repo-detail-modal {
-    width: 86%;
-    max-width: 360px;
+    width: 76%;
+    max-width: 300px;
 }
 
-/* 弹窗头部 */
-.repo-detail-hd-row1 {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: 4px 0;
-}
-
-.repo-detail-model {
-    font-size: 16px;
-    font-weight: bold;
-    color: #2196F3;
-}
-
-.repo-detail-title {
-    font-size: 15px;
-    color: #000;
-}
-
-.repo-detail-hd-row2 {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-    padding: 2px 0 4px;
-    border-bottom: 1px solid #eee;
-    margin-bottom: 4px;
-}
-
-.repo-detail-cid {
-    font-size: 12px;
-    color: #333;
-    font-weight: bold;
-}
-
-.repo-detail-cname {
-    font-size: 10px;
-    color: #000;
-}
-
-/* 仓库库存列表：4 列 */
 .repo-detail-list {
     max-height: 50vh;
     overflow-y: auto;
-    display: flex;
-    flex-direction: column;
 }
 
 .repo-detail-row {
-    display: grid;
-    grid-template-columns: 72px 1fr auto auto;
-    gap: 4px;
-    padding: 6px 0;
-    border-bottom: 1px solid #f0f0f0;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border-bottom: 1px solid #f0f0f0;
 }
 
 .repo-detail-name {
@@ -5611,26 +5657,12 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    text-align: left;
 }
 
 .repo-detail-qty {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
-    color: #000;
-    text-align: right;
-}
-
-.repo-detail-new {
-    font-size: 11px;
-    color: #2e7d32;
-    text-align: right;
-}
-
-.repo-detail-used {
-    font-size: 11px;
-    color: #e65100;
-    text-align: right;
+    color: var(--black-color);
 }
 
 .repo-detail-empty {
@@ -5638,6 +5670,22 @@ body {
     text-align: center;
     color: var(--dark-gray-color);
     font-size: 13px;
+}
+
+.repo-detail-status {
+    display: flex;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.repo-detail-new {
+    color: #2e7d32;
+    font-weight: 500;
+}
+
+.repo-detail-used {
+    color: #e65100;
+    font-weight: 500;
 }
 
 .repo-detail-total {
@@ -6106,7 +6154,7 @@ body {
     left: 50%;
     transform: translateX(-50%);
     width: 60px;
-    height: 84px;
+    height: 90px;
     background: #333;
     border-radius: 10px;
     border: 4px solid #333;
