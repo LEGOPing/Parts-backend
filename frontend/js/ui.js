@@ -9397,13 +9397,13 @@ async function renderListParts() {
                     </div>
                     <div class="lpc-inv">
                         <div class="lpc-inv-cell"></div>
-                        <div class="lpc-inv-cell lpc-repo-trigger lpc-repo-label"></div>
                         <div class="lpc-inv-cell">新</div>
                         <div class="lpc-inv-cell">旧</div>
+                        <div class="lpc-inv-cell lpc-repo-trigger lpc-repo-label"></div>
                         <div class="lpc-inv-cell">现有库存</div>
-                        <div class="lpc-inv-cell lpc-repo-trigger lpc-repo-total">0</div>
                         <div class="lpc-inv-cell"><span class="lpc-repo-new-qty">0</span></div>
                         <div class="lpc-inv-cell"><span class="lpc-repo-used-qty">0</span></div>
+                        <div class="lpc-inv-cell lpc-repo-trigger lpc-repo-total">0</div>
                     </div>
                 </div>
             </div>
