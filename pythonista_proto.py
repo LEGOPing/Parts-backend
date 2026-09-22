@@ -60,8 +60,9 @@ SUPABASE_ANON = os.environ.get(
     "SUPABASE_ANON_KEY",
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmeHlkbGtweGtkcHh5b3Fya2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMTA2NzQsImV4cCI6MjEwMDc4NjY3NH0.kNMlT3YXyXVV5Y_JHmDd-0vj1o_xFUFpV_uuWTVh-JI")
 
-OUT_JSON = "result.json"   # 本地结果副本（边抓边落盘）
-LOG_FILE = "progress.log"  # 实时日志
+OUT_JSON = "result.json"       # 本地结果副本（边抓边落盘）
+LOG_FILE = "progress.log"      # 实时日志
+OLD_DIR  = "price_backups"     # 推送前自动保存的远端旧版备份目录
 
 _TIMEOUT_S = 30
 
@@ -184,12 +185,19 @@ def supabase_query(table, columns='*', filters=None):
 def load_system_parts():
     """读系统库 parts 表 -> 去重 (part_num, RB_color_id) 集合。"""
     rows = supabase_query('parts', columns='part_num,color_id')
+    log('  Supabase parts 表返回原始行数: %d' % len(rows))
+    empty = no_cid = 0
     keys = set()
     for r in rows:
         pn = str(r.get('part_num') or '').strip()
         cid = str(r.get('color_id') or '').strip()
-        if pn and cid:
-            keys.add((pn, cid))
+        if not pn:
+            empty += 1; continue
+        if not cid:
+            no_cid += 1; continue
+        keys.add((pn, cid))
+    log('  去重 (part_num, color_id): %d 条（跳过 part_num 空=%d, color_id 空=%d）'
+        % (len(keys), empty, no_cid))
     return keys
 
 
@@ -253,13 +261,43 @@ def gitee_push_file(path, payload_b64):
 
 
 def save_local(records):
+    """写 result.json（若上次 result.json 已存在则自动改 .bak 保留历史）。"""
     payload = full_payload(records)
+    target = os.path.join(_BASE, OUT_JSON)
+    if os.path.exists(target):
+        try:
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            bak = os.path.join(_BASE, OLD_DIR, 'result_%s.json' % ts)
+            os.makedirs(os.path.dirname(bak), exist_ok=True)
+            os.rename(target, bak)
+            log('  result.json 旧版已备份为 price_backups/result_%s.json' % ts)
+        except Exception as e:
+            log('  result.json 备份失败: %s（直接覆盖）' % e)
     try:
-        with open(os.path.join(_BASE, OUT_JSON), 'w', encoding='utf-8') as f:
+        with open(target, 'w', encoding='utf-8') as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         log('  已写 result.json（当前 %d 条）' % len(records))
     except Exception as e:
         log('  写 result.json 失败: %s' % e)
+
+
+def backup_remote_price():
+    """推送前先把远端当前 BL-price.json 下载到本地 price_backups/old_*.json。
+    每次推送前都保留一份快照，防止覆盖无法回退。"""
+    try:
+        raw = gitee_raw(PRICE_JSON)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        os.makedirs(os.path.join(_BASE, OLD_DIR), exist_ok=True)
+        dst = os.path.join(_BASE, OLD_DIR, 'old_%s.json' % ts)
+        with open(dst, 'wb') as f:
+            f.write(raw)
+        d = json.loads(raw.decode('utf-8'))
+        log('  推送前已备份远端 price_backups/old_%s.json（%d 条）'
+            % (ts, len(d.get('records', [])) if isinstance(d, dict) else 0))
+        return True
+    except Exception as e:
+        log('  远端备份失败: %s（仍继续推送，但无回退快照）' % e)
+        return False
 
 
 def full_payload(records):
@@ -443,19 +481,45 @@ def _build_todo():
     bl_map = load_bl_colors()
     rb_names = load_rb_color_names()
     rb2bl = {}
+    unmapped_rb_colors = 0
     for rb_id, rb_name in rb_names.items():
         bl_id = bl_map.get(norm(rb_name))
         if bl_id is not None:
             rb2bl[rb_id] = str(bl_id)
-    log('RB颜色->BL颜色 映射 %d 条' % len(rb2bl))
+        else:
+            unmapped_rb_colors += 1
+    log('RB颜色->BL颜色 映射 %d 条（RB总 %d 色，其中 %d 色无 BL 对应，SKIP 会掉这部分）'
+        % (len(rb2bl), len(rb_names), unmapped_rb_colors))
 
-    inv = load_system_parts()
+    inv = load_system_parts()           # Supabase 去重后的 (part, RB_color_id)
     log('系统库去重零件组合 %d 条' % len(inv))
+
+    # 诊断：能通过颜色映射转为 BL key 的有多少
+    can_map = skip_nocolor = 0
+    for rb_part, rb_color in inv:
+        bl_part = re.sub(r'[^a-zA-Z0-9]', '', rb_part or '')
+        bl_cid = rb2bl.get(rb_color)
+        if not bl_part or bl_cid is None:
+            if bl_cid is None: skip_nocolor += 1
+            continue
+        can_map += 1
+    log('  其中可转为 BL key: %d 条（跳过：%d 条颜色无 BL 映射）' % (can_map, skip_nocolor))
 
     records, by_key = load_existing_price()
     global _results
     _results = records
     log('现有价格 key %d 条' % len(by_key))
+
+    # 诊断：价格库里有多少条是 Supabase 里已经没有的（历史残留）
+    inv_bl_keys = set()
+    for rb_part, rb_color in inv:
+        bl_part = re.sub(r'[^a-zA-Z0-9]', '', rb_part or '')
+        bl_cid = rb2bl.get(rb_color)
+        if bl_part and bl_cid is not None:
+            inv_bl_keys.add('%s:%s' % (bl_part, bl_cid))
+    orphan = len(by_key) - sum(1 for k in by_key if k in inv_bl_keys)
+    if orphan > 0:
+        log('  ⚠ 价格库中有 %d 条 key 在 Supabase 里已不存在（历史残留，暂保留不清理）' % orphan)
 
     todo = []
     seen = set()
@@ -535,6 +599,8 @@ def _run_closed_loop():
     content_b64 = base64.b64encode(
         json.dumps(full_payload(_results), ensure_ascii=False, separators=(',', ':')).encode('utf-8')
     ).decode('ascii')
+    # 推送前先把远端当前版本快照保存到本地 price_backups/old_*.json（防止覆盖无法回退）
+    backup_remote_price()
     if gitee_push_file(PRICE_JSON, content_b64):
         log('✓ 已回写 gitee%s/%s（%d 条，原远端 %d 条）' % (GITEE_REPO, PRICE_JSON, local_count, remote_count))
     else:
