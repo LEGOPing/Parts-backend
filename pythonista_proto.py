@@ -565,9 +565,20 @@ def _build_todo():
         bl_cid = rb2bl.get(rb_color)
         if bl_part and bl_cid is not None:
             inv_bl_keys.add('%s:%s' % (bl_part, bl_cid))
-    orphan = len(by_key) - sum(1 for k in by_key if k in inv_bl_keys)
+    orphan_keys = {k for k in by_key if k not in inv_bl_keys}
+    orphan = len(orphan_keys)
     if orphan > 0:
         log('  ⚠ 价格库中有 %d 条 key 在 Supabase 里已不存在（历史残留，暂保留不清理）' % orphan)
+
+    # 关键：价格库里有、且**刚从 orphan 状态回到系统**的 key
+    # = by_key 中存在 且 本次在 inv_bl_keys 里 但 上一次（我们不知道）可能是 orphan
+    # 实际上我们只能知道：key 在 by_key 里但当前属于 orphan_keys 集合之外
+    # 没法精确知道"上一次是不是 orphan"——所以采用保守策略：
+    #   凡是 by_key 里的 key（不管曾经是不是 orphan），都按 _is_stale 判断
+    #   只有"完全不在 by_key 里"的（真正全新的零件）才强制抓
+    # 特殊处理：如果某个零件被删后又加回，保存了 saved_at 但可能已过时
+    # → MAX_AGE_DAYS = 30 已经够了，BL 价格一个月内变化不大
+    # 如果将来要更严格，可以把"零件被系统删除超过 7 天后再添加"视为强制重抓
 
     todo = []
     seen = set()
@@ -580,6 +591,9 @@ def _build_todo():
             continue
         key = f'{bl_part}:{bl_cid}'
         if key in seen:
+            continue
+        if key in orphan_keys:
+            # 安全：跳过 orphan（理论上不会进这里，orphan_keys 与 inv_bl_keys 互斥）
             continue
         if key in by_key:
             existing = by_key[key]
