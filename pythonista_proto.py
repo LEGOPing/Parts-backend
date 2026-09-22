@@ -190,6 +190,8 @@ def load_system_parts():
        这里完全模仿前端 loadStats 的口径：先拉所有 boxes，再逐 box 拉 parts。
        ⚠ color_id 为空/null 的行也要计入，跟前端 partColorSet 一致
        （前端 p.color_id != null ? p.color_id : ''），差这一步就是 594 vs 701。
+       ⚠ color_id=0 在 RB 是 Black，完全有效，必须保留；Python 的
+         `str(x or '')` 会把 0 也变成空，这里用 `str(cid) if cid is not None` 避开。
     """
     boxes = supabase_query('boxes', columns='id,name')
     log('  Supabase boxes: %d 个' % len(boxes))
@@ -197,6 +199,9 @@ def load_system_parts():
     rows_total = 0
     keys = set()
     empty = 0
+    # 诊断桶：各类型 color_id 的行数（含跨 box 重复，不去重）
+    diag = {'cid_None': 0, 'cid_0_valid_Black': 0,
+            'cid_-1_Unknown': 0, 'cid_positive': 0, 'cid_empty_str': 0}
     for box in boxes:
         bid = box.get('id')
         if bid is None:
@@ -211,14 +216,35 @@ def load_system_parts():
         rows_total += len(rows)
         for r in rows:
             pn = str(r.get('part_num') or '').strip()
-            cid = r.get('color_id')
-            cid = str(cid).strip() if cid is not None else ''
+            raw_cid = r.get('color_id')
+            if raw_cid is None:
+                diag['cid_None'] += 1
+                cid = ''
+            elif raw_cid == '':
+                diag['cid_empty_str'] += 1
+                cid = ''
+            else:
+                # 数值型 color_id
+                try:
+                    cid_int = int(raw_cid)
+                except Exception:
+                    cid_int = raw_cid
+                if cid_int == 0:
+                    diag['cid_0_valid_Black'] += 1
+                elif cid_int == -1:
+                    diag['cid_-1_Unknown'] += 1
+                else:
+                    diag['cid_positive'] += 1
+                cid = str(raw_cid).strip()
             if not pn:
                 empty += 1; continue
             keys.add((pn, cid))  # cid 空也计入 —— 与前端 partColorSet 口径一致
 
     log('  逐 box 累计原始行数: %d' % rows_total)
-    log('  去重 (part_num, color_id): %d 条（跳过 part_num 空=%d, color_id 空也计入）'
+    log('  color_id 分布: None=%d  0(Black有效)=%d  -1(Unknown)=%d  正数=%d  空串=%d'
+        % (diag['cid_None'], diag['cid_0_valid_Black'], diag['cid_-1_Unknown'],
+           diag['cid_positive'], diag['cid_empty_str']))
+    log('  去重 (part_num, color_id): %d 条（跳过 part_num 空=%d）'
         % (len(keys), empty))
     return keys
 
