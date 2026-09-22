@@ -187,15 +187,16 @@ def load_system_parts():
 
     ⚠ 不直接 select=part_num,color_id 全表扫 —— Supabase 对 parts 表有 RLS
        （行级安全），匿名访问必须带 box_id 条件才能拿到完整数据。
-       这里模仿前端 loadStats 的口径：先拉所有 boxes，再逐 box 拉 parts，
-       保证结果和系统设置页看到的 701 条一致。
+       这里完全模仿前端 loadStats 的口径：先拉所有 boxes，再逐 box 拉 parts。
+       ⚠ color_id 为空/null 的行也要计入，跟前端 partColorSet 一致
+       （前端 p.color_id != null ? p.color_id : ''），差这一步就是 594 vs 701。
     """
     boxes = supabase_query('boxes', columns='id,name')
     log('  Supabase boxes: %d 个' % len(boxes))
 
     rows_total = 0
     keys = set()
-    empty = no_cid = 0
+    empty = 0
     for box in boxes:
         bid = box.get('id')
         if bid is None:
@@ -210,16 +211,15 @@ def load_system_parts():
         rows_total += len(rows)
         for r in rows:
             pn = str(r.get('part_num') or '').strip()
-            cid = str(r.get('color_id') or '').strip()
+            cid = r.get('color_id')
+            cid = str(cid).strip() if cid is not None else ''
             if not pn:
                 empty += 1; continue
-            if not cid:
-                no_cid += 1; continue
-            keys.add((pn, cid))
+            keys.add((pn, cid))  # cid 空也计入 —— 与前端 partColorSet 口径一致
 
     log('  逐 box 累计原始行数: %d' % rows_total)
-    log('  去重 (part_num, color_id): %d 条（跳过 part_num 空=%d, color_id 空=%d）'
-        % (len(keys), empty, no_cid))
+    log('  去重 (part_num, color_id): %d 条（跳过 part_num 空=%d, color_id 空也计入）'
+        % (len(keys), empty))
     return keys
 
 
