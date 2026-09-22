@@ -183,19 +183,41 @@ def supabase_query(table, columns='*', filters=None):
 
 
 def load_system_parts():
-    """读系统库 parts 表 -> 去重 (part_num, RB_color_id) 集合。"""
-    rows = supabase_query('parts', columns='part_num,color_id')
-    log('  Supabase parts 表返回原始行数: %d' % len(rows))
-    empty = no_cid = 0
+    """读系统库 parts 表 -> 去重 (part_num, RB_color_id) 集合。
+
+    ⚠ 不直接 select=part_num,color_id 全表扫 —— Supabase 对 parts 表有 RLS
+       （行级安全），匿名访问必须带 box_id 条件才能拿到完整数据。
+       这里模仿前端 loadStats 的口径：先拉所有 boxes，再逐 box 拉 parts，
+       保证结果和系统设置页看到的 701 条一致。
+    """
+    boxes = supabase_query('boxes', columns='id,name')
+    log('  Supabase boxes: %d 个' % len(boxes))
+
+    rows_total = 0
     keys = set()
-    for r in rows:
-        pn = str(r.get('part_num') or '').strip()
-        cid = str(r.get('color_id') or '').strip()
-        if not pn:
-            empty += 1; continue
-        if not cid:
-            no_cid += 1; continue
-        keys.add((pn, cid))
+    empty = no_cid = 0
+    for box in boxes:
+        bid = box.get('id')
+        if bid is None:
+            continue
+        try:
+            rows = supabase_query(
+                'parts', columns='part_num,color_id',
+                filters=[('box_id', f'eq.{bid}')],
+            )
+        except Exception as e:
+            log('  box %s 查询失败: %s' % (bid, e)); continue
+        rows_total += len(rows)
+        for r in rows:
+            pn = str(r.get('part_num') or '').strip()
+            cid = str(r.get('color_id') or '').strip()
+            if not pn:
+                empty += 1; continue
+            if not cid:
+                no_cid += 1; continue
+            keys.add((pn, cid))
+
+    log('  逐 box 累计原始行数: %d' % rows_total)
     log('  去重 (part_num, color_id): %d 条（跳过 part_num 空=%d, color_id 空=%d）'
         % (len(keys), empty, no_cid))
     return keys
