@@ -6014,100 +6014,245 @@ async function matchPartNumToRB(partNum, colorId) {
     return out;
 }
 
-// 主流程：匹配 → 展示 → 确认 → 更新零件基本信息 + 别名映射
+// 主流程：收集多种候选配对 → radio 列表让用户选择 → 按选择更新零件 name/color + 别名映射
+// 参考批量BL重配（runBLBatchMatch）的交互方式，但针对单条零件记录
 async function reconfigurePartBLMatch(part) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     const sheet = document.createElement('div');
     sheet.className = 'modal-content';
-    sheet.style.maxWidth = '360px';
+    sheet.style.maxWidth = '420px';
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
-    const render = (html) => { sheet.innerHTML = html; };
-    render(`
-        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span class="modal-title" style="font-size:16px;font-weight:600;">BL重配</span>
-            <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
-        </div>
-        <div class="modal-body" id="bl-rec-body" style="text-align:center;color:#888;padding:20px 0;">正在重新匹配型号…</div>
-    `);
+    const num = String(part.part_num).trim();
+    const colorId = (part.color_id != null && part.color_id !== '') ? Number(part.color_id) : null;
+
+    // —— 1. 收集候选配对（针对这条零件，依次跑 direct / alias / bl 三种匹配方式）——
+    const renderLoading = () => {
+        sheet.innerHTML = `
+            <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span class="modal-title" style="font-size:16px;font-weight:600;">BL重配</span>
+                <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()" style="background:#f44336;color:white;padding:6px 14px;font-size:13px;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+            </div>
+            <div class="modal-body" id="bl-rec-body" style="text-align:center;color:#888;padding:20px 0;">正在收集候选配对…</div>
+        `;
+    };
+    renderLoading();
     const bodyEl = sheet.querySelector('#bl-rec-body');
 
-    // —— 1. 执行匹配 ——
-    const result = await matchPartNumToRB(part.part_num, part.color_id);
+    const candMap = new Map(); // key = method|rb
+    const addCandidate = (method, methodLabel, rb, matchedColorId) => {
+        if (!rb) return;
+        const rbTrim = String(rb).trim();
+        if (!rbTrim) return;
+        const key = `${method}|${rbTrim}`;
+        if (candMap.has(key)) return; // 单条记录下去重（与批量版不同，这里 count 固定为 1）
+        candMap.set(key, {
+            method, methodLabel,
+            alias: num, rb: rbTrim,
+            colorId: matchedColorId != null ? Number(matchedColorId) : null,
+            rbPart: null, colorName: null, imgUrl: null, error: null
+        });
+    };
 
-    // —— 2. 未命中 ——
-    if (!result.matchedPartNum) {
+    // a) 直接 RB 匹配
+    try {
+        const rbPart = await getPartByNum(num);
+        if (rbPart) addCandidate('direct', '直接RB匹配', num, colorId);
+    } catch (e) { /* 忽略 */ }
+
+    // b) 别名解析
+    try {
+        const resolved = await resolvePartAlias(num);
+        if (resolved && String(resolved).trim() !== num) {
+            const rbPart = await getPartByNum(String(resolved).trim());
+            if (rbPart) addCandidate('alias', '别名映射', String(resolved).trim(), colorId);
+        }
+    } catch (e) { /* 忽略 */ }
+
+    // c) BL 匹配
+    try {
+        let colorName = null;
+        if (colorId != null) {
+            try {
+                const c = await getColorById(colorId);
+                if (c && c.name) colorName = c.name;
+            } catch (e2) { /* 忽略 */ }
+        }
+        const m = await matchRBByColorFallback(num, colorName);
+        if (m && m.rbPartNum) {
+            addCandidate('bl', 'BL匹配', String(m.rbPartNum).trim(), (m.colorId != null ? Number(m.colorId) : colorId));
+        }
+    } catch (e) { /* 忽略 */ }
+
+    const candidates = [...candMap.values()];
+
+    // —— 2. 无任何候选 ——
+    if (!candidates.length) {
         bodyEl.innerHTML = `
-            <div style="color:#e53935;font-size:15px;margin-bottom:8px;">未能匹配到RB型号</div>
-            <div style="font-size:13px;color:#666;">型号：${part.part_num}${part.color_id != null ? ' · 颜色ID：' + part.color_id : ''}</div>
+            <div style="color:#e53935;font-size:15px;margin-bottom:8px;">未能匹配到任何RB型号</div>
+            <div style="font-size:13px;color:#666;">型号：${num}${colorId != null ? ' · 颜色ID：' + colorId : ''}</div>
             <div style="font-size:12px;color:#999;margin-top:8px;">直接RB匹配、别名解析、BL匹配均未命中。</div>
         `;
         return;
     }
 
-    // —— 3. 组装展示信息 ——
-    let name = result.rbPart && result.rbPart.name ? result.rbPart.name : '';
-    let colorName = result.colorName;
-    if (!colorName && result.colorId != null) {
+    // —— 3. 异步补全各候选的展示信息（名称 / 颜色 / 图片）——
+    const enrichTasks = candidates.map(async (c) => {
         try {
-            const cl = await getColorById(result.colorId);
-            if (cl && cl.name) colorName = cl.name;
-        } catch (e) { /* 忽略 */ }
-    }
-    let imgUrl = null;
-    try {
-        imgUrl = await getPartImageUrl(result.matchedPartNum, result.colorId);
-    } catch (e) {
-        imgUrl = null;
-    }
+            c.rbPart = await getPartByNum(c.rb);
+        } catch (e) { c.rbPart = null; }
+        if (!c.colorName && c.colorId != null) {
+            try {
+                const cl = await getColorById(c.colorId);
+                if (cl && cl.name) c.colorName = cl.name;
+            } catch (e) { /* 忽略 */ }
+        }
+        try {
+            c.imgUrl = await getPartImageUrl(c.rb, c.colorId);
+        } catch (e) { c.imgUrl = null; }
+    });
+    await Promise.all(enrichTasks);
 
-    const methodLabel = result.method === 'direct' ? '直接RB匹配'
-        : result.method === 'alias' ? '别名映射'
-        : result.method === 'bl' ? 'BL匹配' : '';
-    const colorText = colorName
-        ? `${colorName}（ID：${result.colorId}）`
-        : (result.colorId != null ? `ID：${result.colorId}` : '（无）');
+    // —— 4. 渲染候选列表 + "直接匹配RB（删除别名）" 选项 ——
+    const colorLabel = (c) => {
+        const cn = c.colorName;
+        if (cn && c.colorId != null) return `${cn}（ID：${c.colorId}）`;
+        if (cn) return cn;
+        if (c.colorId != null) return `ID：${c.colorId}`;
+        return '（无）';
+    };
+    const nameLabel = (c) => (c.rbPart && c.rbPart.name) ? c.rbPart.name : '';
+
+    const cards = candidates.map((c, i) => {
+        const imgHtml = c.imgUrl
+            ? `<div style="margin-bottom:6px;"><img src="${c.imgUrl}" alt="${c.rb}" style="max-width:60px;max-height:60px;border-radius:4px;background:#f5f5f5;" onerror="this.style.display='none'"/></div>`
+            : '';
+        return `
+            <label style="display:flex;gap:10px;padding:10px 12px;border:1px solid #E0E0E0;border-radius:8px;margin-bottom:8px;cursor:pointer;background:#FAFAFA;align-items:flex-start;">
+                <input type="radio" name="bl-rec-choice" value="pair:${i}" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;">
+                ${imgHtml}
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:13px;">
+                        <span style="font-weight:600;">${num}</span>
+                        <span style="color:#bbb;"> → </span>
+                        <span style="font-weight:700;color:#2E7D32;">${c.rb}</span>
+                        <span style="font-size:11px;color:#1976D2;margin-left:6px;">${c.methodLabel}</span>
+                    </div>
+                    <div style="font-size:12px;color:#666;margin-top:2px;">${nameLabel(c) || '（无名称）'}</div>
+                    <div style="font-size:11px;color:#999;margin-top:1px;">颜色：${colorLabel(c)}</div>
+                </div>
+            </label>
+        `;
+    }).join('');
+
+    // 直接匹配RB（删除别名）选项 —— 与批量版保持一致
+    const directIsAlreadyRb = candidates.some(c => c.method === 'direct' && c.rb === num);
+    const directOption = directIsAlreadyRb
+        ? '' // 如果 direct 已在候选里，不再额外显示"直接匹配RB"
+        : `
+        <label style="display:flex;gap:10px;padding:10px 12px;border:1px solid #CDDC39;border-radius:8px;margin-bottom:8px;cursor:pointer;background:#F9FBE7;align-items:flex-start;">
+            <input type="radio" name="bl-rec-choice" value="direct" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;">
+            <div style="flex:1;">
+                <div style="font-size:13px;font-weight:700;color:#558B2F;">直接匹配RB（${num} → ${num}）</div>
+                <div style="font-size:12px;color:#666;">不使用别名映射；若已存在 ${num} 的别名，将同时删除该别名记录</div>
+            </div>
+        </label>`;
 
     bodyEl.innerHTML = `
-        <div style="display:flex;justify-content:center;align-items:center;gap:16px;margin-bottom:10px;">
-            <div style="text-align:center;">
-                <div style="font-size:11px;color:#999;">原型号</div>
-                <div style="font-size:15px;font-weight:600;">${part.part_num}</div>
-            </div>
-            <div style="font-size:18px;color:#bbb;">→</div>
-            <div style="text-align:center;">
-                <div style="font-size:11px;color:#999;">匹配型号</div>
-                <div style="font-size:15px;font-weight:700;color:#2E7D32;">${result.matchedPartNum}</div>
-            </div>
+        <div style="font-size:12px;color:#999;margin-bottom:10px;">
+            型号 <b>${num}</b> 共找到 <b>${candidates.length}</b> 种候选配对，请选择要采用的匹配方式：
         </div>
-        <div style="text-align:center;font-size:12px;color:#1976D2;margin-bottom:10px;">匹配方式：${methodLabel}</div>
-        ${imgUrl ? `<div style="display:flex;justify-content:center;margin-bottom:10px;"><img src="${imgUrl}" alt="${result.matchedPartNum}" style="max-width:120px;max-height:120px;border-radius:6px;background:#f5f5f5;" onerror="this.style.display='none'"/></div>` : ''}
-        ${imgUrl ? `<div style="background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:8px;word-break:break-all;font-size:11px;color:#555;margin-bottom:10px;">图片URL：${imgUrl}</div>` : ''}
-        <div style="text-align:left;font-size:13px;line-height:1.9;">
-            <div><b>名称：</b>${name || '（无）'}</div>
-            <div><b>颜色：</b>${colorText}</div>
+        ${cards}
+        ${directOption}
+        <div style="font-size:12px;color:#999;margin-top:10px;">
+            确认后：零件原BL型号保持不变，按选择更新 <b>名称 / 颜色</b> 并写入 <b>别名映射</b>
         </div>
-        <div style="font-size:12px;color:#999;margin-top:12px;">原BL型号将保持不变，匹配结果用于修正名称/颜色并写入别名映射</div>
         <div style="display:flex;gap:8px;margin-top:12px;">
             <button id="bl-rec-cancel" style="flex:1;padding:9px;border:none;border-radius:6px;background:#607D8B;color:#fff;font-size:14px;cursor:pointer;">取消</button>
-            <button id="bl-rec-confirm" style="flex:2;padding:9px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">确认更新</button>
+            <button id="bl-rec-confirm" style="flex:2;padding:9px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">确认并更新</button>
         </div>
     `;
 
-    bodyEl.querySelector('#bl-rec-cancel').onclick = () => overlay.remove();
-    bodyEl.querySelector('#bl-rec-confirm').onclick = async () => {
-        const btn = bodyEl.querySelector('#bl-rec-confirm');
-        btn.disabled = true;
+    const cancelBtn = bodyEl.querySelector('#bl-rec-cancel');
+    const confirmBtn = bodyEl.querySelector('#bl-rec-confirm');
+    cancelBtn.onclick = () => overlay.remove();
+
+    confirmBtn.onclick = async () => {
+        const checked = bodyEl.querySelector('input[name="bl-rec-choice"]:checked');
+        if (!checked) {
+            alert('请先选择一个配对');
+            return;
+        }
+        confirmBtn.disabled = true;
         try {
-            await applyRematchToPart(part, result);
-            // 关闭 BL重配 弹窗
+            const val = checked.value;
+
+            // —— A. 选出最终要使用的 RB 型号和颜色 ——
+            let finalRb, finalColorId, finalColorName, finalRbPart;
+            let aliasAction = null; // 'update' | 'delete' | null(无需别名)
+
+            if (val === 'direct') {
+                // 直接匹配RB：num → num，删除别名
+                finalRb = num;
+                finalColorId = colorId; // 沿用当前颜色
+                aliasAction = 'delete';
+                try { finalRbPart = await getPartByNum(num); } catch (e) { finalRbPart = null; }
+            } else {
+                const idx = Number(val.replace('pair:', ''));
+                const c = candidates[idx];
+                if (!c) throw new Error('候选数据无效');
+                finalRb = c.rb;
+                finalColorId = c.colorId;
+                finalColorName = c.colorName;
+                finalRbPart = c.rbPart;
+                if (num !== finalRb) {
+                    aliasAction = 'update';
+                } else {
+                    aliasAction = null; // 直接匹配到自身，无需别名
+                }
+            }
+
+            // —— B. 更新零件 name / color_id（不改动 part_num）——
+            const updateData = {};
+            if (finalRbPart && finalRbPart.name && finalRbPart.name !== part.name) {
+                updateData.name = finalRbPart.name;
+            }
+            const finalColorIdNum = finalColorId != null ? Number(finalColorId) : null;
+            if (finalColorIdNum != null && String(finalColorIdNum) !== String(part.color_id)) {
+                updateData.color_id = finalColorIdNum;
+            }
+            if (Object.keys(updateData).length) {
+                const ok = await updatePart(part.id, updateData);
+                if (!ok) {
+                    throw new Error('更新零件基本信息失败');
+                }
+            }
+
+            // —— C. 处理别名映射 ——
+            if (aliasAction === 'delete') {
+                const r = await deletePartAlias(num);
+                if (r.skipped) {
+                    console.log(`[BL重配] 型号 ${num} 本就无别名，无需删除`);
+                } else {
+                    console.log(`[BL重配] 已删除别名 ${num}`);
+                }
+            } else if (aliasAction === 'update') {
+                const r = await persistPartAlias(num, finalRb);
+                console.log(`[BL重配] 已更新别名: ${num} → ${finalRb}`, r);
+                if (!r.ok) {
+                    throw new Error('更新别名映射失败');
+                }
+            } else {
+                console.log(`[BL重配] 无需别名映射（匹配RB自身）`);
+            }
+            clearPartAliasesCache();
+
+            // —— D. 关闭弹窗 + 刷新界面 ——
             overlay.remove();
-            // 刷新零件详情（型号 / 图片等）：读取最新数据后重新打开详情弹窗
             try {
                 const fresh = await getPartById(part.id);
-                // 先移除旧的零件详情弹窗，避免叠加
                 document.querySelectorAll('.part-detail-modal').forEach(m => {
                     const ov = m.closest('.modal-overlay');
                     if (ov) ov.remove();
@@ -6118,7 +6263,6 @@ async function reconfigurePartBLMatch(part) {
             } catch (e2) {
                 console.warn('BL重配后刷新零件详情失败:', e2);
             }
-            // 刷新盒子零件列表
             if (selectedBox) {
                 await loadParts(selectedBox.id);
             }
@@ -6126,124 +6270,10 @@ async function reconfigurePartBLMatch(part) {
         } catch (e) {
             console.warn('BL重配失败:', e);
             alert(e.message || '保存失败');
+        } finally {
+            confirmBtn.disabled = false;
         }
     };
-}
-
-// 确认后：更新零件基本信息 + 处理别名映射
-async function applyRematchToPart(part, result) {
-    // 保留原BL型号（不改写 part_num），仅依据匹配结果修正名称/颜色，RB 关系交给别名映射
-    const newPartNum = String(result.matchedPartNum).trim();
-    const updateData = {};
-    if (result.rbPart && result.rbPart.name && result.rbPart.name !== part.name) {
-        updateData.name = result.rbPart.name;
-    }
-    const newColorId = result.colorId != null ? Number(result.colorId) : null;
-    if (newColorId != null && String(newColorId) !== String(part.color_id)) {
-        updateData.color_id = newColorId;
-    }
-    if (Object.keys(updateData).length) {
-        const ok = await updatePart(part.id, updateData);
-        if (!ok) {
-            throw new Error('更新零件基本信息失败');
-        }
-    }
-
-    // —— 别名映射处理（原BL型号 → 匹配到的RB型号）——
-    await handleAliasAfterRematch(String(part.part_num).trim(), newPartNum);
-}
-
-// 别名映射：查记录 → 无则新增 / 有则比较（相同返回 / 不同让用户选择后更新）
-// 数据源统一为 RB 离线数据库别名表；更新时通过 persistPartAlias 同时写回 RB库 + Gitee CSV
-async function handleAliasAfterRematch(aliasNum, rbNum) {
-    if (!aliasNum || !rbNum || aliasNum === rbNum) {
-        console.log('[BL重配] 直接匹配RB，无需别名映射');
-        return true;
-    }
-
-    // 查询现有记录（RB 离线数据库 / 历史 localStorage，代替 Supabase）
-    let existing = null;
-    try {
-        const aliases = await getAllPartAliases();
-        if (aliases && aliases[aliasNum]) {
-            existing = { alias_part_num: aliasNum, rb_part_num: String(aliases[aliasNum]) };
-        }
-    } catch (e) {
-        console.warn('[BL重配]查询别名记录失败:', e.message);
-    }
-
-    // 无记录 → 添加保存
-    if (!existing) {
-        const r = await persistPartAlias(aliasNum, rbNum);
-        console.log(`[BL重配]已新增别名: ${aliasNum} → ${rbNum}`, r);
-        return !!r.ok;
-    }
-
-    // 有记录 → 比较
-    const existingRb = String(existing.rb_part_num).trim();
-    if (existingRb === rbNum) {
-        console.log('[BL重配]别名已有且一致，无需更新');
-        return true; // 相同 → 返回
-    }
-
-    // 不同 → 对比后让用户选择确认，再更新
-    const choice = await showAliasDiffConfirm(aliasNum, existingRb, rbNum);
-    if (choice !== 'update') {
-        console.log('[BL重配]用户保持原别名，未更新');
-        return true;
-    }
-    const r = await persistPartAlias(aliasNum, rbNum);
-    console.log(`[BL重配]已更新别名: ${aliasNum} → ${rbNum}`, r);
-    if (!r.ok) {
-        alert('更新别名映射失败');
-        return false;
-    }
-    return true;
-}
-
-// 别名差异对比弹窗：返回 'update' 或 'keep'
-function showAliasDiffConfirm(aliasNum, oldRb, newRb) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay active';
-        const sheet = document.createElement('div');
-        sheet.className = 'modal-content';
-        sheet.style.maxWidth = '340px';
-        sheet.innerHTML = `
-            <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <span class="modal-title" style="font-size:16px;font-weight:600;">别名映射差异</span>
-            </div>
-            <div class="modal-body">
-                <div style="font-size:13px;color:#666;margin-bottom:10px;">型号 <b>${aliasNum}</b> 已存在别名映射，与新匹配结果不一致：</div>
-                <div style="background:#FFF3E0;border:1px solid #FFE0B2;border-radius:6px;padding:10px;font-size:13px;margin-bottom:6px;">
-                    <div>现有映射：<b>${aliasNum} → ${oldRb}</b></div>
-                </div>
-                <div style="background:#E3F2FD;border:1px solid #BBDEFB;border-radius:6px;padding:10px;font-size:13px;margin-bottom:14px;">
-                    <div>新匹配：<b>${aliasNum} → ${newRb}</b></div>
-                </div>
-                <div style="display:flex;gap:8px;">
-                    <button id="al-diff-keep" style="flex:1;padding:9px;border:none;border-radius:6px;background:#607D8B;color:#fff;font-size:14px;cursor:pointer;">保持现有</button>
-                    <button id="al-diff-update" style="flex:1;padding:9px;border:none;border-radius:6px;background:#2196F3;color:#fff;font-size:14px;cursor:pointer;">更新为新匹配</button>
-                </div>
-            </div>
-        `;
-        overlay.appendChild(sheet);
-        document.body.appendChild(overlay);
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.remove();
-                resolve('keep');
-            }
-        });
-        sheet.querySelector('#al-diff-keep').onclick = () => {
-            overlay.remove();
-            resolve('keep');
-        };
-        sheet.querySelector('#al-diff-update').onclick = () => {
-            overlay.remove();
-            resolve('update');
-        };
-    });
 }
 
 async function searchFromDetail(partNum, colorId, partName) {
