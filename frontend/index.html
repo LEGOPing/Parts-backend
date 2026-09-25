@@ -297,9 +297,15 @@
     
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                // 使用版本号参数强制浏览器安装新SW，绕过旧SW的缓存锁
-                navigator.serviceWorker.register('service-worker.js?v=v87', { updateViaCache: 'none' })
+            // 核弹级清除：先注销所有旧 SW，防止 iOS Safari 缓存锁
+            navigator.serviceWorker.getRegistrations().then(regs => {
+                const unregisterAll = Promise.all(regs.map(r => r.unregister()));
+                // 同时清 caches
+                const clearCaches = caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+                Promise.all([unregisterAll, clearCaches]).then(() => {
+                    window.addEventListener('load', () => {
+                        // 注册全新 SW（换文件名彻底绕过旧缓存）
+                        navigator.serviceWorker.register('sw-lego-v88.js', { updateViaCache: 'none' })
                     .then(registration => {
                         console.log('Service Worker注册成功:', registration);
                         // 如果有旧SW在控制页面，强制重新加载以应用新版本
@@ -313,7 +319,9 @@
                     .catch(error => {
                         console.log('Service Worker注册失败:', error);
                     });
-            });
+                    });  // addEventListener('load') 闭
+                });  // Promise.all().then() 闭
+            }).catch(err => console.warn('SW清理失败:', err));  // getRegistrations().catch
         }
 
         window.onerror = function(message, source, lineno, colno, error) {
