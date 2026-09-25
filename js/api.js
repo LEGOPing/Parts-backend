@@ -2,8 +2,8 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-// 本地开发（localhost）走本机 FastAPI，可利用本机 IP 抓取 Bricklink 重量；
-// 生产环境走 CloudBase 云托管（依赖 Supabase part_weights 缓存）。
+// 本地开发（localhost）走本机 FastAPI；
+// 生产环境走已部署的后端服务。
 const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
     ? `http://${location.hostname}:8000`
     : 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
@@ -1698,7 +1698,7 @@ async function fetchBricklinkPartWeight(partNumber) {
     return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 
-// 重置 Supabase 自增序列（通过 RPC 函数，无需 CloudBase 后端）
+// 重置 Supabase 自增序列（通过 RPC 函数）
 async function resetSequencesViaSupabase() {
     try {
         const response = await fetch(`${API_BASE}/rpc/reset_sequences`, {
