@@ -21,6 +21,9 @@ const DEFAULT_PART_ALIASES = {
     "3001old": "3001",
     "3020old": "3020",
     "3039old": "3039",
+    // 48452cx1 等 BrickLink 目录型号是 RB 中 50163 的等价零件，
+    // 写入内置默认别名，保证离线/新会话始终可解析，避免图片"暂无/加载失败"
+    "48452cx1": "50163",
     // 3063b 和 85080 是外表相同的零件，这里不做别名映射，而是通过同名零件消歧处理
 };
 
@@ -400,6 +403,17 @@ async function matchColorNameToId(colorName) {
     if (!colorName) return null;
     const cleanName = String(colorName).trim().toLowerCase();
     if (!cleanName) return null;
+
+    // 0. 优先用 RB_BL_colors（rb_bl_map）：识别返回的颜色名是 Bricklink 颜色名，
+    //    直接按 BL 颜色名反查 RB 颜色，避免对 RB 颜色名的模糊匹配。
+    try {
+        if (typeof getRBColorByBLColorName === 'function') {
+            const mapped = await getRBColorByBLColorName(colorName);
+            if (mapped && mapped.id != null) return mapped;
+        }
+    } catch (e) {
+        console.warn('RB_BL_colors 颜色名反查失败，回退到 RB 颜色名匹配:', e.message);
+    }
 
     // 1. 标准化名称
     const normalizedName = COLOR_NAME_NORMALIZATION[cleanName] || colorName.trim();

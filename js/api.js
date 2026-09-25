@@ -2,11 +2,12 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-// 本地开发（localhost）走本机 FastAPI，可利用本机 IP 抓取 Bricklink 重量；
-// 生产环境走 CloudBase 云托管（依赖 Supabase part_weights 缓存）。
+// 认证走 Supabase 原生 Auth（/auth/v1），不需要自建后端
+const AUTH_BASE = `${SUPABASE_URL}/auth/v1`;
+// 其他需要后端的功能（如序列重置）暂用空串，后续有需要再填
 const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
     ? `http://${location.hostname}:8000`
-    : 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
+    : '';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
@@ -1819,57 +1820,93 @@ async function deletePartImageFromGitee(partNum, colorId) {
     }
 }
 
-// ==================== 用户认证 API ====================
+// ==================== 用户认证 API（Supabase 原生 Auth） ====================
+// 手机号 → 邮箱映射：18923232468 → 18923232468@lego.rb
+// Supabase Dashboard → Authentication → Users 里手动创建用户
 
-/** 获取后端 BASE URL（用于认证接口） */
-function getAuthBase() {
-    // 优先用 window 对象上的配置，其次 BACKEND_URL，最后回退同源
-    if (typeof window !== 'undefined' && window.RB_AUTH_BASE) return window.RB_AUTH_BASE;
-    if (typeof BACKEND_URL !== 'undefined') return BACKEND_URL;
-    return '';
+const AUTH_EMAIL_SUFFIX = '@lego.rb';
+function phoneToEmail(phone) { return phone + AUTH_EMAIL_SUFFIX; }
+function emailToPhone(email) { return (email || '').replace(AUTH_EMAIL_SUFFIX, ''); }
+
+function authHeaders(token) {
+    const h = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+    };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
 }
 
 async function apiLogin(phone, password) {
-    const resp = await fetch(`${getAuthBase()}/api/auth/login`, {
+    // 1. 先查 Supabase Auth 是否存在此用户
+    const email = phoneToEmail(phone);
+    const resp = await fetch(`${AUTH_BASE}/token?grant_type=password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: String(phone).trim(), password: String(password) }),
+        headers: authHeaders(),
+        body: JSON.stringify({ email, password }),
     });
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.detail || data.message || `登录失败 (HTTP ${resp.status})`);
-    return data; // { token, phone, expires_in }
+    if (!resp.ok) {
+        const msg = data.msg || data.error_description || data.error || `登录失败 (HTTP ${resp.status})`;
+        if (resp.status === 400 && msg.includes('Invalid')) {
+            throw new Error('手机号或密码错误');
+        }
+        throw new Error(msg);
+    }
+    // Supabase 返回 { access_token, user: { email, ... } }
+    const realPhone = emailToPhone(data.user?.email || email);
+    return {
+        token: data.access_token,
+        phone: realPhone,
+        expires_in: data.expires_in,
+    };
 }
 
 async function apiLogout() {
     const token = localStorage.getItem('rb_auth_token');
-    const resp = await fetch(`${getAuthBase()}/api/auth/logout`, {
+    if (!token) return true;
+    const resp = await fetch(`${AUTH_BASE}/logout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
+        headers: authHeaders(token),
     });
     return resp.ok;
 }
 
 async function apiChangePassword(oldPassword, newPassword) {
     const token = localStorage.getItem('rb_auth_token');
-    const resp = await fetch(`${getAuthBase()}/api/auth/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
-        body: JSON.stringify({ old_password: String(oldPassword), new_password: String(newPassword) }),
+    if (!token) throw new Error('请先登录');
+    // Supabase Auth 不支持用 old_password 校验修改密码
+    // 这里用一个小 trick：先用旧密码登一下确认正确，再改
+    const savedPhone = getAuthPhone();
+    const verify = await apiLogin(savedPhone, oldPassword).catch(() => null);
+    if (!verify) throw new Error('原密码错误');
+
+    const resp = await fetch(`${AUTH_BASE}/user`, {
+        method: 'PUT',
+        headers: authHeaders(token),
+        body: JSON.stringify({ password: newPassword }),
     });
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.detail || data.message || `修改密码失败 (HTTP ${resp.status})`);
+    if (!resp.ok) throw new Error(data.msg || data.error || `修改密码失败 (HTTP ${resp.status})`);
+    // 修改成功后退出，强制重新登录
+    await apiLogout().catch(() => {});
     return data;
 }
 
 async function apiGetMe() {
     const token = localStorage.getItem('rb_auth_token');
     if (!token) return null;
-    const resp = await fetch(`${getAuthBase()}/api/auth/me`, {
+    const resp = await fetch(`${AUTH_BASE}/user`, {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: authHeaders(token),
     });
     if (!resp.ok) return null;
-    return await resp.json();
+    const data = await resp.json();
+    return {
+        phone: emailToPhone(data.email),
+        email: data.email,
+        id: data.id,
+    };
 }
 
 // 登录态 localStorage key

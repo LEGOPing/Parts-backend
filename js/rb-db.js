@@ -1,5 +1,8 @@
 const RB_DB_NAME = 'RB_Database';
-const RB_DB_VERSION = 4;
+// 6: 新增 rb_bl_colors（BL 颜色表，来自 bl_colors.json）
+// 7: 新增 rb_prices（BL 价格缓存：设备端手动回填/自动抓取后保存在本地，右滑直接读）
+// 8: 新增 rb_bl_map（RB↔BL 颜色映射表，来自 RB_BL_colors.csv，RB 颜色ID→BL 颜色ID 直接映射）
+const RB_DB_VERSION = 8;
 
 const RB_STORES = {
     COLORS: 'rb_colors',
@@ -12,7 +15,15 @@ const RB_STORES = {
     // BL-parts：Bricklink 目录表（方法一「BG型号+颜色名→CODENAME」的桥接表）
     BL_PARTS: 'rb_bl_parts',
     // 零件别名映射表（来自 Gitee part_aliases.csv，别名→RB标准型号）
-    PART_ALIASES: 'rb_part_aliases'
+    PART_ALIASES: 'rb_part_aliases',
+    // 型号英文词汇表（来自 Gitee ID_Abc.json，型号输入弹窗"词库"用）
+    ID_ABC: 'rb_id_abc',
+    // BL 颜色表（来自 bl_colors.json，RB 颜色名→BL 颜色ID 的映射依据）
+    BL_COLORS: 'rb_bl_colors',
+    // RB↔BL 颜色映射表（来自 RB_BL_colors.csv，RB 颜色ID→BL 颜色ID 的直接映射）
+    RB_BL_MAP: 'rb_bl_map',
+    // BL 价格缓存（设备端手动回填/自动抓取后本地保存，key = part_num:color_id）
+    PRICES: 'rb_prices'
 };
 
 const RB_STORE_KEYS = {
@@ -24,7 +35,9 @@ const RB_STORE_KEYS = {
     'rb_part_relationships': 'part_relationships',
     'rb_weights': 'weights',
     'rb_bl_parts': 'bl_parts',
-    'rb_part_aliases': 'part_aliases'
+    'rb_part_aliases': 'part_aliases',
+    'rb_id_abc': 'id_abc',
+    'rb_bl_colors': 'bl_colors'
 };
 
 let rbDbInstance = null;
@@ -74,6 +87,22 @@ function openRBDatabase() {
             // 零件别名映射表：keyPath 为别名型号（alias_part_num），值列 rb_part_num
             if (!db.objectStoreNames.contains(RB_STORES.PART_ALIASES)) {
                 db.createObjectStore(RB_STORES.PART_ALIASES, { keyPath: 'alias_part_num' });
+            }
+            // 型号英文词汇表：keyPath 为词汇（word），值列 count（出现次数）
+            if (!db.objectStoreNames.contains(RB_STORES.ID_ABC)) {
+                db.createObjectStore(RB_STORES.ID_ABC, { keyPath: 'word' });
+            }
+            // BL 颜色表：keyPath 为 BL 颜色 ID（id），值列 name/rgb/type
+            if (!db.objectStoreNames.contains(RB_STORES.BL_COLORS)) {
+                db.createObjectStore(RB_STORES.BL_COLORS, { keyPath: 'id' });
+            }
+            // BL 颜色缓存：keyPath 为 `${part_num}:${color_id}`，值落完整价格记录
+            if (!db.objectStoreNames.contains(RB_STORES.PRICES)) {
+                db.createObjectStore(RB_STORES.PRICES, { keyPath: 'key' });
+            }
+            // RB↔BL 颜色映射表：keyPath 为 RB 颜色 ID（id），值列 bl_color_id / bl_name
+            if (!db.objectStoreNames.contains(RB_STORES.RB_BL_MAP)) {
+                db.createObjectStore(RB_STORES.RB_BL_MAP, { keyPath: 'id' });
             }
         };
 
@@ -191,10 +220,43 @@ async function getRBStats() {
             'rb_part_relationships': RB_STORES.PART_RELATIONSHIPS,
             'rb_weights': RB_STORES.WEIGHTS,
             'rb_bl_parts': RB_STORES.BL_PARTS,
-            'rb_part_aliases': RB_STORES.PART_ALIASES
+            'rb_part_aliases': RB_STORES.PART_ALIASES,
+            'rb_id_abc': RB_STORES.ID_ABC,
+            'rb_bl_colors': RB_STORES.BL_COLORS,
+            'rb_bl_map': RB_STORES.RB_BL_MAP,
+            'rb_prices': RB_STORES.PRICES
         };
         for (const [key, storeName] of Object.entries(storeMapping)) {
             stats[key] = await countRecords(storeName);
+        }
+        // BL价格同时统计"价格库总条数"和"与库存对应条数"两个口径：
+        //   _rb_prices_total — IndexedDB rb_prices store 里的原始总条数（与 BL-price.json 一致，
+        //                      用下划线前缀约定为"元数据"，不参与 Object.values(stats).reduce 总条数计算）
+        //   rb_prices        — 库存(零件×RB颜色) 通过 rb_bl_map 映射为 (零件×BL颜色) 后命中的条数
+        try {
+            stats._rb_prices_total = stats.rb_prices; // 下划线前缀：不参与 totalCount reduce
+            const rbToBl = {};
+            for (const m of await getAll(RB_STORES.RB_BL_MAP)) {
+                if (m && m.id != null && m.bl_color_id != null) {
+                    rbToBl[Number(m.id)] = Number(m.bl_color_id);
+                }
+            }
+            const invBlCombo = new Set();
+            for (const row of await getAll(RB_STORES.INVENTORY_PARTS)) {
+                const pn = String(row.part_num != null ? row.part_num : '').trim();
+                if (pn === '') continue;
+                const blc = rbToBl[Number(row.color_id)];
+                if (blc == null) continue;
+                invBlCombo.add(pn.replace(/[^a-zA-Z0-9]/g, '') + '\u0000' + blc);
+            }
+            let matched = 0;
+            for (const p of await getAll(RB_STORES.PRICES)) {
+                const k = String(p.part_num != null ? p.part_num : '').replace(/[^a-zA-Z0-9]/g, '') + '\u0000' + p.color_id;
+                if (invBlCombo.has(k)) matched++;
+            }
+            stats.rb_prices = matched; // 覆盖为与库存零件+颜色对应的价格条数
+        } catch (e) {
+            console.warn('统计库存相关BL价格失败:', e);
         }
         return stats;
     } catch (error) {
@@ -318,7 +380,7 @@ async function checkRBDatabase() {
         }
         
         const stats = await getRBStats();
-        const totalRecords = Object.values(stats).reduce((sum, v) => sum + v, 0);
+        const totalRecords = Object.entries(stats).reduce((sum, [k, v]) => k.startsWith('_') ? sum : sum + v, 0);
         
         return { 
             exists: true, 
@@ -343,12 +405,14 @@ async function importRBDatabaseFromJSON(jsonData, onProgress) {
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
         'bl_parts': RB_STORES.BL_PARTS,
-        'part_aliases': RB_STORES.PART_ALIASES
+        'part_aliases': RB_STORES.PART_ALIASES,
+        'id_abc': RB_STORES.ID_ABC,
+        'bl_colors': RB_STORES.BL_COLORS
     };
     
     const results = {};
     const keys = Object.keys(storeMapping);
-    
+
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
         const storeName = storeMapping[key];
@@ -391,7 +455,9 @@ async function exportRBDatabaseToJSON() {
         'part_relationships': RB_STORES.PART_RELATIONSHIPS,
         'weights': RB_STORES.WEIGHTS,
         'bl_parts': RB_STORES.BL_PARTS,
-        'part_aliases': RB_STORES.PART_ALIASES
+        'part_aliases': RB_STORES.PART_ALIASES,
+        'id_abc': RB_STORES.ID_ABC,
+        'bl_colors': RB_STORES.BL_COLORS
     };
     
     for (const [key, storeName] of Object.entries(storeMapping)) {
@@ -412,7 +478,7 @@ async function hasLocalRBData() {
     try {
         const db = await openRBDatabase();
         const stats = await getRBStats();
-        const totalRecords = Object.values(stats).reduce((sum, v) => sum + v, 0);
+        const totalRecords = Object.entries(stats).reduce((sum, [k, v]) => k.startsWith('_') ? sum : sum + v, 0);
         return totalRecords > 0;
     } catch (error) {
         return false;
@@ -675,23 +741,140 @@ function dataURLToBlob(dataUrl) {
     return new Blob([arr], { type: mime || 'image/jpeg' });
 }
 
+// 根据图片魔数判断真实图片 MIME（不依赖 Content-Type，兼容图床把 .jpg 返回为 application/octet-stream 等情况）
+function guessImageMime(bytes) {
+    if (bytes.length < 4) return null;
+    // JPEG：FF D8 FF
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8) return 'image/jpeg';
+    // PNG：89 50 4E 47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
+    // GIF：47 49 46 38
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
+    // WebP：RIFF .... WEBP
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+        const s = String.fromCharCode(bytes[8] || 0, bytes[9] || 0, bytes[10] || 0, bytes[11] || 0);
+        if (s === 'WEBP') return 'image/webp';
+    }
+    return null;
+}
+
+// 将图片字节统一转为 JPEG（离线缓存命名规则为 型号_颜色ID.jpg，非 JPG 需转换）
+// 解码/绘制失败（如极少数格式或浏览器不支持）时回退返回原始字节，保证图片仍可用
+async function convertImageBytesToJpeg(bytes, mime) {
+    try {
+        if (mime === 'image/jpeg' || mime === 'image/jpg') return { bytes, mime: 'image/jpeg' };
+        const blob = new Blob([bytes], { type: mime });
+        const bmp = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bmp, 0, 0);
+        if (typeof bmp.close === 'function') bmp.close();
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const b64 = dataUrl.split(',')[1];
+        const bin = atob(b64);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return { bytes: out, mime: 'image/jpeg' };
+    } catch (e) {
+        // 转换失败：保留原字节（已通过魔数校验/声明校验，仍是可渲染图片）
+        return { bytes, mime };
+    }
+}
+
+// 记录最近一次缓存写入失败的具体原因，便于前端提示/排查
+let _lastCacheWriteError = '';
+
+// 将条目写入 Cache：写入失败且疑似存储配额不足时，清理最旧条目后重试一次。
+// 每次尝试都用 responseFactory() 新造一个 body，避免上次 put 消耗 body 后无法重试。
+async function putPartImageEntry(cache, url, responseFactory) {
+    const attempt = async () => {
+        const r = responseFactory();
+        await cache.put(url, r);
+    };
+    try {
+        await attempt();
+        _lastCacheWriteError = '';
+        return true;
+    } catch (err) {
+        const detail = (err && (err.name + ': ' + err.message)) || String(err);
+        _lastCacheWriteError = detail;
+        if (cache && /quota|exceeded|full/i.test(detail)) {
+            // 存储配额不足：按插入顺序（最旧在前）删除若干旧条目腾出空间后重试
+            try {
+                const keys = await cache.keys();
+                for (let i = 0; i < 5 && keys[i]; i++) {
+                    try { await cache.delete(keys[i]); } catch (_) {}
+                }
+            } catch (_) {}
+            try {
+                await attempt();
+                _lastCacheWriteError = '';
+                return true;
+            } catch (err2) {
+                _lastCacheWriteError = '配额清理后仍失败: ' + ((err2 && (err2.name + ': ' + err2.message)) || err2);
+                return false;
+            }
+        }
+        return false;
+    }
+}
+
 // 保存图片到浏览器离线缓存（Cache Storage，key 与 Parts-img 地址一致）
 // 注意：data URL 必须转为 Blob 再存储，否则 Service Worker 缓存优先策略下，
 // 浏览器会把 data URL 字符串当作图片二进制返回，导致 onerror 加载失败
 async function savePartImageToOfflineCache(partNum, colorId, imageData) {
+    _lastCacheWriteError = '';
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
-        let response;
+        let factory;
         if (imageData instanceof Response) {
-            response = imageData;
+            // no-cors 抓取得到的不透明响应（status 0，例如 RB cdn.rebrickable.com 无 CORS 头）：
+            // 无法读取其状态/头信息，但调用方（autoCachePartImage）只在 <img> onload 成功后才触发缓存，
+            // 即它一定是一张能被渲染的真实图片，直接存入即可（Service Worker 缓存优先时可按图片重放）。
+            if (imageData.type === 'opaque') {
+                factory = () => imageData;
+            } else if (!imageData.ok) {
+                // 显式非成功状态码（4xx/5xx）可能返回错误页，拒收避免污染缓存
+                _lastCacheWriteError = '非成功状态码 ' + imageData.status;
+                console.warn('拒绝缓存状态码非成功的图片响应:', imageData.status);
+                return false;
+            } else {
+                // 基本/跨域响应：按图片魔数清真实图片字节，再重建一个干净的 Response 存入，
+                // 兼容图床返回 application/octet-stream 等非 image/* 的 Content-Type，
+                // 并规避原始网络 Response 的流被消费后 cache.put 抛错的问题
+                const cloned = imageData.clone();
+                const bytes = new Uint8Array(await cloned.arrayBuffer());
+                let mime = guessImageMime(bytes);
+                if (!mime) {
+                    // 魔数无法识别时，回退信任原始响应声明的 image/* Content-Type，
+                    // 兼容部分图床返回 AVIF 等新格式图片（其魔数不在 guessImageMime 覆盖内）
+                    const declared = imageData.headers && imageData.headers.get('content-type');
+                    if (declared && /^image\//i.test(declared)) {
+                        mime = declared.split(';')[0].trim();
+                    }
+                }
+                if (!mime) {
+                    _lastCacheWriteError = '返回字节非图片（' + imageData.type + '/' + imageData.status + '）';
+                    console.warn('拒绝缓存非图片字节响应:', imageData.status, imageData.type);
+                    return false;
+                }
+                // 离线命名规则为 型号_颜色ID.jpg：非 JPG 格式统一转为 JPEG（转换失败保留原字节）
+                const jpeg = await convertImageBytesToJpeg(bytes, mime);
+                // 用 Blob 包裹字节，factory 每次新建 Response，避免写入因字节/配额问题失败
+                factory = () => new Response(new Blob([jpeg.bytes], { type: jpeg.mime }), { headers: { 'Content-Type': jpeg.mime } });
+            }
         } else if (typeof imageData === 'string' && imageData.startsWith('data:')) {
             const blob = dataURLToBlob(imageData);
-            response = new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
+            factory = () => new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
         } else {
-            response = new Response(imageData, { headers: { 'Content-Type': 'image/jpeg' } });
+            const blob = imageData instanceof Blob ? imageData : new Blob([imageData], { type: 'image/jpeg' });
+            factory = () => new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } });
         }
         const url = buildPartsImgUrl(partNum, colorId);
-        await cache.put(url, response);
+        const ok = await putPartImageEntry(cache, url, factory);
+        if (!ok) return false;
         // 清理旧 v1 缓存中的同 key 条目（避免 Service Worker 缓存优先时取到 v1 中的 data URL 字符串）
         try {
             const oldCache = await caches.open('part-images-cache-v1');
@@ -703,7 +886,39 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
         } catch (_) { /* 忽略 */ }
         return true;
     } catch (error) {
+        _lastCacheWriteError = (error && (error.name + ': ' + error.message)) || String(error);
         console.error('保存零件图片到离线缓存失败:', error);
+        return false;
+    }
+}
+
+// 会话内存中使用过的校验结果（避免列表渲染时对每个图片都重复读字节）
+const _usableEntryCache = new Map();
+
+// 判断离线缓存条目是否确为可渲染的图片（自愈用）
+// 不透明/非成功/内容并非真实图片字节（含被误存为字符串的 data URL、HTML/JSON 错误页）都视为坏图
+async function isUsableImageEntry(url, entry) {
+    if (!entry) return false;
+    // no-cors 存储的不透明条目无法读取 body/状态，但既然它来自某次 onload 成功的图片，
+    // 又只在离线缓存命中时无可用校验数据，这里直接信任，避免把已缓存的 RB 图片误删导致回退网络
+    if (entry.type === 'opaque') return true;
+    if (!entry.ok) return false;
+    if (_usableEntryCache.has(url)) return true; // 本次会话已校验可用
+    try {
+        const buf = new Uint8Array(await entry.clone().arrayBuffer());
+        const text = String.fromCharCode(...buf.subarray(0, 12));
+        let valid = buf.length > 0;
+        if (valid) {
+            if (text.startsWith('data:')) valid = false;              // 误存为字符串的 data URL
+            else if (text.startsWith('\xFF\xD8')) valid = true;       // JPEG
+            else if (text.startsWith('\x89PNG')) valid = true;        // PNG
+            else if (text.startsWith('GIF8')) valid = true;           // GIF
+            else if (text.startsWith('RIFF') && text.includes('WEBP')) valid = true; // WebP
+            else valid = false;
+        }
+        if (valid) _usableEntryCache.set(url, true);
+        return valid;
+    } catch (_) {
         return false;
     }
 }
@@ -712,7 +927,17 @@ async function savePartImageToOfflineCache(partNum, colorId, imageData) {
 async function getPartImageFromOfflineCache(partNum, colorId) {
     try {
         const cache = await caches.open(PART_IMAGE_CACHE_NAME);
-        return await cache.match(buildPartsImgUrl(partNum, colorId));
+        const url = buildPartsImgUrl(partNum, colorId);
+        const entry = await cache.match(url);
+        // 自愈：若缓存条目不透明/非成功/并非真实图片字节，则删除并返回 null，
+        // 让上层回退到 RB 数据库好图（避免 Service Worker 缓存优先持续返回坏图，
+        // 导致图片"加载失败/暂无图片"，删除离线图后又复发）
+        if (entry && !(await isUsableImageEntry(url, entry))) {
+            console.warn('离线缓存条目不可用，删除:', url, entry.type, entry.status);
+            await cache.delete(url);
+            return null;
+        }
+        return entry || null;
     } catch (error) {
         return null;
     }
@@ -746,6 +971,37 @@ async function checkPartsImgOnGitee(partNum, colorId) {
         return Array.isArray(data) ? data.length > 0 : !!data;
     } catch (error) {
         return false;
+    }
+}
+
+// RB 数据库无图片记录、仅 Gitee 有图时，用 Gitee API 拉取真实图片字节预热离线缓存。
+// 原因：直接 <img src=raw> 走 302 → raw.giteeusercontent.com 签名链路，在设备网络下偶发失败，
+// 而 autoCachePartImage 只在 onload 成功时才写缓存 —— raw 一旦失败，就会“Gitee 有图但不显示、离线也永不缓存”。
+// Gitee contents API 带 CORS 头且返回 base64 字节，与 checkPartsImgOnGitee 同源可靠，用它提前落一份可渲染 JPEG 到离线缓存。
+const _seededGiteeImages = new Set();
+async function seedGiteeImageToOfflineCache(partNum, colorId) {
+    const key = `${String(partNum).trim()}_${colorId}`;
+    if (_seededGiteeImages.has(key)) return;
+    _seededGiteeImages.add(key);
+    try {
+        const filePath = `parts/${String(partNum).trim()}_${colorId}.jpg`;
+        const apiUrl = `${GITEE_IMG_API_URL}/${filePath}?ref=${GITEE_IMG_BRANCH}`;
+        const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('gitee_token') : null)
+            || (typeof DEFAULT_GITEE_TOKEN !== 'undefined' ? DEFAULT_GITEE_TOKEN : null);
+        const headers = token ? { 'Authorization': `token ${token}` } : {};
+        const response = await fetch(apiUrl, { cache: 'no-store', headers });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data || typeof data.content !== 'string' || !data.content) return;
+        const b64 = data.content.replace(/\s+/g, '');
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes.buffer], { type: 'image/jpeg' });
+        // 使用与 buildPartsImgUrl 一致的原始 partNum，确保离线缓存 key（parts/{partNum}_{colorId}.jpg）可被读侧命中
+        await savePartImageToOfflineCache(partNum, colorId, blob);
+    } catch (e) {
+        // 预热失败静默跳过，仍让 <img> 走 raw 路径，不影响原有行为
     }
 }
 
@@ -796,24 +1052,48 @@ async function getRBPartImageUrl(partNum, colorId) {
     return urls.length ? urls[0] : null;
 }
 
-// 根据 part_num 和 color_id 查询图片URL（三级读取：① Gitee Parts-img → ② 离线缓存 → ③ RB数据库）
-// 注：Gitee 用原始型号查询（缓存图片以原始型号命名，如 4073_colorId.jpg）；
-//     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL
-async function getPartImageUrl(partNum, colorId) {
-    // ① 先用原始型号检查 Gitee Parts-img（可能已有离线缓存图片）
-    if (await checkPartsImgOnGitee(partNum, colorId)) {
-        return buildPartsImgUrl(partNum, colorId);
+// 会话内记忆 Gitee 存在性校验结果，避免每次进入页面都对每个零件重复调用 Gitee API（网络慢、易被限流）
+const _giteeExistsCache = new Map();
+async function memoCheckPartsImgOnGitee(partNum, colorId) {
+    const key = `${String(partNum)}_${colorId}`;
+    if (_giteeExistsCache.has(key)) return _giteeExistsCache.get(key);
+    const result = await checkPartsImgOnGitee(partNum, colorId);
+    // 只记忆"存在"的结果；"不存在"可能是网络失败/限流的误判，下次再重试
+    if (result) {
+        _giteeExistsCache.set(key, true);
+        if (_giteeExistsCache.size > 500) {
+            const firstKey = _giteeExistsCache.keys().next().value;
+            if (firstKey) _giteeExistsCache.delete(firstKey);
+        }
     }
-    // ② 检查离线缓存（用户自定义上传的图片在上传前已存入离线缓存；
-    //    即使 Gitee API 限流或上传因网络问题仅存了离线缓存，也能显示）
+    return result;
+}
+
+// 根据 part_num 和 color_id 查询图片URL（统一加载顺序：① 离线缓存 → ② RB 图片URL → ③ Gitee Parts-img → ④ 暂无）
+// 注：离线缓存 key 与 Gitee 图片共用 gitee 地址（命名 parts/{partNum}_{colorId}.jpg），无论图源是 RB 还是 Gitee，
+//     首次加载成功后都会回写离线缓存，后续直接命中 ①；
+//     RB 数据库查询前解析别名（如 4073 → 6141），用 RB 标准型号获取图片 URL；缓存命名始终用传入的原始型号
+async function getPartImageUrl(partNum, colorId) {
+    // ① 先查离线缓存（本地最快，命中即返回，无需网络，也无须再查 RB/Gitee）
     const cached = await getPartImageFromOfflineCache(partNum, colorId);
     if (cached) {
         return buildPartsImgUrl(partNum, colorId);
     }
-    // ③ 解析别名（如 4073 → 6141），用 RB 标准型号从 RB 数据库获取图片 URL
+    // ② 再查 RB 数据库图片 URL（会解析别名）
     const resolvedNum = typeof resolvePartAlias === 'function'
         ? await resolvePartAlias(partNum) : partNum;
-    return await getRBPartImageUrl(resolvedNum, colorId);
+    const rbUrl = await getRBPartImageUrl(resolvedNum, colorId);
+    if (rbUrl) return rbUrl;
+    // ③ 再查 Gitee Parts-img（首次命中会成为离线缓存候选，下次直接走 ①）
+    if (await memoCheckPartsImgOnGitee(partNum, colorId)) {
+        // 此处 RB 无记录（rbUrl 已在上方命中即返回）：预热离线缓存，
+        // 避免只依赖易失效的 raw 302 渲染路径导致“Gitee 有图但不显示、且永不进离线缓存”。
+        // 预热完成后再返回，SW 缓存优先即可直接命中真实字节。
+        await seedGiteeImageToOfflineCache(partNum, colorId);
+        return buildPartsImgUrl(partNum, colorId);
+    }
+    // ④ 都没有：返回 null，调用方显示“暂无图片”
+    return null;
 }
 
 // 清除 RB 数据库中该零件的图片记录（删除图片时调用，避免 getPartImageUrl 回退到 RB 数据库旧图）
@@ -877,6 +1157,84 @@ async function getPartWeightByNum(partNum) {
     }
 }
 
+// 读取设备本地缓存的 BL 价格记录（key = `${part_num}:${color_id}`），返回记录或 null
+async function getCachedBLPrice(partNum, colorId) {
+    try {
+        const cleanNum = String(partNum == null ? '' : partNum).replace(/[^a-zA-Z0-9]/g, '');
+        if (!cleanNum) return null;
+        const key = `${cleanNum}:${colorId}`;
+        return await getByKey(RB_STORES.PRICES, key) || null;
+    } catch (error) {
+        console.error('读取本地BL价格缓存失败:', error);
+        return null;
+    }
+}
+
+// 写入/更新设备本地 BL 价格缓存（upsert by key）
+async function saveCachedBLPrice(data) {
+    try {
+        const db = await openRBDatabase();
+        if (!data || !data.key) return false;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(RB_STORES.PRICES, 'readwrite');
+            const store = transaction.objectStore(RB_STORES.PRICES);
+            const req = store.put(data);
+            req.onsuccess = () => resolve(true);
+            req.onerror = (event) => reject(event.target.error);
+        });
+    } catch (error) {
+        console.error('写入本地BL价格缓存失败:', error);
+        return false;
+    }
+}
+
+// 清理设备本地缓存中的所有"离线来源"BL 价格记录，为下次从 BL-price.json 全量读入让路，
+// 确保离线价格始终与 Gitee 最新版本一致、不受上一次导入的残留数据污染。
+// 清理策略用 whitelist：只保护设备端独有的 manual 和 bl-server 记录，其余一律删除。
+//   保护项: source === 'manual' | 'bl-server'
+//   清理项: 所有其他值（'offline'、'bl-webview'、'rebrickable offline' 以及将来可能出现的任何
+//          新离线来源标识）——避免 blacklist 漏删。
+// 返回 { cleared: number, kept: number, keptBySource: object }
+async function clearOfflineBLPrices() {
+    try {
+        const db = await openRBDatabase();
+        const all = await getAll(RB_STORES.PRICES);
+        const toDelete = [];
+        const keptBySource = {};
+        let kept = 0;
+        for (const rec of all) {
+            const s = rec && rec.source;
+            if (s === 'manual' || s === 'bl-server') {
+                kept++;
+                keptBySource[s] = (keptBySource[s] || 0) + 1;
+            } else if (rec && rec.key) {
+                toDelete.push(rec.key);
+            } else {
+                // 没有 key 的记录也一并清除，避免脏数据
+                if (rec && !rec.key) toDelete.push(null);
+            }
+        }
+        if (toDelete.length === 0) {
+            return { cleared: 0, kept, keptBySource };
+        }
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(RB_STORES.PRICES, 'readwrite');
+            const store = transaction.objectStore(RB_STORES.PRICES);
+            let done = 0;
+            for (const key of toDelete) {
+                if (key == null) continue;
+                store.delete(key);
+                done++;
+            }
+            transaction.oncomplete = () => resolve({ cleared: done, kept, keptBySource });
+            transaction.onerror = (event) => reject(event.target.error);
+        });
+    } catch (error) {
+        console.error('清理离线BL价格缓存失败:', error);
+        return { cleared: 0, kept: 0, keptBySource: {}, error: error.message };
+    }
+}
+
 // 从 weights.json 对象导入到 rb_weights store
 // weightsJson 格式: { "3001": 2.32, ... }
 async function importWeightsFromJSON(weightsJson, onProgress) {
@@ -899,5 +1257,168 @@ async function importWeightsFromJSON(weightsJson, onProgress) {
     } catch (error) {
         console.error('导入重量数据失败:', error);
         return { success: false, count: 0, error: error.message };
+    }
+}
+
+// ===== 型号英文词汇（rb_id_abc）离线缓冲区 =====
+// ID_Abc.json 是形状为 [{ word, count }] 的数组，按出现次数降序排列。
+
+// 将词汇数组写入离线缓冲区（覆盖重建）
+async function importIDAbcToRBDb(records) {
+    try {
+        const data = (records || [])
+            .filter(r => r && r.word)
+            .map(r => ({ word: String(r.word), count: Number(r.count) || 0 }));
+        await importRBData(RB_STORES.ID_ABC, data);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入型号英文词汇失败:', error);
+        return { success: false, count: 0, error: error.message };
+    }
+}
+
+// 读取离线词汇，按出现次数降序返回 [{ word, count }]
+async function getIDAbcRecords() {
+    try {
+        const records = await getAll(RB_STORES.ID_ABC);
+        records.sort((a, b) => (b.count || 0) - (a.count || 0)
+            || String(a.word).localeCompare(String(b.word)));
+        return records;
+    } catch (error) {
+        console.error('读取型号英文词汇失败:', error);
+        return [];
+    }
+}
+
+// 清空离线词汇缓冲区
+async function clearIDAbcStore() {
+    try {
+        await clearStore(RB_STORES.ID_ABC);
+        return true;
+    } catch (error) {
+        console.error('清空型号英文词汇失败:', error);
+        return false;
+    }
+}
+
+// ===== BL 颜色表（rb_bl_colors）离线缓冲区 =====
+// bl_colors.json 是 [{ id, name, rgb, type }] 数组，来自 Gitee parts-rb 仓库。
+
+// 将 BL 颜色数组写入离线缓冲区（覆盖重建）
+async function importBLColorsToRBDb(records) {
+    try {
+        const data = (records || [])
+            .filter(r => r && r.id !== undefined && r.id !== null)
+            .map(r => ({
+                id: Number(r.id),
+                name: String(r.name || ''),
+                rgb: String(r.rgb || ''),
+                type: String(r.type || '')
+            }));
+        await importRBData(RB_STORES.BL_COLORS, data);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入 BL 颜色表失败:', error);
+        return { success: false, count: 0, error: error.message };
+    }
+}
+
+// 按 BL 颜色 ID 查询颜色记录（含 name/rgb/type）
+async function getBLColorById(blColorId) {
+    try {
+        return await getByKey(RB_STORES.BL_COLORS, blColorId);
+    } catch (error) {
+        console.error('按 BL 颜色ID查询失败:', error);
+        return null;
+    }
+}
+
+// 获取全部 BL 颜色记录
+async function getAllBLColors() {
+    try {
+        return await getAll(RB_STORES.BL_COLORS);
+    } catch (error) {
+        console.error('获取全部 BL 颜色失败:', error);
+        return [];
+    }
+}
+
+// ===== RB↔BL 颜色映射表（rb_bl_map）离线缓冲区 =====
+// RB_BL_colors.csv 是来自 Gitee parts-rb 仓库的颜色映射 CSV，标准表头：
+//   BL_color_ID, BL_color_Name, RB_color_ID, RB_color_Name, RGB, ...
+// 兼容旧表头（BL_color_ID, BL_name, ID, Name, ...）。
+// 这里生成 keyPath=RB 颜色ID（id），值列 bl_color_id / bl_name / rb_name，
+// 同时支持 RB 颜色ID（RB→BL）与 BL 颜色名 → RB 颜色（BL→RB，用于拍照识别）两个方向。
+
+// 将 RB↔BL 颜色映射数组写入离线缓冲区（覆盖重建）
+async function importRBBLMapToRBDb(records) {
+    try {
+        const data = (records || [])
+            .map(r => {
+                const rbId = Number(String(r.RB_color_ID == null ? (r.ID == null ? '' : r.ID) : r.RB_color_ID).trim());
+                const rbNameRaw = r.RB_color_Name == null ? (r.Name == null ? '' : r.Name) : r.RB_color_Name;
+                const blIdRaw = String(r.BL_color_ID == null ? '' : r.BL_color_ID).trim();
+                const blId = blIdRaw === '' ? null : Number(blIdRaw);
+                const blNameRaw = r.BL_color_Name == null ? (r.BL_name == null ? '' : r.BL_name) : r.BL_color_Name;
+                const trimQ = s => String(s == null ? '' : s).trim().replace(/^'+|'+$/g, '');
+                return {
+                    id: rbId,
+                    rb_name: trimQ(rbNameRaw),
+                    bl_color_id: blId,
+                    bl_name: trimQ(blNameRaw)
+                };
+            })
+            .filter(r => !Number.isNaN(r.id));
+        await importRBData(RB_STORES.RB_BL_MAP, data);
+        return { success: true, count: data.length };
+    } catch (error) {
+        console.error('导入 RB↔BL 颜色映射表失败:', error);
+        return { success: false, count: 0, error: error.message };
+    }
+}
+
+// 按 RB 颜色 ID 查询对应的 BL 颜色映射记录（含 bl_color_id / bl_name / rb_name）。
+// 兼容 id 在 IndexedDB 里以数字或字符串存在两种情况（iOS Safari 不同版本间 key 类型不一致）：
+// 先用 getByKey 查数字 key，未命中则遍历 getAll 按严格数值比较兜底。
+async function getBLColorMapByRBColorId(rbColorId) {
+    try {
+        const targetNum = Number(rbColorId);
+        if (!Number.isNaN(targetNum)) {
+            const direct = await getByKey(RB_STORES.RB_BL_MAP, targetNum);
+            if (direct && direct.bl_color_id != null) return direct;
+        }
+        // 兜底：遍历全表按数值比较 id
+        const all = await getAll(RB_STORES.RB_BL_MAP);
+        const hit = (all || []).find(m => m.id != null && Number(m.id) === targetNum);
+        return hit || null;
+    } catch (error) {
+        console.error('按 RB 颜色ID 查询 BL 颜色映射失败:', error);
+        return null;
+    }
+}
+
+// 按 BL 颜色名反查 RB 颜色：识别/识别返回的颜色名是 Bricklink 颜色名，
+// 直接遍历 rb_bl_map 按规范化后的 BL 颜色名匹配，命中返回 RB 颜色记录 { id, name, rgb, ... }。
+// 未命中或无误时返回 null。
+async function getRBColorByBLColorName(blColorName) {
+    try {
+        const target = String(blColorName == null ? '' : blColorName).trim();
+        if (!target) return null;
+        // 归一化：只保留字母和数字，去除空格/连字符/括号等，兼容不同写法
+        // 例："Light Bluish Grey"/"LBG"/"Light-Bluish-Gray" 均归一化为 lightbluishgrey
+        const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normTarget = norm(target);
+        const maps = await getAll(RB_STORES.RB_BL_MAP);
+        const hit = (maps || []).find(m => m.bl_name && norm(m.bl_name) === normTarget);
+        if (!hit) return null;
+        // 若 rb_colors 已加载，取出完整 RB 颜色记录；否则至少给出 id + rb_name
+        try {
+            const rbColor = await getByKey(RB_STORES.COLORS, Number(hit.id));
+            if (rbColor) return rbColor;
+        } catch (e) { /* 忽略，走兜底 */ }
+        return { id: hit.id, name: hit.rb_name || blColorName };
+    } catch (error) {
+        console.error('按 BL 颜色名反查 RB 颜色失败:', error);
+        return null;
     }
 }
