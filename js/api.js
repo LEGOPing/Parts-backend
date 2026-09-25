@@ -2,11 +2,10 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-// 本地开发（localhost）走本机 FastAPI；
-// 生产环境走已部署的后端服务。
-const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-    ? `http://${location.hostname}:8000`
-    : '';  // TODO: 部署时填入后端实际地址（Zeabur/Railway/Vercel Functions/自建等）
+// 后端地址 — 默认空字符串表示同源（FastAPI 直接 serve 前端时同源访问 /api/...）。
+// 前端和后端分开部署时，把这里改成后端实际地址即可，例如:
+//   const BACKEND_URL = 'https://my-backend.example.com';
+const BACKEND_URL = '';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
