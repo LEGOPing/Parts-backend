@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v83';
+const CACHE_NAME = 'lego-parts-v84';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -11,19 +11,6 @@ const ASSETS_TO_CACHE = [
     './icons/green2.png',
     './icons/red2.png'
 ];
-
-// 后端/API 域名白名单（这些域名的请求一律 network-first）
-const API_HOST_PATTERNS = [
-    'supabase.co',
-    'gitee.com',
-    'run.tcloudbase.com',   // 腾讯云 CloudBase 云托管
-    'localhost',
-    '127.0.0.1',
-];
-
-function isApiHost(hostname) {
-    return API_HOST_PATTERNS.some(p => hostname.includes(p));
-}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -90,8 +77,16 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // API（所有后端/API 白名单域名）: network-first
-    if (isApiHost(url.hostname)) {
+    // API 请求：network-first。通用规则 — 不再硬编码具体后端域名
+    //  1) 路径以 /api/ 开头（任何 FastAPI 风格后端，无论部署在哪里）
+    //  2) Supabase REST（supabase.co + /rest/）
+    //  3) Gitee 非图片请求（Parts-img 分支在上面单独处理了）
+    const isApiRequest = (
+        url.pathname.startsWith('/api/') ||
+        (url.hostname.includes('supabase.co') && url.pathname.includes('/rest/')) ||
+        (url.hostname.includes('gitee.com') && !url.pathname.includes('Parts-img'))
+    );
+    if (isApiRequest) {
         event.respondWith(fetch(request).catch(() => {
             return new Response('{"error":"network_error"}', {
                 status: 503,

@@ -6,7 +6,7 @@ const API_BASE = `${SUPABASE_URL}/rest/v1`;
 // 生产环境走已部署的后端服务。
 const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
     ? `http://${location.hostname}:8000`
-    : 'https://parts-backend-1257419788.ap-shanghai.run.tcloudbase.com';
+    : '';  // TODO: 部署时填入后端实际地址（Zeabur/Railway/Vercel Functions/自建等）
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
