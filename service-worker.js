@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v82';
+const CACHE_NAME = 'lego-parts-v83';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -11,6 +11,19 @@ const ASSETS_TO_CACHE = [
     './icons/green2.png',
     './icons/red2.png'
 ];
+
+// 后端/API 域名白名单（这些域名的请求一律 network-first）
+const API_HOST_PATTERNS = [
+    'supabase.co',
+    'gitee.com',
+    'run.tcloudbase.com',   // 腾讯云 CloudBase 云托管
+    'localhost',
+    '127.0.0.1',
+];
+
+function isApiHost(hostname) {
+    return API_HOST_PATTERNS.some(p => hostname.includes(p));
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -52,12 +65,16 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // POST/PATCH/DELETE: network-first
+    // POST/PATCH/DELETE: network-first（POST 请求永远不在 cache 里，兜底返回明确的 503 响应，
+    // 避免 respondWith(undefined) 产生 "Returned response is null" 的 SW 错误）
     if (request.method === 'POST' || 
         request.method === 'PATCH' || 
         request.method === 'DELETE') {
         event.respondWith(fetch(request).catch(() => {
-            return caches.match(request);
+            return new Response('{"error":"network_error"}', {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }));
         return;
     }
@@ -73,10 +90,13 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // API (supabase, gitee 非图片): network-first
-    if (url.hostname.includes('supabase.co') || url.hostname.includes('gitee.com')) {
+    // API（所有后端/API 白名单域名）: network-first
+    if (isApiHost(url.hostname)) {
         event.respondWith(fetch(request).catch(() => {
-            return caches.match(request);
+            return new Response('{"error":"network_error"}', {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }));
         return;
     }
