@@ -1818,3 +1818,82 @@ async function deletePartImageFromGitee(partNum, colorId) {
         return { success: false, error: error.message };
     }
 }
+
+// ==================== 用户认证 API ====================
+
+/** 获取后端 BASE URL（用于认证接口） */
+function getAuthBase() {
+    // 优先用 window 对象上的配置，其次 BACKEND_URL，最后回退同源
+    if (typeof window !== 'undefined' && window.RB_AUTH_BASE) return window.RB_AUTH_BASE;
+    if (typeof BACKEND_URL !== 'undefined') return BACKEND_URL;
+    return '';
+}
+
+async function apiLogin(phone, password) {
+    const resp = await fetch(`${getAuthBase()}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: String(phone).trim(), password: String(password) }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || data.message || `登录失败 (HTTP ${resp.status})`);
+    return data; // { token, phone, expires_in }
+}
+
+async function apiLogout() {
+    const token = localStorage.getItem('rb_auth_token');
+    const resp = await fetch(`${getAuthBase()}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
+    });
+    return resp.ok;
+}
+
+async function apiChangePassword(oldPassword, newPassword) {
+    const token = localStorage.getItem('rb_auth_token');
+    const resp = await fetch(`${getAuthBase()}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
+        body: JSON.stringify({ old_password: String(oldPassword), new_password: String(newPassword) }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || data.message || `修改密码失败 (HTTP ${resp.status})`);
+    return data;
+}
+
+async function apiGetMe() {
+    const token = localStorage.getItem('rb_auth_token');
+    if (!token) return null;
+    const resp = await fetch(`${getAuthBase()}/api/auth/me`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
+}
+
+// 登录态 localStorage key
+const AUTH_TOKEN_KEY = 'rb_auth_token';
+const AUTH_PHONE_KEY = 'rb_auth_phone';
+
+function saveAuth(token, phone) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_PHONE_KEY, phone);
+}
+function clearAuth() {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_PHONE_KEY);
+}
+function getAuthPhone() {
+    return localStorage.getItem(AUTH_PHONE_KEY) || '';
+}
+async function checkAuthValid() {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return false;
+    const me = await apiGetMe();
+    if (!me) {
+        clearAuth();
+        return false;
+    }
+    return true;
+}

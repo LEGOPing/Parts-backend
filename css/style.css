@@ -6251,3 +6251,196 @@ body {
     line-height: 1.6;
     max-width: 300px;
 }
+
+/* ==================== 登录页 ==================== */
+.auth-login-overlay {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: authFadeIn .3s ease-out;
+}
+
+@keyframes authFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.auth-login-card {
+    width: 100%;
+    max-width: 380px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    text-align: center;
+    animation: authPopIn .35s cubic-bezier(.2,.9,.3,1.3);
+}
+
+@keyframes authPopIn {
+    from { opacity: 0; transform: translateY(20px) scale(.96); }
+    to   { opacity: 1; transform: none; }
+}
+
+.auth-login-logo {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 12px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #F2CD37;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 16px rgba(242,205,55,.4);
+}
+.auth-login-logo img { width: 100%; height: 100%; object-fit: cover; }
+
+.auth-login-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1a1a2e;
+    letter-spacing: 1px;
+}
+.auth-login-sub {
+    font-size: 13px;
+    color: #888;
+    margin-top: 4px;
+    margin-bottom: 24px;
+}
+
+.auth-login-form {
+    text-align: left;
+}
+
+.auth-field {
+    margin-bottom: 14px;
+}
+.auth-field label {
+    display: block;
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+.auth-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    font-size: 15px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    background: #fafafa;
+}
+.auth-field input:focus {
+    border-color: #0f3460;
+    box-shadow: 0 0 0 3px rgba(15,52,96,.1);
+    background: #fff;
+}
+
+.auth-error {
+    min-height: 18px;
+    color: #e74c3c;
+    font-size: 13px;
+    margin-top: -4px;
+    margin-bottom: 6px;
+}
+
+.auth-login-btn {
+    width: 100%;
+    padding: 13px;
+    background: linear-gradient(135deg, #0f3460, #16213e);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    cursor: pointer;
+    transition: transform .1s, box-shadow .2s;
+    margin-top: 6px;
+}
+.auth-login-btn:hover:not(:disabled) {
+    box-shadow: 0 6px 18px rgba(15,52,96,.35);
+    transform: translateY(-1px);
+}
+.auth-login-btn:active:not(:disabled) { transform: translateY(0); }
+.auth-login-btn:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.auth-login-tip {
+    margin-top: 20px;
+    font-size: 12px;
+    color: #aaa;
+    line-height: 1.7;
+}
+.auth-phone-mask {
+    color: #0f3460;
+    font-weight: 600;
+}
+
+/* 修改密码对话框 */
+.auth-cpw-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.5);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.auth-cpw-card {
+    width: 100%;
+    max-width: 340px;
+    background: #fff;
+    border-radius: 14px;
+    padding: 24px 22px 18px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.25);
+}
+.auth-cpw-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+    text-align: center;
+    margin-bottom: 14px;
+}
+.auth-cpw-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+.auth-cpw-cancel, .auth-cpw-submit {
+    flex: 1;
+    padding: 10px 0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    cursor: pointer;
+    transition: transform .1s, opacity .2s;
+}
+.auth-cpw-cancel {
+    background: #eee;
+    color: #555;
+}
+.auth-cpw-cancel:hover { background: #ddd; }
+.auth-cpw-submit {
+    background: #673AB7;
+    color: #fff;
+}
+.auth-cpw-submit:hover:not(:disabled) { background: #5E35B1; }
+.auth-cpw-submit:disabled { opacity: .6; cursor: not-allowed; }
+
+/* 用户设定信息 */
+.user-settings-info {
+    font-size: 14px;
+    color: #555;
+    padding: 8px 0 4px;
+}
