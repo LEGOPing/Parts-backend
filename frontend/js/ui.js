@@ -56,6 +56,7 @@ async function switchTab(tabName, btn) {
         clearSearchResults();
     } else if (tabName === 'settings') {
         loadStats();
+        ensureUserSettingsGroup();
     }
 }
 
@@ -7219,6 +7220,10 @@ async function doConfirmCSVImport() {
 
 async function initializeApp() {
     try {
+        // ============ 启动登录验证 ============
+        // 显示登录遮罩（先创建，覆盖整个 body），后续内容全部等登录完成后再初始化
+        await ensureLogin();
+
         // ============ 手机竖屏锁定检测 ============
         function checkPhoneOrientation() {
             const overlay = document.getElementById('phoneRotateOverlay');
@@ -8573,7 +8578,7 @@ window.updateRB = updateRB;
 window.exportRB = exportRB;
 
 // ===== 密码轮 =====
-const PW_PASSWORD = '22332468';
+const PW_PASSWORD = '2468';
 
 const pwWheelState = {
     overlay: null,
@@ -9972,3 +9977,256 @@ window.confirmQ4Input = confirmQ4Input;
 window.cancelQ4Input = cancelQ4Input;
 window.showListFileManager = showListFileManager;
 window.updateListFileNameDisplay = updateListFileNameDisplay;
+
+// ==================== 登录页 & 用户设定 ====================
+
+/** 登录遮罩状态 */
+let _loginOverlay = null;
+
+/** 启动登录检查：已登录直接返回；否则显示登录遮罩直到登录成功 */
+async function ensureLogin() {
+    // 1. 快速检查：localStorage 有 token，验证一下后端是否认可
+    const token = localStorage.getItem('rb_auth_token');
+    if (token) {
+        const valid = await checkAuthValid();
+        if (valid) {
+            console.log('[auth] 已登录:', getAuthPhone());
+            return;
+        }
+        // token 无效，清掉
+        clearAuth();
+    }
+
+    // 2. 显示登录遮罩（返回 Promise，直到登录成功才 resolve）
+    await new Promise((resolve) => {
+        showLoginOverlay({
+            onLoginSuccess: (phone) => {
+                console.log('[auth] 登录成功:', phone);
+                resolve();
+            }
+        });
+    });
+}
+
+/**
+ * 创建全屏登录遮罩，用户在上面输入手机号 + 密码。
+ * 成功后调用 onLoginSuccess，然后自动移除遮罩。
+ */
+function showLoginOverlay({ onLoginSuccess } = {}) {
+    hideLoginOverlay();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'auth-login-overlay';
+    overlay.innerHTML = `
+        <div class="auth-login-card">
+            <div class="auth-login-logo">
+                <img src="icons/LOGO.JPEG" alt="LOGO">
+            </div>
+            <div class="auth-login-title">乐高零件管理系统</div>
+            <div class="auth-login-sub">顺德乐高玩具专卖店</div>
+
+            <div class="auth-login-form">
+                <div class="auth-field">
+                    <label>手机号码</label>
+                    <input type="tel" id="auth-phone-input" placeholder="请输入管理员手机号" maxlength="11" autocomplete="username">
+                </div>
+                <div class="auth-field">
+                    <label>登录密码</label>
+                    <input type="password" id="auth-password-input" placeholder="请输入密码" autocomplete="current-password">
+                </div>
+                <div class="auth-error" id="auth-login-error"></div>
+                <button class="auth-login-btn" id="auth-login-btn" type="button">登 录</button>
+            </div>
+
+            <div class="auth-login-tip">
+                提示：默认账号 <span class="auth-phone-mask">189****2468 / 189****2468</span><br>
+                密码可在「系统设置 - 用户设定」中修改
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    _loginOverlay = overlay;
+
+    // 自动聚焦手机号
+    requestAnimationFrame(() => {
+        const phoneInput = document.getElementById('auth-phone-input');
+        if (phoneInput) phoneInput.focus();
+    });
+
+    const submit = async () => {
+        const phoneEl = document.getElementById('auth-phone-input');
+        const pwdEl = document.getElementById('auth-password-input');
+        const errEl = document.getElementById('auth-login-error');
+        const btn = document.getElementById('auth-login-btn');
+        const phone = (phoneEl.value || '').trim();
+        const pwd = (pwdEl.value || '').trim();
+
+        errEl.textContent = '';
+        if (!/^\d{11}$/.test(phone)) {
+            errEl.textContent = '请输入正确的 11 位手机号';
+            phoneEl.focus();
+            return;
+        }
+        if (!pwd) {
+            errEl.textContent = '请输入密码';
+            pwdEl.focus();
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '登录中...';
+        try {
+            const data = await apiLogin(phone, pwd);
+            saveAuth(data.token, data.phone);
+            hideLoginOverlay();
+            if (onLoginSuccess) onLoginSuccess(data.phone);
+        } catch (e) {
+            errEl.textContent = e.message || '登录失败';
+            pwdEl.value = '';
+            pwdEl.focus();
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '登 录';
+        }
+    };
+
+    document.getElementById('auth-login-btn').addEventListener('click', submit);
+
+    // Enter 快捷键
+    overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const tag = (e.target.tagName || '').toLowerCase();
+            if (tag === 'input') {
+                e.preventDefault();
+                submit();
+            }
+        }
+    });
+}
+
+function hideLoginOverlay() {
+    if (_loginOverlay && _loginOverlay.parentNode) {
+        _loginOverlay.remove();
+    }
+    _loginOverlay = null;
+}
+
+/** 退出登录：清除 token 并强制回到登录页 */
+async function doLogout() {
+    try { await apiLogout(); } catch (e) { /* 忽略网络错误 */ }
+    clearAuth();
+    alert('已退出登录');
+    // 重启应用：最简单的方式是刷新页面，让 initializeApp 重新触发 ensureLogin
+    window.location.reload();
+}
+window.doLogout = doLogout;
+
+/** 在系统设置页插入「用户设定」分组（DOM 直接 append 到 #settings-tab 内） */
+function ensureUserSettingsGroup() {
+    const tab = document.getElementById('settings-tab');
+    if (!tab) return;
+    if (document.getElementById('user-settings-group')) return; // 已存在
+
+    const div = document.createElement('div');
+    div.className = 'settings-group';
+    div.id = 'user-settings-group';
+    div.innerHTML = `
+        <h3>用户设定</h3>
+        <div class="user-settings-info">
+            当前登录：<span id="user-settings-phone">--</span>
+        </div>
+        <div class="settings-buttons" style="margin-top:8px;">
+            <button onclick="showChangePasswordDialog()" class="btn-settings" style="background-color:#673AB7; color:white;">修改密码</button>
+            <button onclick="doLogout()" class="btn-settings" style="background-color:#f44336; color:white;">退出登录</button>
+        </div>
+    `;
+    // 插在"关于系统"之前，保持位置靠前
+    const aboutGroup = tab.querySelector('.settings-group:last-child');
+    if (aboutGroup) {
+        tab.insertBefore(div, aboutGroup);
+    } else {
+        tab.appendChild(div);
+    }
+
+    // 填充当前手机号
+    const phoneEl = div.querySelector('#user-settings-phone');
+    if (phoneEl) {
+        // 简单掩码：中间 4 位用 *
+        const p = getAuthPhone();
+        phoneEl.textContent = p ? maskPhone(p) : '--';
+    }
+}
+window.ensureUserSettingsGroup = ensureUserSettingsGroup;
+
+/** 18923232468 -> 189****2468 */
+function maskPhone(phone) {
+    if (!phone || phone.length < 7) return phone;
+    return phone.slice(0, 3) + '****' + phone.slice(7);
+}
+
+/** 修改密码对话框（用现有 showPasswordWheel 不太合适，弹一个自定义对话框） */
+function showChangePasswordDialog() {
+    const overlay = document.createElement('div');
+    overlay.className = 'auth-cpw-overlay';
+    overlay.innerHTML = `
+        <div class="auth-cpw-card">
+            <div class="auth-cpw-title">修改密码</div>
+            <div class="auth-field">
+                <label>原密码</label>
+                <input type="password" id="cpw-old" placeholder="请输入原密码">
+            </div>
+            <div class="auth-field">
+                <label>新密码</label>
+                <input type="password" id="cpw-new" placeholder="至少 4 位">
+            </div>
+            <div class="auth-field">
+                <label>确认新密码</label>
+                <input type="password" id="cpw-confirm" placeholder="再次输入新密码">
+            </div>
+            <div class="auth-error" id="cpw-error"></div>
+            <div class="auth-cpw-actions">
+                <button class="auth-cpw-cancel" id="cpw-cancel" type="button">取消</button>
+                <button class="auth-cpw-submit" id="cpw-submit" type="button">确认修改</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    document.getElementById('cpw-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const submit = async () => {
+        const oldP = document.getElementById('cpw-old').value.trim();
+        const newP = document.getElementById('cpw-new').value.trim();
+        const confirmP = document.getElementById('cpw-confirm').value.trim();
+        const err = document.getElementById('cpw-error');
+        err.textContent = '';
+
+        if (!oldP) { err.textContent = '请输入原密码'; return; }
+        if (!newP || newP.length < 4) { err.textContent = '新密码至少 4 位'; return; }
+        if (newP !== confirmP) { err.textContent = '两次新密码不一致'; return; }
+        if (newP === oldP) { err.textContent = '新密码不能与原密码相同'; return; }
+
+        const btn = document.getElementById('cpw-submit');
+        btn.disabled = true;
+        btn.textContent = '提交中...';
+        try {
+            await apiChangePassword(oldP, newP);
+            alert('密码修改成功');
+            close();
+        } catch (e) {
+            err.textContent = e.message || '修改失败';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '确认修改';
+        }
+    };
+    document.getElementById('cpw-submit').addEventListener('click', submit);
+    overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            if ((e.target.tagName || '').toLowerCase() === 'input') submit();
+        }
+    });
+}
+window.showChangePasswordDialog = showChangePasswordDialog;

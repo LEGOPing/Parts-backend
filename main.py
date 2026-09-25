@@ -49,6 +49,7 @@ app.add_middleware(
 
 # 导入路由
 from app.routes import repositories, boxes, parts, search, settings
+from app.routes import auth as auth_routes
 
 # 注册路由
 app.include_router(repositories.router, prefix="/api/repositories", tags=["仓库管理"])
@@ -56,6 +57,7 @@ app.include_router(boxes.router, prefix="/api/boxes", tags=["盒子管理"])
 app.include_router(parts.router, prefix="/api/parts", tags=["零件管理"])
 app.include_router(search.router, prefix="/api/search", tags=["零件搜索"])
 app.include_router(settings.router, prefix="/api/settings", tags=["系统设置"])
+app.include_router(auth_routes.router, prefix="/api/auth", tags=["用户认证"])
 
 # 健康检查端点
 @app.get("/health")
@@ -93,3 +95,19 @@ scheduler.add_job(
 scheduler.start()
 
 logger.info("定时备份任务已启动")
+
+# 启动时初始化默认管理员账号
+try:
+    from app.database import SessionLocal
+    from app.routes.auth import init_default_users
+    _db = SessionLocal()
+    try:
+        result = init_default_users(db=_db)
+        if result.get("created"):
+            logger.info(f"已创建默认管理员账号: {result['created']}")
+        else:
+            logger.info("默认管理员账号已存在，跳过初始化")
+    finally:
+        _db.close()
+except Exception as _e:
+    logger.warning(f"初始化默认管理员失败（可忽略）: {_e}")

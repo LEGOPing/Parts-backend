@@ -13,6 +13,9 @@ const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/c
 const GITEE_IMG_URL = 'https://gitee.com/legoping/Parts-img/raw/main/';
 const GITEE_RB_RAW_URL = 'https://gitee.com/legoping/parts-rb/raw/main';
 const CORS_PROXY = 'https://corsproxy.io/?url=';
+// 服务端按需抓取 Bricklink 价目页的地址：部署并启动 server_bricklink_price.py 后，
+// 把这里填成服务端根地址（如 http://1.2.3.4:8000）。留空则前端不调用服务端抓取。
+const BL_PRICE_SERVER = (typeof window !== 'undefined' && window.BL_PRICE_SERVER) || '';
 
 const RB_DATABASE_FILE = 'rb_database.json';
 const DEFAULT_GITEE_TOKEN = '5e8fe75044a023e2c992c1b5d11c95f0';
@@ -116,33 +119,326 @@ async function fetchJSONFile(fileName) {
 }
 
 async function fetchRBFile(fileName) {
+    // 拉取 parts-rb 仓库里的文件并返回文本内容。
+    // 使用 Gitee Contents API + Token（跨域已验证 Access-Control-Allow-Origin:*，可被浏览器读取），
+    // 并通过 giteeRequestWithRetry 对偶发的 HTTP 429 限流 / 连接重置做指数退避重试，
+    // 避免 BL-price.json 等文件在批量更新/启动加载时被限流命中而静默失败，导致价格数据停留在旧版本。
     try {
-        // 使用Gitee API + Token获取文件（CORS代理已全部失效，仅保留此方式）
         const token = localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
         if (token) {
             const apiUrl = `https://gitee.com/api/v5/repos/legoping/parts-rb/contents/${fileName}?ref=main`;
-            const apiResponse = await fetch(apiUrl, {
+            const apiResponse = await giteeRequestWithRetry(() => fetch(apiUrl, {
                 headers: { 'Authorization': `token ${token}` }
-            });
-            if (apiResponse.ok) {
-                const data = await apiResponse.json();
-                if (data.content) {
-                    // 使用TextDecoder替代escape+decodeURIComponent，大幅提升大文件(14MB+)解码性能
-                    const binaryString = atob(data.content);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    return new TextDecoder('utf-8').decode(bytes);
+            }));
+            const data = await apiResponse.json();
+            if (data && data.content) {
+                // 使用TextDecoder替代escape+decodeURIComponent，大幅提升大文件(14MB+)解码性能
+                const binaryString = atob(data.content);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
                 }
+                return new TextDecoder('utf-8').decode(bytes);
             }
         }
-        
         throw new Error('无法访问Gitee文件: ' + fileName);
     } catch (error) {
         console.error(`加载RB文件失败: ${fileName}`, error);
         return null;
     }
+}
+
+// 从 Gitee parts-rb 下载 bl_colors.json 并写入离线 RB 数据库 rb_bl_colors 表。
+// 用于启动补全 / 更新 RB 时加载 BL 颜色表，非阻塞（失败仅告警）。
+async function loadBLColorsToRBDB() {
+    const text = await fetchRBFile('bl_colors.json');
+    if (!text) return { success: false, count: 0, error: 'bl_colors.json 读取失败' };
+    let records;
+    try {
+        records = JSON.parse(text);
+    } catch (e) {
+        return { success: false, count: 0, error: 'bl_colors.json 解析失败: ' + e.message };
+    }
+    return await importBLColorsToRBDb(records);
+}
+
+// 从 Gitee parts-rb 下载 RB_BL_colors.csv 并写入离线 RB 数据库 rb_bl_map 表。
+// 该表提供 RB 颜色ID → BL 颜色ID 的直接映射，供 resolveBLColorId 等跨平台颜色换算使用。
+// 用于启动补全 / 更新 RB 时加载，非阻塞（失败仅告警）。
+async function loadRBBLMappingToRBDB() {
+    const text = await fetchRBFile('RB_BL_colors.csv');
+    if (!text) return { success: false, count: 0, error: 'RB_BL_colors.csv 读取失败' };
+    let data;
+    try {
+        const parsed = parseRBCSV(text);
+        data = parsed.data;
+    } catch (e) {
+        return { success: false, count: 0, error: 'RB_BL_colors.csv 解析失败: ' + e.message };
+    }
+    return await importRBBLMapToRBDb(data);
+}
+
+// 加载离线 Bricklink 价格库 BL-price.json 到本地 IndexedDB rb_prices。
+// 策略：先用 whitelist 清理 rb_prices 中所有非 manual / 非 bl-server 的记录（覆盖
+//       offline / bl-webview / rebrickable offline 等一切离线来源值，避免 blacklist 漏删），
+//       再把本次从 BL-price.json 读到的 records 全量写入 —— 确保每次读入的数据都是
+//       Gitee 上最新版本、且不受上一次导入的残留记录污染。
+// 保护对象：手动回填(source==='manual') 和 服务端抓取(source==='bl-server') 的记录。
+// 返回 { success, total, cleared, kept, keptBySource, added, generated_at, error? }。
+async function loadBLPriceLibraryToRBDb(options = {}) {
+    let cleared = 0, kept = 0, keptBySource = {};
+    // 1. 先清旧：whitelist 方式只保护 manual/bl-server，其余一律清理
+    try {
+        if (typeof clearOfflineBLPrices === 'function') {
+            const r = await clearOfflineBLPrices();
+            cleared = r.cleared || 0;
+            kept = r.kept || 0;
+            keptBySource = r.keptBySource || {};
+        }
+    } catch (e) {
+        console.warn('清理旧离线价格失败（继续）:', e.message);
+    }
+    // 2. 读文件
+    const text = await fetchRBFile('BL-price.json');
+    if (!text) return { success: false, added: 0, total: 0, cleared, kept, keptBySource, error: 'BL-price.json 读取失败' };
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        return { success: false, added: 0, total: 0, cleared, kept, keptBySource, error: 'BL-price.json 解析失败: ' + e.message };
+    }
+    const records = Array.isArray(data) ? data : (data.records || []);
+    // 3. 全量写入：whitelist 保护写入阶段 —— 若 IndexedDB 里该 key 已存在 manual / bl-server，
+    //    跳过本次写入，保留用户/服务端数据不被离线覆盖。其余全部 upsert。
+    let added = 0, skippedProtected = 0;
+    for (const rec of records) {
+        if (!rec || !rec.key) continue;
+        if (!rec.part_num || rec.color_id === undefined || rec.color_id === null || rec.color_id === '') continue;
+        try {
+            // 写入前先查一次，若本地已有 manual / bl-server 同 key → 跳过
+            const existing = (typeof getCachedBLPrice === 'function')
+                ? await getCachedBLPrice(rec.part_num, rec.color_id)
+                : null;
+            if (existing && (existing.source === 'manual' || existing.source === 'bl-server')) {
+                skippedProtected++;
+                continue;
+            }
+            if (typeof saveCachedBLPrice === 'function') {
+                const ok = await saveCachedBLPrice(rec);
+                if (ok) added++;
+            }
+        } catch (e) {
+            console.warn('写入离线价格失败:', rec.key, e);
+        }
+    }
+    return { success: true, added, skippedProtected, total: records.length, cleared, kept, keptBySource, generated_at: data.generated_at || '' };
+}
+
+// ==================== Bricklink 价格指南（catalogPG.asp）====================
+// 价格数据位于“Last 6 Months Sales”下的“New”行：
+//   Min Price / Avg Price / Qty Avg Price / Max Price
+// 因该页面结构与.Product页不同、且有时带 WAF 反爬，这里采用锚定 + 正则的宽松解析，
+// 借助“Last 6 Months Sales”定位区域、以“New”标签定位新件行，避免误取“Stores搜索筛选”里的 Min/Max。
+
+// 从价格指南 HTML 中提取 New 商品的四个价格（含币种），返回 { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice }
+function extractBLPriceGuide(html) {
+    if (!html || typeof html !== 'string') return null;
+
+    // 1. 定位 “Last 6 Months Sales” 区域，限长 40000 字符（避免命中其他页面片段）
+    const anchor = html.indexOf('Last 6 Months Sales');
+    if (anchor < 0) return null;
+    const section = html.slice(anchor, anchor + 40000);
+
+    // 2. 定位 “New” 条件段；页面中 New 可能包在 <a>、<span>、<div> 等标签里，
+    //    取所有候选锚点的最早一个（其后紧跟 New 条件下的价格单元格）。
+    const newCandidates = [
+        section.indexOf('>New<'),
+        section.indexOf('New</a>'),        // 常见：<a ...>New</a>
+        section.indexOf('>New</'),          // <div>New</div> / <span>New</span>
+        section.indexOf('New Price'),       // 备用锚点
+    ].filter(i => i >= 0);
+    const newIdx = newCandidates.length ? Math.min(...newCandidates) : -1;
+    if (newIdx < 0) return null;
+    const newSection = section.slice(newIdx, newIdx + 12000);
+
+    // 币种：取 New 统计区里“货币代码 + 带小数金额”组合（两者可能分属不同 span，
+    //    允许其间有 ≤80 字符的标签/空白）。用三字母代码开头再提炼，避免误取属性里的数字。
+    let currency = '';
+    const curMatch = newSection.match(/(CNY|USD|EUR|GBP|HKD|RMB|JPY|AUD|CAD)[\s\S]{0,80}?[\d,]+\.\d+/i);
+    if (curMatch) currency = String(curMatch[1]).toUpperCase();
+
+    // 3. 提取单个标签的价格。策略：标签后最多 500 字符内，优先匹配
+    //    “币种代码 + 带小数金额”（真实 BL 价格通常带 CNY/USD/EUR 等，且能借此避开
+    //    标签属性里出现的纯数字如 font-weight:700）；仅当标签后确实无币种时才退回
+    //    直接匹配带小数金额。金额必须含小数点，属性里的整数（如 700、80）会被排除。
+    function valueFor(label, allowNoCurrency) {
+        const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 币种与金额之间的分隔需兼容空格 / 不间断空格 / HTML 实体 &nbsp;
+        const sep = '(?:[\\s\\u00a0]|&nbsp;)*';
+        const withCur = new RegExp(esc + '[\\s\\S]{0,500}?([A-Z]{2,3})' + sep + '([\\d,]+\\.[\\d]+)', 'i');
+        let m = newSection.match(withCur);
+        if (m) {
+            const v = parseFloat(m[2].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        if (allowNoCurrency) {
+            const noCur = new RegExp(esc + '[\\s\\S]{0,500}?([\\d,]+\\.[\\d]+)', 'i');
+            m = newSection.match(noCur);
+            if (m) {
+                const v = parseFloat(m[1].replace(/,/g, ''));
+                return isNaN(v) ? null : v;
+            }
+        }
+        return null;
+    }
+
+    // Avg Price 须用负向后行排除 "Qty Avg Price"。
+    function avgValue() {
+        // 币种与金额之间的分隔兼容空格 / 不间断空格 / HTML 实体 &nbsp;
+        const sep = '(?:[\\s\\u00a0]|&nbsp;)*';
+        const m = newSection.match(new RegExp('(?<!Qty )Avg Price[\\s\\S]{0,500}?([A-Z]{2,3})' + sep + '([\\d,]+\\.[\\d]+)', 'i'));
+        if (m) {
+            const v = parseFloat(m[2].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        const m2 = newSection.match(/(?<!Qty )Avg Price[\s\S]{0,500}?([\d,]+\.\d+)/i);
+        if (m2) {
+            const v = parseFloat(m2[1].replace(/,/g, ''));
+            return isNaN(v) ? null : v;
+        }
+        return null;
+    }
+
+    const minPrice = valueFor('Min Price', true);
+    const avgPrice = avgValue();
+    const qtyAvgPrice = valueFor('Qty Avg Price', true);
+    const maxPrice = valueFor('Max Price', true);
+
+    if (minPrice === null && avgPrice === null && qtyAvgPrice === null && maxPrice === null) {
+        return null;
+    }
+
+    return { currency, minPrice, avgPrice, qtyAvgPrice, maxPrice };
+}
+
+// 通过 CORS 代理从浏览器抓取 Bricklink 价格指南页并解析 New 件价格
+async function fetchBLPriceGuide(brickLinkPart, blColorId) {
+    const cleanNum = String(brickLinkPart || '').replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) return null;
+    const blUrl = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(blUrl)}`;
+    try {
+        const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+        if (!resp.ok) return null;
+        const html = await resp.text();
+        return extractBLPriceGuide(html);
+    } catch (e) {
+        console.warn('CORS 代理 Bricklink 价格抓取失败:', e.message);
+        return null;
+    }
+}
+
+// 服务端按需抓取：调用独立服务端（默认 AWS Lambda 无头浏览器，见 lambda_bl_price/）的 /api/price 端点。
+// Bricklink 价格指南（catalogPG.asp）在远端 IP 直连时返回 202 + AWS WAF JS 挑战，需无头浏览器执行挑战
+// 拿到 aws-waf-token 后才能读到真实价格，故由服务端 Playwright headless-shell 抓取。
+// 需在 api.js 顶部把 BL_PRICE_SERVER 配置为该服务端的 https 公网域名；未配置返回 {error:'…'}。
+async function fetchBLPriceFromServer(blPartNum, blColorId) {
+    const cleanNum = String(blPartNum == null ? '' : blPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!BL_PRICE_SERVER) return { error: 'BL_PRICE_SERVER 未配置，请先指向服务端地址' };
+    if (!cleanNum) return { error: '无有效 BL 型号' };
+    const url = `${BL_PRICE_SERVER}/api/price?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    let resp;
+    try {
+        resp = await fetch(url, { signal: AbortSignal.timeout(65000) });
+    } catch (e) {
+        return { error: `服务端不可达（${BL_PRICE_SERVER}）: ${e && e.message ? e.message : e}` };
+    }
+    if (!resp.ok) return { error: `服务端返回 HTTP ${resp.status}` };
+    let data;
+    try {
+        data = await resp.json();
+    } catch (e) {
+        return { error: '服务端响应解析失败' };
+    }
+    if (!data || data.ok === false) return { error: (data && data.error) || '服务端未返回价格数据' };
+    const c = (data && data.currency)
+        || (data.last_6_months && data.last_6_months.currency)
+        || (data.current_for_sale && data.current_for_sale.currency)
+        || '';
+    return {
+        currency: c,
+        last_6_months: data.last_6_months || null,
+        current_for_sale: data.current_for_sale || null,
+        source: 'bl-server',
+        generated_at: data.updated_at || data.generated_at || ''
+    };
+}
+
+// 自动抓取（尽力而为）：在设备浏览器中直接抓 Bricklink 价格页。
+// Bricklink 受 CORS + AWS WAF 保护，公共 CORS 代理通常被 401/202 拦截，成功率不稳定。
+// 这里依次尝试多种免费代理，拿到"Last 6 Months Sales"即尝试解析；全部失败返回 null，
+// 由调用方转入"新标签打官方页 + 手动回填"流程。返回 { last_6_months, currency } 或 null。
+const AUTO_PRICE_PROXIES = [
+    CORS_PROXY,                                  // corsproxy.io（现在需 API key，大概率 401）
+    'https://api.allorigins.win/raw?url='        // allorigins 免费代理（数据中心 IP，易触发 WAF）
+];
+async function tryAutoFetchBLPrice(blPartNum, blColorId) {
+    const cleanNum = String(blPartNum == null ? '' : blPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleanNum) return null;
+    const blUrl = `https://www.bricklink.com/catalogPG.asp?P=${encodeURIComponent(cleanNum)}&colorID=${encodeURIComponent(blColorId)}`;
+    for (const proxy of AUTO_PRICE_PROXIES) {
+        try {
+            const resp = await fetch(proxy + encodeURIComponent(blUrl), { signal: AbortSignal.timeout(20000) });
+            if (!resp.ok) continue;
+            const html = await resp.text();
+            if (!html || html.indexOf('Last 6 Months Sales') < 0) continue; // WAF 202 挑战页无此锚点
+            const pricing = extractBLPriceGuide(html);
+            if (pricing && (pricing.minPrice !== null || pricing.avgPrice !== null)) {
+                const c = pricing.currency || '';
+                return {
+                    currency: c,
+                    last_6_months: {
+                        currency: c,
+                        min: pricing.minPrice,
+                        avg: pricing.avgPrice,
+                        qty_avg: pricing.qtyAvgPrice,
+                        max: pricing.maxPrice
+                    }
+                };
+            }
+        } catch (e) {
+            continue;
+        }
+    }
+    return null;
+}
+
+// 由 RB 颜色 ID 直接解析对应的 BL 颜色 ID。
+// 使用离线 rb_bl_map 表（RB_BL_colors.csv 生成）做 RB 颜色ID → BL 颜色ID 直接映射，
+// 不再做颜色名称匹配。未命中（RB 颜色在 Bricklink 无对应）时返回 null。
+async function resolveBLColorId(rbColorId) {
+    try {
+        if (rbColorId === undefined || rbColorId === null || rbColorId === '') return null;
+        const rec = await getBLColorMapByRBColorId(rbColorId);
+        // 注意：BL 颜色ID 0 是合法取值（如黑色等），不能当作“无映射”排除，
+        // 否则颜色ID为0的零件无法解析出 BL 颜色ID，右滑面板也就查不到价格。
+        if (rec && rec.bl_color_id != null && rec.bl_color_id !== '') {
+            return Number(rec.bl_color_id);
+        }
+        return null; // rb_bl_map 中无该 RB 颜色ID 的映射，无法确定 BL 颜色ID
+    } catch (e) {
+        console.warn('解析 BL 颜色ID失败:', e.message);
+        return null;
+    }
+}
+
+// 将 RB 型号 + RB 颜色ID 解析为 BL 价格指南所需的 { blPartNum, blColorId }
+async function resolveBLTarget(rbPartNum, rbColorId) {
+    const blColorId = await resolveBLColorId(rbColorId);
+    if (blColorId === null) return null;
+    const blPartNum = String(rbPartNum == null ? '' : rbPartNum).replace(/[^a-zA-Z0-9]/g, '');
+    if (!blPartNum) return null;
+    return { blPartNum, blColorId };
 }
 
 // 分片文件命名常量（与 push_inventory_parts_to_gitee.py 保持一致）
@@ -394,6 +690,78 @@ async function mergeAliasesToPartAliasesCSV(aliasPairs, remark = 'BL匹配') {
     }));
 
     return { added, skipped, total: outLines.length - 1 };
+}
+
+// 读取 Gitee parts-rb 仓库的 ID_Abc.json（型号英文词汇表），返回数组或 null
+// 文件形状为 [{ word, count }]，按出现次数降序排列
+async function fetchIDAbcJson() {
+    try {
+        const text = await fetchRBFile('ID_Abc.json');
+        if (!text) return null;
+        const data = JSON.parse(text);
+        return Array.isArray(data) ? data : null;
+    } catch (error) {
+        console.error('加载 ID_Abc.json 失败:', error);
+        return null;
+    }
+}
+
+// 将型号英文词汇数组（[{ word, count }]）全量写回 Gitee parts-rb 仓库的 ID_Abc.json
+// 文件不存在则 POST 创建，存在则 PUT 更新（携带 sha，幂等）。返回写入条数。
+async function uploadIDAbcToGitee(records, token) {
+    const t = token || localStorage.getItem('gitee_token') || DEFAULT_GITEE_TOKEN;
+    if (!t) throw new Error('缺少 Gitee Token，无法写回 ID_Abc.json');
+
+    const apiUrl = `${GITEE_JSON_API_URL.replace('/Parts-json/contents', '/parts-rb/contents')}/ID_Abc.json`;
+    const jsonText = JSON.stringify(records || []);
+    const base64Data = btoa(unescape(encodeURIComponent(jsonText)));
+
+    const payload = {
+        message: 'feat: 更新型号英文词汇 ID_Abc.json [skip ci]',
+        content: base64Data,
+        branch: 'main'
+    };
+
+    // 读取现有文件 sha。注意：路径不存在时 Gitee 可能返回空数组 []（JS 中为 truthy），
+    // 只有返回含 sha 的对象才视为文件已存在，否则按创建处理，避免 PUT 缺 sha 报错。
+    async function readSha() {
+        try {
+            const resp = await fetch(`${apiUrl}?ref=main`, { headers: { 'Authorization': `token ${t}` } });
+            if (!resp.ok) return null;
+            const json = await resp.json();
+            return (json && !Array.isArray(json) && json.sha) ? json.sha : null;
+        } catch (e) {
+            console.warn('读取 ID_Abc.json 的 sha 失败:', e.message);
+            return null;
+        }
+    }
+
+    let sha = await readSha();
+    if (sha) payload.sha = sha;
+
+    try {
+        await giteeRequestWithRetry(() => fetch(apiUrl, {
+            method: sha ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `token ${t}` },
+            body: JSON.stringify(payload)
+        }));
+    } catch (e) {
+        // 文件已存在但未拿到 sha（POST 创建失败）：补读 sha 后改用 PUT 更新
+        if (!sha && /sha|exist/i.test(String(e.message))) {
+            sha = await readSha();
+            if (sha) {
+                payload.sha = sha;
+                await giteeRequestWithRetry(() => fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `token ${t}` },
+                    body: JSON.stringify(payload)
+                }));
+                return (records || []).length;
+            }
+        }
+        throw e;
+    }
+    return (records || []).length;
 }
 
 // 将本地 inventory_parts.csv 去重后分割为 <4MB 分片并上传到 Gitee parts-rb 仓库
@@ -1449,4 +1817,83 @@ async function deletePartImageFromGitee(partNum, colorId) {
         console.error('删除零件图片失败:', error);
         return { success: false, error: error.message };
     }
+}
+
+// ==================== 用户认证 API ====================
+
+/** 获取后端 BASE URL（用于认证接口） */
+function getAuthBase() {
+    // 优先用 window 对象上的配置，其次 BACKEND_URL，最后回退同源
+    if (typeof window !== 'undefined' && window.RB_AUTH_BASE) return window.RB_AUTH_BASE;
+    if (typeof BACKEND_URL !== 'undefined') return BACKEND_URL;
+    return '';
+}
+
+async function apiLogin(phone, password) {
+    const resp = await fetch(`${getAuthBase()}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: String(phone).trim(), password: String(password) }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || data.message || `登录失败 (HTTP ${resp.status})`);
+    return data; // { token, phone, expires_in }
+}
+
+async function apiLogout() {
+    const token = localStorage.getItem('rb_auth_token');
+    const resp = await fetch(`${getAuthBase()}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
+    });
+    return resp.ok;
+}
+
+async function apiChangePassword(oldPassword, newPassword) {
+    const token = localStorage.getItem('rb_auth_token');
+    const resp = await fetch(`${getAuthBase()}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
+        body: JSON.stringify({ old_password: String(oldPassword), new_password: String(newPassword) }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || data.message || `修改密码失败 (HTTP ${resp.status})`);
+    return data;
+}
+
+async function apiGetMe() {
+    const token = localStorage.getItem('rb_auth_token');
+    if (!token) return null;
+    const resp = await fetch(`${getAuthBase()}/api/auth/me`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
+}
+
+// 登录态 localStorage key
+const AUTH_TOKEN_KEY = 'rb_auth_token';
+const AUTH_PHONE_KEY = 'rb_auth_phone';
+
+function saveAuth(token, phone) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_PHONE_KEY, phone);
+}
+function clearAuth() {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_PHONE_KEY);
+}
+function getAuthPhone() {
+    return localStorage.getItem(AUTH_PHONE_KEY) || '';
+}
+async function checkAuthValid() {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return false;
+    const me = await apiGetMe();
+    if (!me) {
+        clearAuth();
+        return false;
+    }
+    return true;
 }
