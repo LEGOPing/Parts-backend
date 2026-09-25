@@ -10037,11 +10037,6 @@ function showLoginOverlay({ onLoginSuccess } = {}) {
                 <div class="auth-error" id="auth-login-error"></div>
                 <button class="auth-login-btn" id="auth-login-btn" type="button">登 录</button>
             </div>
-
-            <div class="auth-login-tip">
-                提示：默认账号 <span class="auth-phone-mask">189****2468 / 189****2468</span><br>
-                密码可在「系统设置 - 用户设定」中修改
-            </div>
         </div>
     `;
     document.body.appendChild(overlay);
