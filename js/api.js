@@ -2,10 +2,12 @@ const SUPABASE_URL = 'https://tfxydlkpxkdpxyoqrkez.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EPZpWFRObklmwpfXerINvQ_S-OeeIM_';
 
 const API_BASE = `${SUPABASE_URL}/rest/v1`;
-// 后端地址 — 默认空字符串表示同源（FastAPI 直接 serve 前端时同源访问 /api/...）。
-// 前端和后端分开部署时，把这里改成后端实际地址即可，例如:
-//   const BACKEND_URL = 'https://my-backend.example.com';
-const BACKEND_URL = '';
+// 认证走 Supabase 原生 Auth（/auth/v1），不需要自建后端
+const AUTH_BASE = `${SUPABASE_URL}/auth/v1`;
+// 其他需要后端的功能（如序列重置）暂用空串，后续有需要再填
+const BACKEND_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? `http://${location.hostname}:8000`
+    : '';
 
 const GITEE_JSON_URL = 'https://gitee.com/legoping/Parts-json/raw/master/';
 const GITEE_JSON_API_URL = 'https://gitee.com/api/v5/repos/legoping/Parts-json/contents';
@@ -1697,7 +1699,7 @@ async function fetchBricklinkPartWeight(partNumber) {
     return { part_number: cleanNum, weight: null, error: '暂无重量数据，可手动输入' };
 }
 
-// 重置 Supabase 自增序列（通过 RPC 函数）
+// 重置 Supabase 自增序列（通过 RPC 函数，无需 CloudBase 后端）
 async function resetSequencesViaSupabase() {
     try {
         const response = await fetch(`${API_BASE}/rpc/reset_sequences`, {
@@ -1818,71 +1820,93 @@ async function deletePartImageFromGitee(partNum, colorId) {
     }
 }
 
-// ==================== 用户认证 API（Supabase RPC 版 · 零后端依赖）====================
-// 全部调 Supabase 数据库函数：rb_login / rb_verify_token / rb_logout / rb_change_password
-// SQL 定义见 supabase/auth_setup.sql（一次性在 Supabase SQL Editor 执行）
+// ==================== 用户认证 API（Supabase 原生 Auth） ====================
+// 手机号 → 邮箱映射：18923232468 → 18923232468@lego.rb
+// Supabase Dashboard → Authentication → Users 里手动创建用户
 
-async function _supabaseRPC(funcName, params = {}) {
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcName}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(params),
-    });
-    return resp;
+const AUTH_EMAIL_SUFFIX = '@lego.rb';
+function phoneToEmail(phone) { return phone + AUTH_EMAIL_SUFFIX; }
+function emailToPhone(email) { return (email || '').replace(AUTH_EMAIL_SUFFIX, ''); }
+
+function authHeaders(token) {
+    const h = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+    };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
 }
 
 async function apiLogin(phone, password) {
-    const resp = await _supabaseRPC('rb_login', {
-        p_phone:   String(phone).trim(),
-        p_password: String(password),
+    // 1. 先查 Supabase Auth 是否存在此用户
+    const email = phoneToEmail(phone);
+    const resp = await fetch(`${AUTH_BASE}/token?grant_type=password`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ email, password }),
     });
-    if (resp.status === 404) throw new Error('Supabase 未配置认证函数，请先执行 supabase/auth_setup.sql');
-    const data = await resp.json().catch(() => null);
-    // Supabase 函数 raise exception → 400，message 里含 exception_hint
-    if (!resp.ok || data === null) {
-        const hint = (data && data.hint) ? data.hint.toLowerCase() : '';
-        if (hint.includes('invalid_credentials')) throw new Error('手机号或密码错误');
-        throw new Error(data?.message || `登录失败 (HTTP ${resp.status})`);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        const msg = data.msg || data.error_description || data.error || `登录失败 (HTTP ${resp.status})`;
+        if (resp.status === 400 && msg.includes('Invalid')) {
+            throw new Error('手机号或密码错误');
+        }
+        throw new Error(msg);
     }
-    return data;  // { token, phone, is_admin, expires_at }
+    // Supabase 返回 { access_token, user: { email, ... } }
+    const realPhone = emailToPhone(data.user?.email || email);
+    return {
+        token: data.access_token,
+        phone: realPhone,
+        expires_in: data.expires_in,
+    };
 }
 
 async function apiLogout() {
     const token = localStorage.getItem('rb_auth_token');
     if (!token) return true;
-    const resp = await _supabaseRPC('rb_logout', { p_token: token });
+    const resp = await fetch(`${AUTH_BASE}/logout`, {
+        method: 'POST',
+        headers: authHeaders(token),
+    });
     return resp.ok;
 }
 
 async function apiChangePassword(oldPassword, newPassword) {
     const token = localStorage.getItem('rb_auth_token');
-    if (!token) throw new Error('未登录');
-    const resp = await _supabaseRPC('rb_change_password', {
-        p_token:        token,
-        p_old_password: String(oldPassword),
-        p_new_password: String(newPassword),
+    if (!token) throw new Error('请先登录');
+    // Supabase Auth 不支持用 old_password 校验修改密码
+    // 这里用一个小 trick：先用旧密码登一下确认正确，再改
+    const savedPhone = getAuthPhone();
+    const verify = await apiLogin(savedPhone, oldPassword).catch(() => null);
+    if (!verify) throw new Error('原密码错误');
+
+    const resp = await fetch(`${AUTH_BASE}/user`, {
+        method: 'PUT',
+        headers: authHeaders(token),
+        body: JSON.stringify({ password: newPassword }),
     });
-    const data = await resp.json().catch(() => null);
-    if (!resp.ok) {
-        const hint = (data && data.hint) ? data.hint.toLowerCase() : '';
-        if (hint.includes('old_password_wrong'))     throw new Error('原密码错误');
-        if (hint.includes('new_password_too_short')) throw new Error('新密码至少 4 位');
-        if (hint.includes('invalid_token'))          throw new Error('登录已失效');
-        throw new Error(data?.message || `修改密码失败 (HTTP ${resp.status})`);
-    }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.msg || data.error || `修改密码失败 (HTTP ${resp.status})`);
+    // 修改成功后退出，强制重新登录
+    await apiLogout().catch(() => {});
     return data;
 }
 
 async function apiGetMe() {
     const token = localStorage.getItem('rb_auth_token');
     if (!token) return null;
-    const resp = await _supabaseRPC('rb_verify_token', { p_token: token });
+    const resp = await fetch(`${AUTH_BASE}/user`, {
+        method: 'GET',
+        headers: authHeaders(token),
+    });
     if (!resp.ok) return null;
-    const data = await resp.json().catch(() => null);
-    return data || null;
+    const data = await resp.json();
+    return {
+        phone: emailToPhone(data.email),
+        email: data.email,
+        id: data.id,
+    };
 }
 
 // 登录态 localStorage key

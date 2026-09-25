@@ -7661,7 +7661,7 @@ async function initializeDatabase() {
                     try { await deleteRepository(repo.id); } catch (e) {}
                 }
                 
-                // 重置所有自增序列（通过 Supabase RPC）
+                // 重置所有自增序列（通过 Supabase RPC，无需 CloudBase 后端）
                 try {
                     await resetSequencesViaSupabase();
                     console.log('序列已重置');
@@ -10036,6 +10036,11 @@ function showLoginOverlay({ onLoginSuccess } = {}) {
                 </div>
                 <div class="auth-error" id="auth-login-error"></div>
                 <button class="auth-login-btn" id="auth-login-btn" type="button">登 录</button>
+            </div>
+
+            <div class="auth-login-tip">
+                提示：默认账号 <span class="auth-phone-mask">189****2468 / 189****2468</span><br>
+                密码可在「系统设置 - 用户设定」中修改
             </div>
         </div>
     `;

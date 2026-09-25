@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lego-parts-v86';
+const CACHE_NAME = 'lego-parts-v82';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -52,16 +52,12 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // POST/PATCH/DELETE: network-first（POST 请求永远不在 cache 里，兜底返回明确的 503 响应，
-    // 避免 respondWith(undefined) 产生 "Returned response is null" 的 SW 错误）
+    // POST/PATCH/DELETE: network-first
     if (request.method === 'POST' || 
         request.method === 'PATCH' || 
         request.method === 'DELETE') {
         event.respondWith(fetch(request).catch(() => {
-            return new Response('{"error":"network_error"}', {
-                status: 503,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return caches.match(request);
         }));
         return;
     }
@@ -77,21 +73,10 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // API 请求：network-first。通用规则 — 不再硬编码具体后端域名
-    //  1) 路径以 /api/ 开头（任何 FastAPI 风格后端，无论部署在哪里）
-    //  2) Supabase REST（supabase.co + /rest/）
-    //  3) Gitee 非图片请求（Parts-img 分支在上面单独处理了）
-    const isApiRequest = (
-        url.pathname.startsWith('/api/') ||
-        (url.hostname.includes('supabase.co') && url.pathname.includes('/rest/')) ||
-        (url.hostname.includes('gitee.com') && !url.pathname.includes('Parts-img'))
-    );
-    if (isApiRequest) {
+    // API (supabase, gitee 非图片): network-first
+    if (url.hostname.includes('supabase.co') || url.hostname.includes('gitee.com')) {
         event.respondWith(fetch(request).catch(() => {
-            return new Response('{"error":"network_error"}', {
-                status: 503,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return caches.match(request);
         }));
         return;
     }
