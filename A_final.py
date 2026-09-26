@@ -83,7 +83,7 @@ OLD_DIR   = 'price_backups'      # 推送前自动保存远端旧版的目录
 # ======================================================
 # 版本/配置
 # ======================================================
-VERSION    = 'v13.4'  # 每次功能变动必升，用于 iPhone 上一眼确认跑的是哪个版本
+VERSION    = 'v13.5'  # v13.5: 加 Gitee fallback 解决 blp-shortcuts 子目录文件缺失导致全库丢失  # 每次功能变动必升，用于 iPhone 上一眼确认跑的是哪个版本
 GIT_SHA    = 'AUTO'   # 运行时从 Gitee API 取最新 blob sha
 LOG_FILE  = 'progress.log'
 # 颜色映射表 RB_BL_colors.csv：只读脚本同目录本地文件（离线、绝不联网，避免 iOS 下卡死）。
@@ -150,17 +150,36 @@ _status_label = None      # 顶栏状态标签（best-effort 更新）
 # 1.1) RB 颜色ID → BL 颜色ID 直接映射（采用 RB_BL_colors.csv）
 # ---------------------------------------------------------------------------
 def _read_csv_text():
-    """读取脚本同目录的 RB_BL_colors.csv；文件缺失则返回 ''（绝不联网，避免 iOS 下卡死）。"""
+    """读取 RB_BL_colors.csv：优先读脚本同目录本地文件；
+    本地缺失时从 Gitee parts-rb 仓库根目录拉（因为 blp-shortcuts/ 子目录
+    不存这个文件，只放根目录；脚本放在子目录下时会自动联网拉取）。"""
     local = os.path.join(_BASE, CSV_FILE)
     if os.path.exists(local):
         try:
             with open(local, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
-            log('读取本地 RB_BL_colors.csv 失败: %s' % e)
-            return ''
-    log('未找到本地 RB_BL_colors.csv（请与脚本放在同一文件夹）。')
-    return ''
+            log('读取本地 RB_BL_colors.csv 失败（尝试联网拉取）: %s' % e)
+    # 联网 fallback（从 Gitee parts-rb 根目录）
+    try:
+        url = 'https://gitee.com/%s/%s/raw/%s/%s?access_token=%s' % (
+            GITEE_OWNER, GITEE_REPO, GITEE_BRANCH, CSV_FILE, GITEE_TOKEN)
+        log('  从 Gitee 拉取 %s ...' % CSV_FILE)
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            text = resp.read().decode('utf-8')
+        # 写缓存到本地，下次就不用联网了
+        try:
+            with open(local, 'w', encoding='utf-8') as f:
+                f.write(text)
+            log('  ✓ 已缓存到本地 %s' % local)
+        except Exception:
+            pass
+        return text
+    except Exception as e:
+        log('  Gitee 拉取 %s 失败: %s' % (CSV_FILE, e))
+        log('请确保 RB_BL_colors.csv 已放到脚本同目录或 Gitee parts-rb 根目录')
+        return ''
 
 
 def build_rb_bl_map(text):
@@ -351,6 +370,45 @@ def _ensure_lp():
     close_ui()
     DONE.set()
     return
+
+
+def _ensure_local_price_seed():
+    """确保本地至少有 BL-price.json（NP）或 BL-price.old（OP）其中之一。
+    如果两个都不存在（首次运行或文件被清），从 Gitee parts-rb 根目录下载
+    当前 BL-price.json 并保存为本地 OP，这样增量沿用逻辑才有种子数据。
+    blp-shortcuts/ 子目录下不存价格文件，所以必须联网拉。"""
+    np_path = os.path.join(_BASE, OUT_JSON)
+    op_path = os.path.join(_BASE, OP_JSON)
+    if os.path.exists(np_path) or os.path.exists(op_path):
+        return True  # 至少有一个，OK
+    # 两个都没有 → 从 Gitee 拉
+    log('本地无 BL-price.json 也无 BL-price.old（首次/清空后运行）'
+        '，从 Gitee 下载当前价格库作为增量种子...')
+    try:
+        url = 'https://gitee.com/%s/%s/raw/%s/%s?access_token=%s' % (
+            GITEE_OWNER, GITEE_REPO, GITEE_BRANCH, GITEE_TARGET, GITEE_TOKEN)
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+        if raw:
+            with open(op_path, 'wb') as f:
+                f.write(raw)
+            # 解析一下，打印条数
+            try:
+                d = json.loads(raw.decode('utf-8'))
+                cnt = len(d.get('records', [])) if isinstance(d, dict) else 0
+            except Exception:
+                cnt = -1
+            log('  ✓ 已从 Gitee 下载 %s 作为本地 OP（%s 条）' % (
+                GITEE_TARGET, cnt if cnt >= 0 else '?'))
+            return True
+        else:
+            log('  Gitee 下载到空内容，可能仓库里也没有价格文件')
+            return False
+    except Exception as e:
+        log('  ⚠ 从 Gitee 拉价格文件失败: %s' % e)
+        log('  将以全量模式运行（第一次会比较慢）')
+        return False
 
 
 def _rotate_np():
@@ -917,6 +975,9 @@ def _batch():
     # ===== 步骤1-2：建抓取清单 LP（Supabase 系统数据库 → 型号+颜色去重忽略状态）=====
     _ensure_lp()
     log('共 %d 组待抓（LP）；颜色为 RB 颜色ID，将映射为 BL 颜色ID' % _N)
+
+    # ===== 步骤2.5：确保本地有价格种子文件 =====
+    _ensure_local_price_seed()
 
     # ===== 步骤3：NP/BLP 旋转：NP 存在则改名覆盖 BL-price.old，再新建 NP =====
     _rotate_np()
