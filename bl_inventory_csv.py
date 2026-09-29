@@ -42,16 +42,6 @@ JS_INV_ANCHOR = (
     ").length >= 1"
 )
 
-# catalogPG.asp 价格指南页 anchor — "Last 6 Months Sales" 是价格网格 section 头
-# 它比 "Qty Avg Price" 先出现且唯一，不会在导航/商店列表里重复
-JS_PG_ANCHOR = 'document.body.innerHTML.indexOf("Last 6 Months Sales") >= 0'
-
-# catalogitem.page 零件详情页 anchor — 重量信息区域出现
-JS_PART_ANCHOR = (
-    'document.getElementById("item-weight-info") !== null || '
-    'document.body.innerHTML.indexOf("Weight:") >= 0'
-)
-
 # ---------- 全局状态 ----------
 g_set_no = ""
 g_inventory = []      # [{part, color_id, qty, color_name, description}, ...]
@@ -218,75 +208,28 @@ JS_EXTRACT_WEIGHT = r"""
 """
 
 
-# --- 从价格指南页提取价格（参考 app/bricklink_price.py 的列分组策略） ---
-#
-# BrickLink catalogPG.asp 的价格网格布局：
-#   列顺序恒为 [Last6-New(col0), Last6-Used(col1), Current-New(col2), Current-Used(col3)]
-#   每列 4 行：Min Price / Qty Avg Price / Avg Price / Max Price
-#
-# 提取流程：
-#   1. 先锚定到 "Last 6 Months Sales" 标题（section 头），截取之后 20KB 作为目标区域，
-#      避免误取下方 "Stores Search" 等区域出现的同名指标。
-#   2. 在区域内按顺序收集 4 类指标（Qty Avg 必须先于 Avg，防止贪心）。
-#   3. 按列号取出 col0 = Last6/New, col2 = Current/New 的四块数据。
+# --- 从价格指南页提取 Qty Avg Price ---
 JS_EXTRACT_PRICE = r"""
 (() => {
   var h = document.body.innerHTML;
-  if (!h) return JSON.stringify(null);
-
-  // 1) 锚定 section："Last 6 Months Sales" 之后 20KB
-  var idx = h.indexOf('Last 6 Months Sales');
-  if (idx < 0) return JSON.stringify(null);
-  var section = h.substring(idx, idx + 20000);
-
-  // 2) 按顺序收集所有指标单元格
-  //    Qty Avg 必须先于 Avg，防止贪心误匹配
-  var labels = ['Min Price', 'Qty Avg Price', 'Avg Price', 'Max Price'];
-  var metric_map = { 'Min Price': 'min', 'Qty Avg Price': 'qty_avg',
-                     'Avg Price': 'avg', 'Max Price': 'max' };
-  var out = { min: [], avg: [], qty_avg: [], max: [] };
-
-  for (var li = 0; li < labels.length; li++) {
-    var lbl = labels[li];
-    var re = new RegExp(
-      '<td>' + lbl + ':</td>\\s*<td[^>]*><b>([A-Z]{2,3})?(?:\\s|&nbsp;|\\u00a0)*([\\d,]+\\.\\d+)</b>',
-      'gi'
-    );
-    var m;
-    while ((m = re.exec(section)) !== null) {
-      out[metric_map[lbl]].push({
-        currency: (m[1] || '').toUpperCase(),
-        value: parseFloat(m[2].replace(/,/g, ''))
-      });
-    }
+  // 找 "Qty Avg Price:" 所在行，取 <b> 标签里的币种+数值
+  // 结构：<td>Qty Avg Price:</td><td><b>CNY&nbsp;0.71</b></td>
+  var re = /Qty Avg Price:<\/td>\s*<td[^>]*><b>([A-Z]{2,3})?(?:\s|&nbsp;|\u00a0)*([\d,]+\.\d+)<\/b>/gi;
+  var matches = [];
+  var m;
+  while ((m = re.exec(h)) !== null) {
+    matches.push({
+      currency: (m[1] || '').toUpperCase(),
+      value: parseFloat(m[2].replace(/,/g, ''))
+    });
   }
-
-  // 3) 按列号取值：col0 = Last6/New, col2 = Current/New
-  //    每一类指标在 out[type] 里按列顺序有多个值
-  function block(col) {
-    function g(metric) {
-      var arr = out[metric];
-      if (col < arr.length) return arr[col];
-      return null;
-    }
-    var min_ = g('min'), avg_ = g('avg'), qty_ = g('qty_avg'), max_ = g('max');
-    var any = min_ || avg_ || qty_ || max_;
-    if (!any) return null;
-    return {
-      currency: (min_ && min_.currency) || (avg_ && avg_.currency) ||
-                (qty_ && qty_.currency) || (max_ && max_.currency) || '',
-      min:   min_ ? min_.value : null,
-      avg:   avg_ ? avg_.value : null,
-      qty_avg: qty_ ? qty_.value : null,
-      max:   max_ ? max_.value : null,
-    };
-  }
-
-  var last_6 = block(0);    // Last 6 Months · New
-  var current = block(2);   // Current Items for Sale · New
-
-  if (!last_6 && !current) return JSON.stringify(null);
-  return JSON.stringify({ last_6_months: last_6, current_for_sale: current });
+  // matches[0] = Last 6 Months / New; matches[1] = Last6/Used; matches[2] = Current/New; matches[3] = Current/Used
+  // 我们取 matches[2]（Current New），如果不够长就取 matches[0]（Last 6 Months New）
+  var target = null;
+  if (matches.length > 2) target = matches[2];
+  else if (matches.length > 0) target = matches[0];
+  if (!target) return JSON.stringify({currency: '', qty_avg: null});
+  return JSON.stringify({currency: target.currency, qty_avg: target.value});
 })();
 """
 
@@ -516,43 +459,31 @@ def run():
             weight = g_weight_cache[part]
         else:
             part_url = PART_URL.format(part=part)
-            browser.goto(part_url, anchor_js=JS_PART_ANCHOR, timeout=25,
-                         anchor_timeout=15)
+            browser.goto(part_url, anchor_js='document.getElementById("item-weight-info") !== null', timeout=25)
             w_raw = browser.eval_js(JS_EXTRACT_WEIGHT)
             if w_raw and isinstance(w_raw, str) and w_raw.replace('.', '').isdigit():
                 weight = float(w_raw)
             g_weight_cache[part] = weight
 
-        # 3b. 价格（catalogPG.asp，锚到 "Last 6 Months Sales" section 头）
-        currency = ''
-        last_6 = {'min': None, 'avg': None, 'qty_avg': None, 'max': None}
-        current = {'min': None, 'avg': None, 'qty_avg': None, 'max': None}
-        # colorID=-1 表示"全部颜色"的价格
+        # 3b. 价格
+        price_currency = ''
+        price_qty_avg = None
+        # colorID 为 -1 时表示"全部颜色"，用 -1 也能查到均价
         pg_url = PG_URL.format(part=part, color_id=color_id)
-        browser.goto(pg_url, anchor_js=JS_PG_ANCHOR, timeout=30,
-                     anchor_timeout=20)
+        browser.goto(pg_url, anchor_js='document.body.innerHTML.indexOf("Qty Avg Price") >= 0', timeout=25)
         p_raw = browser.eval_js(JS_EXTRACT_PRICE)
-        if p_raw and isinstance(p_raw, str) and p_raw != 'null':
+        if p_raw and isinstance(p_raw, str):
             try:
                 p_obj = json.loads(p_raw)
-                if p_obj and isinstance(p_obj, dict):
-                    l6 = p_obj.get('last_6_months') or {}
-                    cu = p_obj.get('current_for_sale') or {}
-                    currency = l6.get('currency') or cu.get('currency')
-                    for k in ('min', 'avg', 'qty_avg', 'max'):
-                        last_6[k] = l6.get(k)
-                        current[k] = cu.get(k)
+                price_currency = p_obj.get('currency', '')
+                price_qty_avg = p_obj.get('qty_avg')
             except json.JSONDecodeError:
                 pass
 
-        # 汇总行 — 以 Current Qty Avg 作为估算基准（有则用，没有降级到 Last6）
-        unit_price = (current.get('qty_avg')
-                      or last_6.get('qty_avg'))
+        # 汇总到行
         total_weight = round((weight or 0) * qty, 4) if weight else ''
-        unit_price_rounded = round(unit_price, 4) if unit_price is not None else ''
-        total_value = (round(unit_price_rounded * qty, 4)
-                       if (unit_price_rounded != '' and unit_price is not None)
-                       else '')
+        unit_value = round(price_qty_avg, 4) if price_qty_avg is not None else ''
+        total_value = round(unit_value * qty, 4) if (unit_value != '' and price_qty_avg is not None) else ''
 
         row = {
             'set_no': g_set_no,
@@ -562,29 +493,15 @@ def run():
             'qty': qty,
             'weight_g': weight if weight is not None else '',
             'total_weight_g': total_weight,
-            'price_currency': currency,
-            # Last 6 Months · New
-            'last6_min': (round(last_6['min'], 4) if last_6['min'] is not None else ''),
-            'last6_avg': (round(last_6['avg'], 4) if last_6['avg'] is not None else ''),
-            'last6_qty_avg': (round(last_6['qty_avg'], 4) if last_6['qty_avg'] is not None else ''),
-            'last6_max': (round(last_6['max'], 4) if last_6['max'] is not None else ''),
-            # Current Items for Sale · New
-            'cur_min': (round(current['min'], 4) if current['min'] is not None else ''),
-            'cur_avg': (round(current['avg'], 4) if current['avg'] is not None else ''),
-            'cur_qty_avg': (round(current['qty_avg'], 4) if current['qty_avg'] is not None else ''),
-            'cur_max': (round(current['max'], 4) if current['max'] is not None else ''),
-            # 便于下游计算的聚合列
-            'unit_qty_avg_price': unit_price_rounded,
+            'price_currency': price_currency,
+            'unit_qty_avg_price': unit_value,
             'total_value': total_value,
         }
         g_results.append(row)
 
-        # 进度：选一个可读值显示
-        disp_price = unit_price_rounded if unit_price_rounded != '' else '-'
-        print(f'  [{i}/{len(g_inventory)}] {part} x{qty} | '
-              f'{weight}g | {currency} {disp_price}')
+        print(f'  [{i}/{len(g_inventory)}] {part} x{qty} | {weight}g | {price_currency} {unit_value}')
 
-        # 轻微节流
+        # 轻微节流，避免被限频（WebView 方式 WAF session 已稳定，不需要太长）
         time.sleep(0.3)
 
     # --- 4. 写 CSV ---
@@ -597,10 +514,7 @@ def run():
     fieldnames = [
         'set_no', 'part_no', 'description', 'color_id', 'qty',
         'weight_g', 'total_weight_g',
-        'price_currency',
-        'last6_min', 'last6_avg', 'last6_qty_avg', 'last6_max',
-        'cur_min', 'cur_avg', 'cur_qty_avg', 'cur_max',
-        'unit_qty_avg_price', 'total_value'
+        'price_currency', 'unit_qty_avg_price', 'total_value'
     ]
 
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
