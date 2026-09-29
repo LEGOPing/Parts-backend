@@ -261,7 +261,7 @@ class BLBrowser:
                 'document.readyState')
             if ready == 'complete':
                 break
-            ui.delay(0.3)
+            time.sleep(0.3)
         # 2) 额外延迟让 JS 渲染（WAF 挑战后的 SPA 渲染）
         t1 = time.time()
         anchor_ok = False
@@ -277,9 +277,9 @@ class BLBrowser:
             else:
                 # 无 anchor，等足够长时间让挑战通过
                 break
-            ui.delay(0.5)
+            time.sleep(0.5)
         # 再等一小段让数据落 DOM
-        ui.delay(1.0)
+        time.sleep(1.0)
         return anchor_ok or True
 
     def goto(self, url, anchor_js=None, timeout=30):
@@ -337,7 +337,7 @@ def run():
 
     browser = BLBrowser(progress_cb=set_progress)
     browser.show()
-    ui.delay(1.0)  # 等窗口渲染
+    time.sleep(1.0)  # 等窗口渲染
 
     # --- 2. 抓 inventory ---
     print('\n[1/3] 加载零件清单 ...')
@@ -345,7 +345,7 @@ def run():
     ok = browser.goto(inv_url)
     if not ok:
         print('❌ 零件清单页面加载失败')
-        ui.delay(2)
+        time.sleep(2)
         browser.container.close()
         return
 
@@ -362,7 +362,7 @@ def run():
         # 打印当前页面标题辅助调试
         title = browser.eval_js('document.title')
         print('  当前页面标题:', title)
-        ui.delay(3)
+        time.sleep(3)
         browser.container.close()
         return
 
@@ -429,7 +429,7 @@ def run():
         print(f'  [{i}/{len(g_inventory)}] {part} x{qty} | {weight}g | {price_currency} {unit_value}')
 
         # 轻微节流，避免被限频（WebView 方式 WAF session 已稳定，不需要太长）
-        ui.delay(0.3)
+        time.sleep(0.3)
 
     # --- 4. 写 CSV ---
     print('\n[3/3] 生成 CSV ...')
@@ -470,7 +470,7 @@ def run():
     print('=' * 50)
 
     # 在 UI 上也弹个提示
-    ui.delay(1)
+    time.sleep(1)
     browser.container.close()
 
 
