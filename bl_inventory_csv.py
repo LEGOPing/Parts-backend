@@ -303,10 +303,11 @@ class BLBrowser:
         time.sleep(1.0)
         return anchor_ok or True
 
-    def goto(self, url, anchor_js=None, timeout=30):
+    def goto(self, url, anchor_js=None, timeout=30, anchor_timeout=15):
         self.progress_cb('→ 加载 ' + url[:80])
         self.view.load_url(url)
-        return self._wait_load(timeout=timeout, anchor_js=anchor_js)
+        return self._wait_load(timeout=timeout, anchor_js=anchor_js,
+                               anchor_timeout=anchor_timeout)
 
     def eval_js(self, js):
         try:
