@@ -1,0 +1,1298 @@
+[
+ {
+  "id": 0,
+  "name": "(Not Applicable)",
+  "rgb": "",
+  "type": "N/A"
+ },
+ {
+  "id": 1,
+  "name": "White",
+  "rgb": "F3F4EF",
+  "type": "Solid"
+ },
+ {
+  "id": 2,
+  "name": "Tan",
+  "rgb": "E1D19D",
+  "type": "Solid"
+ },
+ {
+  "id": 3,
+  "name": "Yellow",
+  "rgb": "FFDA19",
+  "type": "Solid"
+ },
+ {
+  "id": 4,
+  "name": "Orange",
+  "rgb": "FF8D34",
+  "type": "Solid"
+ },
+ {
+  "id": 5,
+  "name": "Red",
+  "rgb": "D82424",
+  "type": "Solid"
+ },
+ {
+  "id": 6,
+  "name": "Green",
+  "rgb": "009D48",
+  "type": "Solid"
+ },
+ {
+  "id": 7,
+  "name": "Blue",
+  "rgb": "196BCF",
+  "type": "Solid"
+ },
+ {
+  "id": 8,
+  "name": "Brown",
+  "rgb": "70462E",
+  "type": "Solid"
+ },
+ {
+  "id": 9,
+  "name": "Light Gray",
+  "rgb": "B8BAAE",
+  "type": "Solid"
+ },
+ {
+  "id": 10,
+  "name": "Dark Gray",
+  "rgb": "848375",
+  "type": "Solid"
+ },
+ {
+  "id": 11,
+  "name": "Black",
+  "rgb": "2E2E2E",
+  "type": "Solid"
+ },
+ {
+  "id": 12,
+  "name": "Trans-Clear",
+  "rgb": "EEEEEE",
+  "type": "Transparent"
+ },
+ {
+  "id": 13,
+  "name": "Trans-Brown",
+  "rgb": "939484",
+  "type": "Transparent"
+ },
+ {
+  "id": 14,
+  "name": "Trans-Dark Blue",
+  "rgb": "00296B",
+  "type": "Transparent"
+ },
+ {
+  "id": 15,
+  "name": "Trans-Light Blue",
+  "rgb": "68BCC5",
+  "type": "Transparent"
+ },
+ {
+  "id": 16,
+  "name": "Trans-Neon Green",
+  "rgb": "C0F500",
+  "type": "Transparent"
+ },
+ {
+  "id": 17,
+  "name": "Trans-Red",
+  "rgb": "9C0010",
+  "type": "Transparent"
+ },
+ {
+  "id": 18,
+  "name": "Trans-Neon Orange",
+  "rgb": "FF4231",
+  "type": "Transparent"
+ },
+ {
+  "id": 19,
+  "name": "Trans-Yellow",
+  "rgb": "EBF72D",
+  "type": "Transparent"
+ },
+ {
+  "id": 20,
+  "name": "Trans-Green",
+  "rgb": "217625",
+  "type": "Transparent"
+ },
+ {
+  "id": 21,
+  "name": "Chrome Gold",
+  "rgb": "f1f2e1",
+  "type": "Chrome"
+ },
+ {
+  "id": 22,
+  "name": "Chrome Silver",
+  "rgb": "DCDCDC",
+  "type": "Chrome"
+ },
+ {
+  "id": 23,
+  "name": "Pink",
+  "rgb": "FBD0DE",
+  "type": "Solid"
+ },
+ {
+  "id": 24,
+  "name": "Purple",
+  "rgb": "8622A1",
+  "type": "Solid"
+ },
+ {
+  "id": 25,
+  "name": "Salmon",
+  "rgb": "FF7D5D",
+  "type": "Solid"
+ },
+ {
+  "id": 26,
+  "name": "Light Salmon",
+  "rgb": "FCC7B7",
+  "type": "Solid"
+ },
+ {
+  "id": 27,
+  "name": "Rust",
+  "rgb": "B24817",
+  "type": "Solid"
+ },
+ {
+  "id": 28,
+  "name": "Nougat",
+  "rgb": "F1A56B",
+  "type": "Solid"
+ },
+ {
+  "id": 29,
+  "name": "Earth Orange",
+  "rgb": "E6881D",
+  "type": "Solid"
+ },
+ {
+  "id": 31,
+  "name": "Medium Orange",
+  "rgb": "FFAC00",
+  "type": "Solid"
+ },
+ {
+  "id": 32,
+  "name": "Light Orange",
+  "rgb": "FFBC36",
+  "type": "Solid"
+ },
+ {
+  "id": 33,
+  "name": "Light Yellow",
+  "rgb": "FEE891",
+  "type": "Solid"
+ },
+ {
+  "id": 34,
+  "name": "Lime",
+  "rgb": "BEE13C",
+  "type": "Solid"
+ },
+ {
+  "id": 35,
+  "name": "Light Lime",
+  "rgb": "ECEEBD",
+  "type": "Solid"
+ },
+ {
+  "id": 36,
+  "name": "Bright Green",
+  "rgb": "2BD043",
+  "type": "Solid"
+ },
+ {
+  "id": 37,
+  "name": "Medium Green",
+  "rgb": "91DF8C",
+  "type": "Solid"
+ },
+ {
+  "id": 38,
+  "name": "Light Green",
+  "rgb": "D7EED1",
+  "type": "Solid"
+ },
+ {
+  "id": 39,
+  "name": "Dark Turquoise",
+  "rgb": "0BABA8",
+  "type": "Solid"
+ },
+ {
+  "id": 40,
+  "name": "Light Turquoise",
+  "rgb": "00C5BC",
+  "type": "Solid"
+ },
+ {
+  "id": 41,
+  "name": "Aqua",
+  "rgb": "BCE5DC",
+  "type": "Solid"
+ },
+ {
+  "id": 42,
+  "name": "Medium Blue",
+  "rgb": "81B0E4",
+  "type": "Solid"
+ },
+ {
+  "id": 43,
+  "name": "Violet",
+  "rgb": "3448A4",
+  "type": "Solid"
+ },
+ {
+  "id": 44,
+  "name": "Light Violet",
+  "rgb": "C9CAE2",
+  "type": "Solid"
+ },
+ {
+  "id": 46,
+  "name": "Glow In Dark Opaque",
+  "rgb": "d4d5c9",
+  "type": "Milky"
+ },
+ {
+  "id": 47,
+  "name": "Dark Pink",
+  "rgb": "EF5BB3",
+  "type": "Solid"
+ },
+ {
+  "id": 48,
+  "name": "Sand Green",
+  "rgb": "98B69C",
+  "type": "Solid"
+ },
+ {
+  "id": 49,
+  "name": "Very Light Gray",
+  "rgb": "D8D9CE",
+  "type": "Solid"
+ },
+ {
+  "id": 50,
+  "name": "Trans-Dark Pink",
+  "rgb": "CE1d9b",
+  "type": "Transparent"
+ },
+ {
+  "id": 51,
+  "name": "Trans-Purple",
+  "rgb": "5525B7",
+  "type": "Transparent"
+ },
+ {
+  "id": 52,
+  "name": "Chrome Blue",
+  "rgb": "5C66A4",
+  "type": "Chrome"
+ },
+ {
+  "id": 54,
+  "name": "Sand Purple",
+  "rgb": "BC9CAF",
+  "type": "Solid"
+ },
+ {
+  "id": 55,
+  "name": "Sand Blue",
+  "rgb": "93ABB9",
+  "type": "Solid"
+ },
+ {
+  "id": 56,
+  "name": "Rose Pink",
+  "rgb": "F2D3D1",
+  "type": "Solid"
+ },
+ {
+  "id": 57,
+  "name": "Chrome Antique Brass",
+  "rgb": "645a4c",
+  "type": "Chrome"
+ },
+ {
+  "id": 58,
+  "name": "Sand Red",
+  "rgb": "C58D80",
+  "type": "Solid"
+ },
+ {
+  "id": 59,
+  "name": "Dark Red",
+  "rgb": "83211F",
+  "type": "Solid"
+ },
+ {
+  "id": 60,
+  "name": "Milky White",
+  "rgb": "d4d3dd",
+  "type": "Milky"
+ },
+ {
+  "id": 61,
+  "name": "Pearl Light Gold",
+  "rgb": "E7AE5A",
+  "type": "Pearl"
+ },
+ {
+  "id": 62,
+  "name": "Light Blue",
+  "rgb": "C8D9E1",
+  "type": "Solid"
+ },
+ {
+  "id": 63,
+  "name": "Dark Blue",
+  "rgb": "234065",
+  "type": "Solid"
+ },
+ {
+  "id": 64,
+  "name": "Chrome Green",
+  "rgb": "3CB371",
+  "type": "Chrome"
+ },
+ {
+  "id": 65,
+  "name": "Metallic Gold",
+  "rgb": "B8860B",
+  "type": "Metallic"
+ },
+ {
+  "id": 66,
+  "name": "Pearl Light Gray",
+  "rgb": "ACB7C0",
+  "type": "Pearl"
+ },
+ {
+  "id": 67,
+  "name": "Metallic Silver",
+  "rgb": "C0C0C0",
+  "type": "Metallic"
+ },
+ {
+  "id": 68,
+  "name": "Dark Orange",
+  "rgb": "AC5112",
+  "type": "Solid"
+ },
+ {
+  "id": 69,
+  "name": "Dark Tan",
+  "rgb": "A98F6A",
+  "type": "Solid"
+ },
+ {
+  "id": 70,
+  "name": "Metallic Green",
+  "rgb": "bdb573",
+  "type": "Metallic"
+ },
+ {
+  "id": 71,
+  "name": "Magenta",
+  "rgb": "BA177E",
+  "type": "Solid"
+ },
+ {
+  "id": 72,
+  "name": "Maersk Blue",
+  "rgb": "6BC4E1",
+  "type": "Solid"
+ },
+ {
+  "id": 73,
+  "name": "Medium Violet",
+  "rgb": "6F75CF",
+  "type": "Solid"
+ },
+ {
+  "id": 74,
+  "name": "Trans-Medium Blue",
+  "rgb": "76A3C8",
+  "type": "Transparent"
+ },
+ {
+  "id": 76,
+  "name": "Medium Lime",
+  "rgb": "DFE000",
+  "type": "Solid"
+ },
+ {
+  "id": 77,
+  "name": "Pearl Dark Gray",
+  "rgb": "666660",
+  "type": "Pearl"
+ },
+ {
+  "id": 78,
+  "name": "Pearl Sand Blue",
+  "rgb": "868FAA",
+  "type": "Pearl"
+ },
+ {
+  "id": 80,
+  "name": "Dark Green",
+  "rgb": "30533B",
+  "type": "Solid"
+ },
+ {
+  "id": 81,
+  "name": "Flat Dark Gold",
+  "rgb": "AD7118",
+  "type": "Pearl"
+ },
+ {
+  "id": 82,
+  "name": "Chrome Pink",
+  "rgb": "aa4d8e",
+  "type": "Chrome"
+ },
+ {
+  "id": 83,
+  "name": "Pearl White",
+  "rgb": "FFFFFF",
+  "type": "Pearl"
+ },
+ {
+  "id": 84,
+  "name": "Copper",
+  "rgb": "AC6D52",
+  "type": "Pearl"
+ },
+ {
+  "id": 85,
+  "name": "Dark Bluish Gray",
+  "rgb": "7D7C78",
+  "type": "Solid"
+ },
+ {
+  "id": 86,
+  "name": "Light Bluish Gray",
+  "rgb": "B9B9B9",
+  "type": "Solid"
+ },
+ {
+  "id": 87,
+  "name": "Sky Blue",
+  "rgb": "71E1F0",
+  "type": "Solid"
+ },
+ {
+  "id": 88,
+  "name": "Reddish Brown",
+  "rgb": "7C442C",
+  "type": "Solid"
+ },
+ {
+  "id": 89,
+  "name": "Dark Purple",
+  "rgb": "7045BA",
+  "type": "Solid"
+ },
+ {
+  "id": 90,
+  "name": "Light Nougat",
+  "rgb": "F7CFB4",
+  "type": "Solid"
+ },
+ {
+  "id": 91,
+  "name": "Light Brown",
+  "rgb": "966541",
+  "type": "Solid"
+ },
+ {
+  "id": 93,
+  "name": "Light Purple",
+  "rgb": "AF3195",
+  "type": "Solid"
+ },
+ {
+  "id": 94,
+  "name": "Medium Dark Pink",
+  "rgb": "EDA1AE",
+  "type": "Solid"
+ },
+ {
+  "id": 95,
+  "name": "Flat Silver",
+  "rgb": "8D949C",
+  "type": "Pearl"
+ },
+ {
+  "id": 96,
+  "name": "Very Light Orange",
+  "rgb": "FEDCA4",
+  "type": "Solid"
+ },
+ {
+  "id": 97,
+  "name": "Royal Blue",
+  "rgb": "506CEF",
+  "type": "Solid"
+ },
+ {
+  "id": 98,
+  "name": "Trans-Orange",
+  "rgb": "E96F01",
+  "type": "Transparent"
+ },
+ {
+  "id": 99,
+  "name": "Very Light Bluish Gray",
+  "rgb": "D7D8D3",
+  "type": "Solid"
+ },
+ {
+  "id": 100,
+  "name": "Glitter Trans-Dark Pink",
+  "rgb": "CE1d9b",
+  "type": "Glitter"
+ },
+ {
+  "id": 101,
+  "name": "Glitter Trans-Clear",
+  "rgb": "EEEEEE",
+  "type": "Glitter"
+ },
+ {
+  "id": 102,
+  "name": "Glitter Trans-Purple",
+  "rgb": "3A2B82",
+  "type": "Glitter"
+ },
+ {
+  "id": 103,
+  "name": "Bright Light Yellow",
+  "rgb": "FCEB82",
+  "type": "Solid"
+ },
+ {
+  "id": 104,
+  "name": "Bright Pink",
+  "rgb": "FCB1DB",
+  "type": "Solid"
+ },
+ {
+  "id": 105,
+  "name": "Bright Light Blue",
+  "rgb": "B5D6FF",
+  "type": "Solid"
+ },
+ {
+  "id": 106,
+  "name": "Fabuland Brown",
+  "rgb": "BE744E",
+  "type": "Solid"
+ },
+ {
+  "id": 107,
+  "name": "Trans-Pink",
+  "rgb": "FF8298",
+  "type": "Transparent"
+ },
+ {
+  "id": 108,
+  "name": "Trans-Bright Green",
+  "rgb": "10Cb31",
+  "type": "Transparent"
+ },
+ {
+  "id": 109,
+  "name": "Dark Royal Blue",
+  "rgb": "2032B0",
+  "type": "Solid"
+ },
+ {
+  "id": 110,
+  "name": "Bright Light Orange",
+  "rgb": "FDBF0E",
+  "type": "Solid"
+ },
+ {
+  "id": 111,
+  "name": "Speckle Silver",
+  "rgb": "7C7E7C",
+  "type": "Speckle"
+ },
+ {
+  "id": 113,
+  "name": "Trans-Aqua",
+  "rgb": "B7C8BF",
+  "type": "Transparent"
+ },
+ {
+  "id": 114,
+  "name": "Trans-Light Purple",
+  "rgb": "B97AB1",
+  "type": "Transparent"
+ },
+ {
+  "id": 115,
+  "name": "Pearl Gold",
+  "rgb": "E79E1D",
+  "type": "Pearl"
+ },
+ {
+  "id": 116,
+  "name": "Speckle Copper",
+  "rgb": "5F4E47",
+  "type": "Speckle"
+ },
+ {
+  "id": 117,
+  "name": "Speckle DBGray-Silver",
+  "rgb": "4A6363",
+  "type": "Speckle"
+ },
+ {
+  "id": 118,
+  "name": "Glow In Dark Trans",
+  "rgb": "bdc6ad",
+  "type": "Milky"
+ },
+ {
+  "id": 119,
+  "name": "Pearl Very Light Gray",
+  "rgb": "D4D2CD",
+  "type": "Pearl"
+ },
+ {
+  "id": 120,
+  "name": "Dark Brown",
+  "rgb": "50372F",
+  "type": "Solid"
+ },
+ {
+  "id": 121,
+  "name": "Trans-Neon Yellow",
+  "rgb": "FFD700",
+  "type": "Transparent"
+ },
+ {
+  "id": 122,
+  "name": "Chrome Black",
+  "rgb": "544E4F",
+  "type": "Chrome"
+ },
+ {
+  "id": 123,
+  "name": "Mx White",
+  "rgb": "F2EDE5",
+  "type": "Modulex"
+ },
+ {
+  "id": 124,
+  "name": "Mx Light Bluish Gray",
+  "rgb": "BDBDB8",
+  "type": "Modulex"
+ },
+ {
+  "id": 125,
+  "name": "Mx Light Gray",
+  "rgb": "C6C8C3",
+  "type": "Modulex"
+ },
+ {
+  "id": 126,
+  "name": "Mx Charcoal Gray",
+  "rgb": "534E4A",
+  "type": "Modulex"
+ },
+ {
+  "id": 127,
+  "name": "Mx Tile Gray",
+  "rgb": "A19A8F",
+  "type": "Modulex"
+ },
+ {
+  "id": 128,
+  "name": "Mx Black",
+  "rgb": "322D29",
+  "type": "Modulex"
+ },
+ {
+  "id": 129,
+  "name": "Mx Red",
+  "rgb": "E04F32",
+  "type": "Modulex"
+ },
+ {
+  "id": 130,
+  "name": "Mx Pink Red",
+  "rgb": "FB9392",
+  "type": "Modulex"
+ },
+ {
+  "id": 131,
+  "name": "Mx Tile Brown",
+  "rgb": "5A4238",
+  "type": "Modulex"
+ },
+ {
+  "id": 132,
+  "name": "Mx Brown",
+  "rgb": "9C7C4F",
+  "type": "Modulex"
+ },
+ {
+  "id": 133,
+  "name": "Mx Buff",
+  "rgb": "EED9A4",
+  "type": "Modulex"
+ },
+ {
+  "id": 134,
+  "name": "Mx Terracotta",
+  "rgb": "B66A4B",
+  "type": "Modulex"
+ },
+ {
+  "id": 135,
+  "name": "Mx Orange",
+  "rgb": "F58D26",
+  "type": "Modulex"
+ },
+ {
+  "id": 136,
+  "name": "Mx Light Orange",
+  "rgb": "FFB647",
+  "type": "Modulex"
+ },
+ {
+  "id": 137,
+  "name": "Mx Light Yellow",
+  "rgb": "F8E469",
+  "type": "Modulex"
+ },
+ {
+  "id": 138,
+  "name": "Mx Ochre Yellow",
+  "rgb": "E5C230",
+  "type": "Modulex"
+ },
+ {
+  "id": 139,
+  "name": "Mx Lemon",
+  "rgb": "F1E145",
+  "type": "Modulex"
+ },
+ {
+  "id": 140,
+  "name": "Mx Olive Green",
+  "rgb": "8FA05A",
+  "type": "Modulex"
+ },
+ {
+  "id": 141,
+  "name": "Mx Pastel Green",
+  "rgb": "B1D52C",
+  "type": "Modulex"
+ },
+ {
+  "id": 142,
+  "name": "Mx Aqua Green",
+  "rgb": "75DBB6",
+  "type": "Modulex"
+ },
+ {
+  "id": 143,
+  "name": "Mx Tile Blue",
+  "rgb": "0046A5",
+  "type": "Modulex"
+ },
+ {
+  "id": 144,
+  "name": "Mx Medium Blue",
+  "rgb": "75A2CC",
+  "type": "Modulex"
+ },
+ {
+  "id": 145,
+  "name": "Mx Pastel Blue",
+  "rgb": "7DC1D8",
+  "type": "Modulex"
+ },
+ {
+  "id": 146,
+  "name": "Mx Teal Blue",
+  "rgb": "4C7D89",
+  "type": "Modulex"
+ },
+ {
+  "id": 147,
+  "name": "Mx Violet",
+  "rgb": "BE9BC5",
+  "type": "Modulex"
+ },
+ {
+  "id": 148,
+  "name": "Mx Pink",
+  "rgb": "EDA1AE",
+  "type": "Modulex"
+ },
+ {
+  "id": 149,
+  "name": "Mx Clear",
+  "rgb": "EEEEEE",
+  "type": "Modulex"
+ },
+ {
+  "id": 150,
+  "name": "Medium Nougat",
+  "rgb": "D59459",
+  "type": "Solid"
+ },
+ {
+  "id": 151,
+  "name": "Speckle Gold",
+  "rgb": "AB9421",
+  "type": "Speckle"
+ },
+ {
+  "id": 152,
+  "name": "Light Aqua",
+  "rgb": "C0F4E7",
+  "type": "Solid"
+ },
+ {
+  "id": 153,
+  "name": "Dark Azure",
+  "rgb": "38AEEB",
+  "type": "Solid"
+ },
+ {
+  "id": 154,
+  "name": "Lavender",
+  "rgb": "D0B8ED",
+  "type": "Solid"
+ },
+ {
+  "id": 155,
+  "name": "Olive Green",
+  "rgb": "A9A45A",
+  "type": "Solid"
+ },
+ {
+  "id": 156,
+  "name": "Medium Azure",
+  "rgb": "70DCF3",
+  "type": "Solid"
+ },
+ {
+  "id": 157,
+  "name": "Medium Lavender",
+  "rgb": "C38BD4",
+  "type": "Solid"
+ },
+ {
+  "id": 158,
+  "name": "Yellowish Green",
+  "rgb": "DBED94",
+  "type": "Solid"
+ },
+ {
+  "id": 159,
+  "name": "Glow In Dark White",
+  "rgb": "ECECDD",
+  "type": "Milky"
+ },
+ {
+  "id": 160,
+  "name": "Fabuland Orange",
+  "rgb": "EF9121",
+  "type": "Solid"
+ },
+ {
+  "id": 161,
+  "name": "Dark Yellow",
+  "rgb": "DD982E",
+  "type": "Solid"
+ },
+ {
+  "id": 162,
+  "name": "Glitter Trans-Light Blue",
+  "rgb": "68BCC5",
+  "type": "Glitter"
+ },
+ {
+  "id": 163,
+  "name": "Glitter Trans-Neon Green",
+  "rgb": "C0F500",
+  "type": "Glitter"
+ },
+ {
+  "id": 164,
+  "name": "Trans-Light Orange",
+  "rgb": "E99A3A",
+  "type": "Transparent"
+ },
+ {
+  "id": 165,
+  "name": "Neon Orange",
+  "rgb": "FA5947",
+  "type": "Solid"
+ },
+ {
+  "id": 166,
+  "name": "Neon Green",
+  "rgb": "DBF355",
+  "type": "Solid"
+ },
+ {
+  "id": 167,
+  "name": "Reddish Orange",
+  "rgb": "FF5500",
+  "type": "Solid"
+ },
+ {
+  "id": 168,
+  "name": "Umber",
+  "rgb": "5B3E2E",
+  "type": "Solid"
+ },
+ {
+  "id": 169,
+  "name": "Sienna",
+  "rgb": "D5712E",
+  "type": "Solid"
+ },
+ {
+  "id": 170,
+  "name": "Satin Trans-Yellow",
+  "rgb": "EBF72D",
+  "type": "Satin"
+ },
+ {
+  "id": 171,
+  "name": "Lemon",
+  "rgb": "EDDC44",
+  "type": "Solid"
+ },
+ {
+  "id": 172,
+  "name": "Warm Yellowish Orange",
+  "rgb": "FFD788",
+  "type": "Solid"
+ },
+ {
+  "id": 173,
+  "name": "Ochre Yellow",
+  "rgb": "EBB957",
+  "type": "Solid"
+ },
+ {
+  "id": 174,
+  "name": "Blue Violet",
+  "rgb": "8A7FDD",
+  "type": "Solid"
+ },
+ {
+  "id": 175,
+  "name": "Warm Pink",
+  "rgb": "FFBAB7",
+  "type": "Solid"
+ },
+ {
+  "id": 176,
+  "name": "Mx Foil Black",
+  "rgb": "322D29",
+  "type": "Modulex"
+ },
+ {
+  "id": 210,
+  "name": "Mx Foil Dark Gray",
+  "rgb": "948F84",
+  "type": "Modulex"
+ },
+ {
+  "id": 211,
+  "name": "Mx Foil Light Gray",
+  "rgb": "D1CDBD",
+  "type": "Modulex"
+ },
+ {
+  "id": 212,
+  "name": "Mx Foil Dark Green",
+  "rgb": "5E734E",
+  "type": "Modulex"
+ },
+ {
+  "id": 213,
+  "name": "Mx Foil Light Green",
+  "rgb": "B3C068",
+  "type": "Modulex"
+ },
+ {
+  "id": 214,
+  "name": "Mx Foil Dark Blue",
+  "rgb": "4B8AA4",
+  "type": "Modulex"
+ },
+ {
+  "id": 215,
+  "name": "Mx Foil Light Blue",
+  "rgb": "83A7A9",
+  "type": "Modulex"
+ },
+ {
+  "id": 216,
+  "name": "Mx Foil Violet",
+  "rgb": "8B6E82",
+  "type": "Modulex"
+ },
+ {
+  "id": 217,
+  "name": "Mx Foil Red",
+  "rgb": "BB5D51",
+  "type": "Modulex"
+ },
+ {
+  "id": 218,
+  "name": "Mx Foil Yellow",
+  "rgb": "FFEE77",
+  "type": "Modulex"
+ },
+ {
+  "id": 219,
+  "name": "Mx Foil Orange",
+  "rgb": "FB9D2B",
+  "type": "Modulex"
+ },
+ {
+  "id": 220,
+  "name": "Coral",
+  "rgb": "FF765C",
+  "type": "Solid"
+ },
+ {
+  "id": 221,
+  "name": "Trans-Light Green",
+  "rgb": "94E5AB",
+  "type": "Transparent"
+ },
+ {
+  "id": 222,
+  "name": "Glitter Trans-Orange",
+  "rgb": "D04010",
+  "type": "Glitter"
+ },
+ {
+  "id": 223,
+  "name": "Satin Trans-Light Blue",
+  "rgb": "68BCC5",
+  "type": "Satin"
+ },
+ {
+  "id": 224,
+  "name": "Satin Trans-Dark Pink",
+  "rgb": "CE1d9b",
+  "type": "Satin"
+ },
+ {
+  "id": 225,
+  "name": "Dark Nougat",
+  "rgb": "CA6F2D",
+  "type": "Solid"
+ },
+ {
+  "id": 226,
+  "name": "Trans-Light Bright Green",
+  "rgb": "71EB54",
+  "type": "Transparent"
+ },
+ {
+  "id": 227,
+  "name": "Clikits Lavender",
+  "rgb": "E0AAD9",
+  "type": "Solid"
+ },
+ {
+  "id": 228,
+  "name": "Satin Trans-Clear",
+  "rgb": "EEEEEE",
+  "type": "Satin"
+ },
+ {
+  "id": 229,
+  "name": "Satin Trans-Brown",
+  "rgb": "939484",
+  "type": "Satin"
+ },
+ {
+  "id": 230,
+  "name": "Satin Trans-Purple",
+  "rgb": "8320B7",
+  "type": "Satin"
+ },
+ {
+  "id": 231,
+  "name": "Dark Salmon",
+  "rgb": "FF6326",
+  "type": "Solid"
+ },
+ {
+  "id": 232,
+  "name": "Satin Trans-Dark Blue",
+  "rgb": "1552e2",
+  "type": "Satin"
+ },
+ {
+  "id": 233,
+  "name": "Satin Trans-Bright Green",
+  "rgb": "7fe15b",
+  "type": "Satin"
+ },
+ {
+  "id": 234,
+  "name": "Trans-Medium Purple",
+  "rgb": "9C41B6",
+  "type": "Transparent"
+ },
+ {
+  "id": 235,
+  "name": "Reddish Gold",
+  "rgb": "E7891B",
+  "type": "Pearl"
+ },
+ {
+  "id": 236,
+  "name": "Neon Yellow",
+  "rgb": "F3F304",
+  "type": "Solid"
+ },
+ {
+  "id": 237,
+  "name": "Bionicle Copper",
+  "rgb": "985750",
+  "type": "Pearl"
+ },
+ {
+  "id": 238,
+  "name": "Bionicle Gold",
+  "rgb": "B9752F",
+  "type": "Pearl"
+ },
+ {
+  "id": 239,
+  "name": "Bionicle Silver",
+  "rgb": "A59287",
+  "type": "Pearl"
+ },
+ {
+  "id": 240,
+  "name": "Medium Brown",
+  "rgb": "9B7056",
+  "type": "Solid"
+ },
+ {
+  "id": 241,
+  "name": "Medium Tan",
+  "rgb": "FBC685",
+  "type": "Solid"
+ },
+ {
+  "id": 242,
+  "name": "Dark Olive Green",
+  "rgb": "76753F",
+  "type": "Solid"
+ },
+ {
+  "id": 243,
+  "name": "Pearl Sand Purple",
+  "rgb": "B5A1BA",
+  "type": "Pearl"
+ },
+ {
+  "id": 244,
+  "name": "Pearl Black",
+  "rgb": "282725",
+  "type": "Pearl"
+ },
+ {
+  "id": 245,
+  "name": "Lilac",
+  "rgb": "8570DD",
+  "type": "Solid"
+ },
+ {
+  "id": 246,
+  "name": "Light Lilac",
+  "rgb": "CDCCEE",
+  "type": "Solid"
+ },
+ {
+  "id": 247,
+  "name": "Little Robots Blue",
+  "rgb": "5DBFE4",
+  "type": "Solid"
+ },
+ {
+  "id": 248,
+  "name": "Fabuland Lime",
+  "rgb": "ADD237",
+  "type": "Solid"
+ },
+ {
+  "id": 249,
+  "name": "Reddish Copper",
+  "rgb": "D06926",
+  "type": "Pearl"
+ },
+ {
+  "id": 250,
+  "name": "Metallic Copper",
+  "rgb": "C58259",
+  "type": "Metallic"
+ },
+ {
+  "id": 251,
+  "name": "Trans-Black",
+  "rgb": "777777",
+  "type": "Transparent"
+ },
+ {
+  "id": 252,
+  "name": "Pearl Red",
+  "rgb": "E54952",
+  "type": "Pearl"
+ },
+ {
+  "id": 253,
+  "name": "Pearl Green",
+  "rgb": "13A452",
+  "type": "Pearl"
+ },
+ {
+  "id": 254,
+  "name": "Pearl Blue",
+  "rgb": "3977C7",
+  "type": "Pearl"
+ },
+ {
+  "id": 255,
+  "name": "Pearl Brown",
+  "rgb": "815542",
+  "type": "Pearl"
+ }
+]

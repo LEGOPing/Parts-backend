@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>清除缓存</title></head>
+<body style="font-family:-apple-system;padding:40px;background:#1a237e;color:white;text-align:center;">
+<h2>🧹 清除 Service Worker 缓存</h2>
+<pre id="log" style="background:#000;color:#0f0;padding:20px;text-align:left;white-space:pre-wrap;border-radius:8px;"></pre>
+<button onclick="doClear()" style="padding:14px 28px;font-size:18px;background:#e53935;color:white;border:none;border-radius:8px;margin-top:20px;">点我清除</button>
+<script>
+async function doClear() {
+  const log = document.getElementById('log');
+  log.textContent = '开始清除...\n';
+  
+  // 1. Unregister 所有 SW
+  const regs = await navigator.serviceWorker.getRegistrations();
+  log.textContent += `发现 ${regs.length} 个 SW 注册\n`;
+  for (const r of regs) {
+    await r.unregister();
+    log.textContent += `  ✅ 已注销 ${r.scope}\n`;
+  }
+  
+  // 2. 清所有 CacheStorage
+  const keys = await caches.keys();
+  log.textContent += `发现 ${keys.length} 个缓存\n`;
+  for (const k of keys) {
+    await caches.delete(k);
+    log.textContent += `  ✅ 已删除 ${k}\n`;
+  }
+  
+  log.textContent += '\n🎉 清除完成！3 秒后自动刷新到主页面...';
+  setTimeout(() => window.location.href = './index.html', 3000);
+}
+</script>
+</body></html>
