@@ -1,94 +1,120 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+#coding: utf-8
 """
-乐高套装零件清单生成器（Pythonista / iPhone）
-==============================================
-在 BrickLink 查询指定套装的零件清单，批量获取每个零件的重量和 Qty Avg Price，
-最后导出一份 CSV 清单。
+bl_inventory_csv.py — 在 Pythonista 里抓 BrickLink 套装零件清单（重量 + Qty Avg Price）
 
-为什么不用 API：
-  BrickLink 的 catalogItemInv.asp / catalogPG.asp 位于 AWS WAF 之后，
-  非浏览器请求会返回 HTTP 202 + JS 挑战页。本脚本使用 Pythonista
-  的 ui.WebView（iOS WKWebView 内核）真实加载页面，自动通过挑战。
+核心反爬策略（来自 BLP.py / wkwebview.py 的验证经验）：
+  1) 用 wkwebview.WKWebView（objc_util 封装的真 WKWebView）—— 走 iPhone Safari 内核过 AWS-WAF 挑战
+  2) 注入反自动化脚本：navigator.webdriver→undefined + window.chrome
+  3) 设置真实 Safari UA（iPhone iOS 17）
+  4) 用 Navigation delegate 信号 + anchor JS 双保险判断"真内容到达"
+  5) 完整拦截标记检测（aws-waf-token / Just a moment / Attention Required / Access Denied / CAPTCHA）
+     —— 发现就提前退出，避免空等 60s
+  6) 套装号自动 fallback：60011 → 60011-1 → 60011（如果用户带了后缀）
+
+依赖：同目录下必须有 wkwebview.py（Gitee 上 parts-rb/main 已有）
 
 用法（在 Pythonista 里）：
-  1. 把本脚本放到 Pythonista 的 Scripts 目录
-  2. 运行，输入套装型号（如 75290-1 或 75290）
-  3. 等待进度条走完 → 生成的 CSV 在 Pythonista 文档目录
+  直接运行，输入套装号，比如 60011
+  CSV 输出到 ~/Documents/BL_{set}_{ts}.csv
 """
 
-import csv
 import json
 import os
+import queue
 import re
 import sys
 import time
 from datetime import datetime
 
-import ui
+try:
+    from wkwebview import WKWebView
+except ImportError:
+    # 给个明确的错误提示，别让 Pythonista 报一串看不懂的堆栈
+    print("""
+❌ 缺少依赖 wkwebview.py
 
-# ---------- BrickLink URL 模板 ----------
+请把 wkwebview.py 下载到和本脚本同一个目录（~/Documents/套装零件清单/）：
+  https://gitee.com/legoping/parts-rb/raw/main/wkwebview.py
+""")
+    sys.exit(1)
+
+
+# ============================================================
+# BrickLink URL 模板
+# ============================================================
 # viewID=Y 显示完整列（含 Inv ID），v=0 控制排序/视图版本
-# rpp=500 每页条数（大套装可能需要调更大，但 BrickLink 上限似乎在 1000 左右）
+# rpp=500 每页条数（BrickLink 上限似乎在 1000 左右）
 INV_URL = "https://www.bricklink.com/catalogItemInv.asp?S={set_no}&v=0&viewID=Y&rpp=500"
 PART_URL = "https://www.bricklink.com/v2/catalog/catalogitem.page?P={part}"
 PG_URL = "https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color_id}"
 
-# catalogItemInv 页专用 anchor — 必须至少有一个 Item No 链接出现才算真实加载成功
-# （AWS WAF 挑战页本身 readyState=complete 但没有任何零件链接）
-JS_INV_ANCHOR = (
+# iPhone Safari UA（真实的 iOS 17）
+SAFARI_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+             "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+             "Mobile/15E148 Safari/604.1")
+
+# 反 webdriver 注入脚本（每次页面加载都会注入）
+ANTI_WEBDRIVER_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+window.chrome = window.chrome || { runtime: {}, loadTimes: function(){}, csi: function(){}};
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en', 'zh-CN']});
+Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+"""
+
+# ---- 拦截标记：一旦出现在 html 里就说明被 WAF 挡了 ----
+BLOCKED_MARKERS = (
+    "aws-waf-token",        # AWS WAF 挑战没通过
+    "Just a moment...",     # Cloudflare 风格
+    "Attention Required",   # 另一款 WAF
+    "Access Denied",        # 直接拒绝
+    "Sorry, you have been blocked",  # 明确封号
+    "CAPTCHA",              # 验证码
+    "Robot Check",          # 机器人检查
+)
+
+# ---- Anchor JS ---- 必须至少有一个命中才算"真内容到了" ----
+INV_ANCHOR_JS = (
     "document.querySelectorAll("
     "'a[href*=\"catalogitem.page?P=\"], a[href*=\"catalogItemPic.asp?P=\"]'"
     ").length >= 1"
 )
-
-# ---------- 全局状态 ----------
-g_set_no = ""
-g_inventory = []      # [{part, color_id, qty, color_name, description}, ...]
-g_results = []         # 最终输出行
-g_weight_cache = {}    # part → weight（跨套装复用）
-g_done = False         # 主流程完成标志
-g_last_error = None
+PART_WEIGHT_ANCHOR_JS = (
+    "document.getElementById('item-weight-info') !== null || "
+    "document.body.innerHTML.indexOf('Weight:') >= 0"
+)
+PRICE_ANCHOR_JS = (
+    "document.body.innerHTML.indexOf('Last 6 Months Sales') >= 0"
+)
 
 
 # ============================================================
 # JS 提取函数（全部在 BrickLink 页面内执行）
 # ============================================================
 
-# --- 从 inventory 页面提取零件列表（改进版） ---
 JS_EXTRACT_INVENTORY = r"""
 (() => {
   var rows = [];
   var seen = new Set();
 
-  // === 策略 A：遍历所有行，按 Item No 链接定位 ===
-  // BrickLink inventory 的每行里，"Item No" 列一定包含一个指向 catalogitem.page 的 <a>
-  // 这是最可靠的锚点。从这个 <a> 的所在行我们可以同时拿到 Qty / 描述 / 颜色
   var trs = document.querySelectorAll('table tr');
   for (var i = 0; i < trs.length; i++) {
     var tr = trs[i];
-    // Item No 链接有两种常见形式：
-    //   v2 新版:  <a href="/v2/catalog/catalogitem.page?P=3001&colorID=7">3001</a>
-    //   旧版:    <a href="/catalogItemPic.asp?P=3001&colorID=7">...</a>
     var partLink = tr.querySelector(
       'a[href*="catalogitem.page?P="], a[href*="catalogItemPic.asp?P="]'
     );
     if (!partLink) continue;
 
     var href = partLink.getAttribute('href') || '';
-    // 提零件号（P= 后面的字母数字）
     var pm = href.match(/[?&]P=([A-Za-z0-9]+)/);
     if (!pm) continue;
     var partText = pm[1];
 
-    // === 颜色 ID ===
-    // 优先：从零件链接的 colorID 参数
+    // 颜色 ID
     var colorId = '';
     var cm = href.match(/[?&]colorID=(-?\d+)/i);
     if (cm) {
       colorId = cm[1];
     } else {
-      // 回退：看这个 <tr> 里有没有带 colorID 的其他链接
       var colorLink = tr.querySelector('a[href*="colorID="]');
       if (colorLink) {
         var ch = colorLink.getAttribute('href') || '';
@@ -97,38 +123,28 @@ JS_EXTRACT_INVENTORY = r"""
       }
     }
 
-    // === Qty ===
-    // 方法 1：找 tr 里最独立的整数 <td>（排除 Item No 和 Inv ID 短数字）
+    // Qty：取同 tr 里最大的纯数字 td
     var qty = 1;
     var trTds = tr.querySelectorAll('td');
-    // 根据 BrickLink 列顺序，viewID=Y 时：Inv ID | Image | Qty | Item No | Description | MID
-    // 所以 Qty 通常是第 3 个 td（index 2）。但不要硬编码。
-    // 找所有纯数字 td，排除明显的零件号和 ID
     var candidates = [];
     for (var c = 0; c < trTds.length; c++) {
       var tdTxt = (trTds[c].textContent || '').trim();
-      // 尝试 "1,234" 或 "1" 格式
       var qm = tdTxt.match(/^([\d,]+)$/);
       if (!qm) continue;
       var n = parseInt(qm[1].replace(/,/g, ''));
       if (isNaN(n) || n <= 0 || n > 50000) continue;
-      // 排除：等于 partText
       if (tdTxt === partText) continue;
-      // 排除：太小（Inv ID 通常是 1-3 位，Qty 通常是 1+ 但也可能 1...）
-      candidates.push({td: trTds[c], val: n});
+      candidates.push(n);
     }
-    // 如果找到多个，取值最大的那个（Qty 通常比 Inv ID 大）
     if (candidates.length > 0) {
-      candidates.sort(function(a, b) { return b.val - a.val; });
-      qty = candidates[0].val;
+      candidates.sort(function(a, b) { return b - a; });
+      qty = candidates[0];
     }
 
-    // === 描述 ===
+    // 描述
     var desc = '';
-    // Item No 链接所在 td 经常包含描述作为另一个 <a> 或文本
     var itemNoTd = partLink.closest('td');
     if (itemNoTd) {
-      // 收集同 td 里除零件号链接外的其他 <a> 文本和纯文本节点
       var allLinks = itemNoTd.querySelectorAll('a');
       for (var l = 0; l < allLinks.length; l++) {
         var at = (allLinks[l].textContent || '').trim();
@@ -143,10 +159,8 @@ JS_EXTRACT_INVENTORY = r"""
     }
     if (desc.length > 100) desc = desc.substring(0, 100);
 
-    // 去重 + 汇总 Qty（如果同 part+color 出现多次）
     var key = partText + '|' + colorId;
     if (seen.has(key)) {
-      // 已存在，累加 qty
       for (var r = 0; r < rows.length; r++) {
         if (rows[r].part === partText && rows[r].color_id === colorId) {
           rows[r].qty += qty;
@@ -166,41 +180,22 @@ JS_EXTRACT_INVENTORY = r"""
     });
   }
 
-  // === 策略 B：如果策略 A 没抓到，全文正则兜底 ===
-  if (rows.length === 0) {
-    var html = document.body.innerHTML;
-    var partRe = /catalogitem\.page\?P=([A-Za-z0-9]+)[^"]*?(?:colorID=(-?\d+))?/gi;
-    var pm2;
-    while ((pm2 = partRe.exec(html)) !== null) {
-      var pt = pm2[1];
-      var ci = pm2[2] || '-1';
-      var k = pt + '|' + ci;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      rows.push({part: pt, color_id: ci, qty: 1, color_name: '', description: ''});
-    }
-  }
-
   return JSON.stringify(rows);
 })();
 """
 
 
-# --- 从零件详情页提取重量 ---
 JS_EXTRACT_WEIGHT = r"""
 (() => {
-  // 优先：精确 id 选择器（已验证的结构）
   var el = document.getElementById('item-weight-info');
   if (el) {
     var m = el.textContent.match(/([\d.]+)\s*g/i);
     if (m) return m[1];
   }
-  // 回退：搜索全文 "Weight: X.Xg"
   var html = document.body.innerHTML;
   var idx = html.search(/Weight[：:]\s*([\d.]+)\s*g/i);
   if (idx >= 0) {
-    var seg = html.substring(idx, idx + 50);
-    var m2 = seg.match(/([\d.]+)\s*g/i);
+    var m2 = html.substring(idx).match(/([\d.]+)\s*g/i);
     if (m2) return m2[1];
   }
   return '';
@@ -208,113 +203,217 @@ JS_EXTRACT_WEIGHT = r"""
 """
 
 
-# --- 从价格指南页提取 Qty Avg Price ---
 JS_EXTRACT_PRICE = r"""
 (() => {
   var h = document.body.innerHTML;
-  // 找 "Qty Avg Price:" 所在行，取 <b> 标签里的币种+数值
-  // 结构：<td>Qty Avg Price:</td><td><b>CNY&nbsp;0.71</b></td>
-  var re = /Qty Avg Price:<\/td>\s*<td[^>]*><b>([A-Z]{2,3})?(?:\s|&nbsp;|\u00a0)*([\d,]+\.\d+)<\/b>/gi;
-  var matches = [];
+  var re = /<td>(Min Price|Qty Avg Price|Avg Price|Max Price):<\/td>\s*<td[^>]*><b>([A-Z]{2,3})?(?:\s|&nbsp;|\u00a0)*([\d,]+\.\d+)<\/b>/gi;
+  var cells = {min: [], avg: [], qty_avg: [], max: []};
+  var gmap = {'min price': 'min', 'avg price': 'avg', 'qty avg price': 'qty_avg', 'max price': 'max'};
   var m;
   while ((m = re.exec(h)) !== null) {
-    matches.push({
-      currency: (m[1] || '').toUpperCase(),
-      value: parseFloat(m[2].replace(/,/g, ''))
-    });
+    var k = gmap[(m[1] || '').toLowerCase()];
+    if (!k) continue;
+    var val = parseFloat((m[3] || '0').replace(/,/g, ''));
+    cells[k].push({currency: (m[2] || '').toUpperCase(), val: val});
   }
-  // matches[0] = Last 6 Months / New; matches[1] = Last6/Used; matches[2] = Current/New; matches[3] = Current/Used
-  // 我们取 matches[2]（Current New），如果不够长就取 matches[0]（Last 6 Months New）
-  var target = null;
-  if (matches.length > 2) target = matches[2];
-  else if (matches.length > 0) target = matches[0];
-  if (!target) return JSON.stringify({currency: '', qty_avg: null});
-  return JSON.stringify({currency: target.currency, qty_avg: target.value});
+  function col(idx) {
+    return {
+      currency: cells.avg[idx] ? cells.avg[idx].currency
+               : cells.min[idx] ? cells.min[idx].currency
+               : cells.qty_avg[idx] ? cells.qty_avg[idx].currency
+               : '',
+      min:      cells.min[idx] ? cells.min[idx].val : null,
+      avg:      cells.avg[idx] ? cells.avg[idx].val : null,
+      qty_avg:  cells.qty_avg[idx] ? cells.qty_avg[idx].val : null,
+      max:      cells.max[idx] ? cells.max[idx].val : null,
+    };
+  }
+  var result = {
+    last_6_months:    cells.avg[0] || cells.qty_avg[0] || cells.min[0] ? col(0) : null,
+    last_6_months_used: cells.avg[1] ? col(1) : null,
+    current_for_sale: cells.avg[2] || cells.qty_avg[2] || cells.min[2] ? col(2) : null,
+    current_for_sale_used: cells.avg[3] ? col(3) : null,
+  };
+  return JSON.stringify(result);
 })();
 """
 
 
+JS_HTML_SNIPPET = 'document.body.innerHTML.substring(0, 2000)'
+JS_HTML_LEN = 'document.body.innerHTML.length'
+JS_TITLE = 'document.title'
+JS_HAS_BLOCKED = (
+    'function(){ var h=document.body.innerHTML;'
+    'var ms=["aws-waf-token","Just a moment","Attention Required",'
+    '"Access Denied","Sorry, you have been blocked","CAPTCHA","Robot Check"];'
+    'for(var i=0;i<ms.length;i++) if(h.indexOf(ms[i])>=0) return ms[i];'
+    'return ""; }()'
+)
+
+
 # ============================================================
-# 核心：WebView 驱动的浏览器抓取
+# 全局状态
 # ============================================================
+g_set_no = ""
+g_inventory = []
+g_results = []
+g_weight_cache = {}
+
+
+# ============================================================
+# BLBrowser —— 基于 wkwebview.WKWebView 的浏览器驱动
+# ============================================================
+
+class _BLDelegate:
+    """Navigation delegate —— 通过 objc 回调告诉 Python 页面事件。"""
+    def __init__(self, br):
+        self.br = br
+
+    def webview_did_finish_load(self, webview):
+        self.br._sig_load_finished.set()
+
+    def webview_did_fail_load(self, webview, error_code, error_msg):
+        self.br._sig_load_error.set()
+        self.br._last_error = f"WKWebView error {error_code}: {error_msg}"
+
+    def webview_should_start_load(self, webview, url, nav_type):
+        return True
+
 
 class BLBrowser:
-    """包装一个 ui.WebView，提供"加载-等待-提取"的同步式接口。"""
-
     def __init__(self, progress_cb=None):
-        self.view = ui.WebView()
-        self.view.loading = False
+        import threading
         self.progress_cb = progress_cb or (lambda msg: None)
-        # 在一个隐藏的容器里创建 WebView（Pythonista 的 WebView 必须在窗口层级才能跑 WKWebView）
+        self._sig_load_finished = threading.Event()
+        self._sig_load_error = threading.Event()
+        self._last_error = None
+
+        # 建容器 View
+        import ui
         self.container = ui.View()
-        self.container.add_subview(self.view)
         w, h = ui.get_screen_size()
         self.container.frame = (0, 0, w, h)
-        self.view.frame = self.container.bounds
-        self.view.flex = 'WH'
+
+        # 创建 WKWebView（objc 层）
+        self.wv = WKWebView(frame=self.container.bounds, flex='WH')
+        self.wv.delegate = _BLDelegate(self)
+        self.container.add_subview(self.wv)
+
+        # 注入反自动化脚本（每次页面加载都会注入）
+        self.wv.add_script(ANTI_WEBDRIVER_JS, add_to_end=False)
+
+        # 设置 Safari UA
+        self.wv.user_agent = SAFARI_UA
 
     def show(self):
-        """显示浏览器窗口（必须显示才能触发 WKWebView 真实加载）。"""
         self.container.present('fullscreen', hide_title_bar=False)
 
-    def _wait_load(self, timeout=30, anchor_js=None, anchor_timeout=15):
-        """
-        等待 WebView 完成加载 + WAF 挑战。
+    def eval_js(self, js, timeout=10):
+        """同步 eval_js（wkwebview.py 已用 queue 做了同步封装）。"""
+        return self.wv.eval_js(js)
 
-        AWS WAF 挑战页本身 HTML 极简（<2KB），document.readyState 秒变 'complete'，
-        但此时真正的 BrickLink 页面还没渲染——必须等 anchor_js 成立才可信。
+    def _detect_blocked(self):
+        """检测当前页面是否被 WAF/反爬拦截。返回拦截标记字符串（空 = 没被挡）。"""
+        try:
+            marker = self.eval_js(JS_HAS_BLOCKED)
+            if marker and isinstance(marker, str) and len(marker) > 0:
+                return marker
+        except Exception:
+            pass
+        return ''
 
-        anchor_js: 反复执行直到返回真值的 JS（必填！尤其 catalogItemInv 页）。
-        """
+    def _poll_anchor(self, anchor_js, timeout=45, label='anchor'):
+        """反复执行 anchor_js，直到返回真值或超时。同时检测拦截标记。"""
+        import threading
         t0 = time.time()
-        # 1) 等 readyState complete（只是第一道门，挑战页也算 complete）
         while time.time() - t0 < timeout:
+            # 先查拦截标记
+            blocked = self._detect_blocked()
+            if blocked:
+                self.progress_cb(f'  ⚠️  命中拦截标记: {blocked}')
+                return False
+            # 再查 anchor
             try:
-                ready = self.view.evaluate_javascript('document.readyState')
-                if ready == 'complete':
-                    break
+                r = self.eval_js(anchor_js)
+                if r:
+                    return True
             except Exception:
                 pass
-            time.sleep(0.3)
+            # 进度提示（每 10s 一次）
+            elapsed = int(time.time() - t0)
+            if elapsed > 0 and elapsed % 10 == 0 and elapsed != (timeout // 10) * 10:
+                self.progress_cb(f'  ⏳ 等待 {label} ... {elapsed}s')
+            time.sleep(1.0)
+        self.progress_cb(f'  ⏰ {label} 超时 ({timeout}s)')
+        return False
 
-        # 2) 轮询 anchor（真正的内容锚点）
-        #    注意：即使没传 anchor_js 也要额外睡一下给 WAF 留时间
-        t1 = time.time()
-        anchor_ok = False
+    def goto(self, url, anchor_js=None, anchor_timeout=45):
+        """
+        加载 URL 并等待"真内容到达"。
+        返回 True 表示 anchor 通过（或超时但没被拦截，由调用方判断）。
+        返回 False 表示明确被 WAF/拦截标记挡住，或 Navigation 出错。
+        """
+        self.progress_cb('→ 加载 ' + url[:90])
+
+        import threading
+        self._sig_load_finished.clear()
+        self._sig_load_error.clear()
+        self._last_error = None
+
+        self.wv.load_url(url)
+
+        # 1) 等 Navigation delegate 信号（最多 30s）
+        self.progress_cb('  ⏳ 等 WKWebView 加载完成...')
+        finished = self._sig_load_finished.wait(timeout=30)
+        errored = self._sig_load_error.is_set()
+
+        if errored:
+            self.progress_cb(f'  ❌ WKWebView load 失败: {self._last_error}')
+            return False
+        if not finished:
+            self.progress_cb('  ⚠️  WKWebView 没回调 didFinish（可能超时），继续尝试 anchor 轮询...')
+
+        # 2) 再等 WAF 挑战脚本执行（挑战页 readyState complete 之后才是真挑战）
+        self.progress_cb('  ⏳ 等 WAF 挑战通过 + 页面渲染...')
+        time.sleep(2.0)
+
+        # 3) 拦截标记快速检测
+        blocked = self._detect_blocked()
+        if blocked:
+            self.progress_cb(f'  ⚠️  加载后立即检测到拦截标记: {blocked}')
+            return False
+
+        # 4) Anchor JS 轮询（确定真内容到达）
         if anchor_js:
-            # 每秒检查一次
-            while time.time() - t1 < anchor_timeout:
-                try:
-                    r = self.view.evaluate_javascript(anchor_js)
-                    if r:
-                        anchor_ok = True
-                        break
-                except Exception:
-                    pass
-                remaining = int(anchor_timeout - (time.time() - t1))
-                if remaining > 0 and remaining % 5 == 0:
-                    self.progress_cb(f'  ⏳ 等待页面加载 {remaining}s ...')
-                time.sleep(1.0)
+            ok = self._poll_anchor(anchor_js, timeout=anchor_timeout,
+                                   label='anchor')
+            if not ok:
+                # 即使 anchor 没到也别直接判失败——让调用方决定
+                # （inventory 页的 anchor 是 "Item No 链接 ≥ 1"，没到肯定有问题）
+                self.progress_cb('  ⚠️  anchor 未命中')
+                return False
         else:
-            # 无 anchor 的保守等待：挑战 + 渲染至少要 5s
-            time.sleep(5.0)
+            # 没传 anchor 的保守等
+            time.sleep(3.0)
+        return True
 
-        # 3) 最后留一点缓冲让 DOM 稳定
-        time.sleep(1.0)
-        return anchor_ok or True
-
-    def goto(self, url, anchor_js=None, timeout=30, anchor_timeout=15):
-        self.progress_cb('→ 加载 ' + url[:80])
-        self.view.load_url(url)
-        return self._wait_load(timeout=timeout, anchor_js=anchor_js,
-                               anchor_timeout=anchor_timeout)
-
-    def eval_js(self, js):
+    def dump_diagnostics(self):
+        print('\n  ── 诊断 ──')
         try:
-            return self.view.evaluate_javascript(js)
+            title = self.eval_js(JS_TITLE) or '(空)'
+            cur_url = self.eval_js('location.href') or '(空)'
+            html_len = self.eval_js(JS_HTML_LEN) or 0
+            blocked = self.eval_js(JS_HAS_BLOCKED) or '(无拦截)'
+            html_head = self.eval_js(JS_HTML_SNIPPET) or '(空 body)'
+            print(f'  标题          : {title}')
+            print(f'  当前 URL      : {cur_url[:120]}')
+            print(f'  HTML 长度     : {html_len}')
+            print(f'  拦截标记      : {blocked}')
+            print(f'  body 前 500字符:')
+            print(f'  {html_head[:500]}')
+            print(f'  ────────────\n')
         except Exception as e:
-            self.progress_cb('  JS 执行错误: ' + str(e)[:80])
-            return None
+            print(f'  (诊断失败: {e})')
 
 
 # ============================================================
@@ -325,58 +424,16 @@ def set_progress(text):
     print(text, flush=True)
 
 
-def extract_set_no_from_user_input(user_input):
-    """用户可能输入 75290 或 75290-1。保留用户原样输入，fallback 逻辑在 run() 里处理。"""
-    return (user_input or '').strip()
-
-
-def _dump_diagnostics(browser, label='诊断'):
-    """把当前 WebView 的状态打印出来，方便判断卡在哪一步。"""
-    print(f'\n  ── {label} ──')
-    try:
-        title = browser.eval_js('document.title') or '(空)'
-        cur_url = browser.eval_js('location.href') or '(空)'
-        ready = browser.eval_js('document.readyState') or '(空)'
-        table_cnt = browser.eval_js('document.querySelectorAll("table").length') or 0
-        tr_cnt = browser.eval_js('document.querySelectorAll("table tr").length') or 0
-        a_cnt = browser.eval_js('document.querySelectorAll("a").length') or 0
-        item_cnt = browser.eval_js(
-            'document.querySelectorAll('
-            'a[href*="catalogitem.page?P="], a[href*="catalogItemPic.asp?P="]'
-            ').length'
-        ) or 0
-        has_waf = browser.eval_js(
-            'document.body.innerHTML.indexOf("AwsWafIntegration") >= 0 || '
-            'document.body.innerHTML.indexOf("awsWafCookie") >= 0'
-        )
-        html_head = browser.eval_js(
-            'document.body.innerHTML.substring(0, 1000)'
-        ) or '(空 body)'
-
-        print(f'  标题       : {title}')
-        print(f'  当前 URL   : {cur_url[:100]}')
-        print(f'  readyState : {ready}')
-        print(f'  table 数   : {table_cnt}')
-        print(f'  tr 数      : {tr_cnt}')
-        print(f'  总 <a> 数  : {a_cnt}')
-        print(f'  Item No 链接数: {item_cnt}')
-        print(f'  含 WAF 挑战: {"是 ⚠️" if has_waf else "否 ✅"}')
-        print(f'  body 前 500字符:')
-        print(f'  {html_head[:500]}')
-        print(f'  ────────────\n')
-    except Exception as e:
-        print(f'  (诊断失败: {e})')
-
-
 def _try_load_inventory(browser, set_no, anchor_timeout=45):
-    """尝试加载指定套装的 inventory，返回 (inventory_list, used_set_no)。
-    没抓到任何零件时返回 ([], set_no)。"""
+    """尝试加载指定套装的 inventory。"""
     inv_url = INV_URL.format(set_no=set_no)
     print(f'  尝试套装号: {set_no}')
-    ok = browser.goto(inv_url, anchor_js=JS_INV_ANCHOR, timeout=30,
+    ok = browser.goto(inv_url, anchor_js=INV_ANCHOR_JS,
                       anchor_timeout=anchor_timeout)
 
-    raw = browser.eval_js(JS_EXTRACT_INVENTORY)
+    raw = None
+    if ok:
+        raw = browser.eval_js(JS_EXTRACT_INVENTORY)
     inv = []
     if isinstance(raw, str):
         try:
@@ -400,7 +457,7 @@ def run():
             user_input = input('乐高套装型号 (如 75290): ')
         except EOFError:
             user_input = ''
-    user_input = extract_set_no_from_user_input(user_input)
+    user_input = (user_input or '').strip()
     if not user_input:
         print('未输入套装号，退出')
         return
@@ -411,18 +468,19 @@ def run():
 
     browser = BLBrowser(progress_cb=set_progress)
     browser.show()
-    time.sleep(1.5)  # 等窗口 + WKWebView 初始化
+    time.sleep(1.5)  # 等容器 + WKWebView 初始化 + UA 生效
 
-    # --- 2. 抓 inventory（带套装号 fallback + 诊断） ---
+    # --- 2. 抓 inventory（带 fallback） ---
     print('\n[1/3] 加载零件清单 ...')
     g_inventory, used_no = _try_load_inventory(browser, user_input)
 
-    # Fallback：如果用户没输后缀且第一次没抓到，自动补 -1 再试
+    # Fallback 1：没后缀 → 补 -1
     if not g_inventory and '-' not in user_input:
         print(f'  ⚠️  没抓到零件，自动补 "-1" 后缀再试一次 ...')
         time.sleep(1.0)
         g_inventory, used_no = _try_load_inventory(browser, user_input + '-1')
-    # 如果用户本来就带后缀但没抓到，再试不带后缀的（覆盖罕见反转情况）
+
+    # Fallback 2：有后缀 → 试不带后缀
     elif not g_inventory and '-' in user_input:
         alt = user_input.split('-')[0]
         if alt != user_input:
@@ -434,136 +492,149 @@ def run():
 
     if not g_inventory:
         print('❌ 所有尝试都没抓到零件')
-        _dump_diagnostics(browser)
+        browser.dump_diagnostics()
         time.sleep(3)
-        browser.container.close()
+        try:
+            browser.container.close()
+        except Exception:
+            pass
         return
 
     print(f'  ✓ 提取到 {len(g_inventory)} 个不重复零件 (用套装号: {g_set_no})')
-    # 预览前 3 个
     for it in g_inventory[:3]:
         print('    {part} | color={color_id} | qty={qty}'.format(**it))
 
     # --- 3. 抓每个零件的重量 + 价格 ---
     print(f'\n[2/3] 抓取重量与价格（共 {len(g_inventory)} 个零件）...')
-    print('  (每个零件 ~3 个页面加载，整体会比较慢，请耐心等待)')
+    print('  (每个零件 ~2 个页面加载，整体会比较慢，请耐心等待)')
 
     for i, item in enumerate(g_inventory, 1):
         part = item['part']
         color_id = item.get('color_id', '-1')
         qty = item.get('qty', 1)
 
-        # 3a. 重量（可缓存）
-        weight = None
-        if part in g_weight_cache:
-            weight = g_weight_cache[part]
-        else:
+        # --- 3a. 重量（有缓存） ---
+        weight_str = g_weight_cache.get(part)
+        if not weight_str:
             part_url = PART_URL.format(part=part)
-            browser.goto(part_url, anchor_js='document.getElementById("item-weight-info") !== null', timeout=25)
-            w_raw = browser.eval_js(JS_EXTRACT_WEIGHT)
-            if w_raw and isinstance(w_raw, str) and w_raw.replace('.', '').isdigit():
-                weight = float(w_raw)
-            g_weight_cache[part] = weight
+            ok_w = browser.goto(part_url, anchor_js=PART_WEIGHT_ANCHOR_JS,
+                                anchor_timeout=25)
+            if ok_w:
+                weight_str = browser.eval_js(JS_EXTRACT_WEIGHT) or ''
+            if weight_str:
+                g_weight_cache[part] = weight_str
 
-        # 3b. 价格
-        price_currency = ''
-        price_qty_avg = None
-        # colorID 为 -1 时表示"全部颜色"，用 -1 也能查到均价
+        try:
+            weight_g = float(weight_str) if weight_str else 0.0
+        except ValueError:
+            weight_g = 0.0
+        total_weight = round(weight_g * qty, 3)
+
+        # --- 3b. 价格 ---
         pg_url = PG_URL.format(part=part, color_id=color_id)
-        browser.goto(pg_url, anchor_js='document.body.innerHTML.indexOf("Qty Avg Price") >= 0', timeout=25)
-        p_raw = browser.eval_js(JS_EXTRACT_PRICE)
-        if p_raw and isinstance(p_raw, str):
+        ok_p = browser.goto(pg_url, anchor_js=PRICE_ANCHOR_JS,
+                            anchor_timeout=25)
+        currency = ''
+        qty_avg_price = None
+        price_data = {}
+        if ok_p:
+            raw_p = browser.eval_js(JS_EXTRACT_PRICE)
+            if isinstance(raw_p, str):
+                try:
+                    price_data = json.loads(raw_p)
+                except json.JSONDecodeError:
+                    pass
+        # 优先 current_for_sale，其次 last_6_months
+        block = (price_data.get('current_for_sale')
+                 or price_data.get('last_6_months') or {})
+        currency = block.get('currency', '')
+        qty_avg_price = block.get('qty_avg')
+
+        # --- 3c. 汇总 ---
+        total_value = None
+        if qty_avg_price is not None:
             try:
-                p_obj = json.loads(p_raw)
-                price_currency = p_obj.get('currency', '')
-                price_qty_avg = p_obj.get('qty_avg')
-            except json.JSONDecodeError:
-                pass
+                total_value = round(float(qty_avg_price) * qty, 4)
+            except (TypeError, ValueError):
+                total_value = None
 
-        # 汇总到行
-        total_weight = round((weight or 0) * qty, 4) if weight else ''
-        unit_value = round(price_qty_avg, 4) if price_qty_avg is not None else ''
-        total_value = round(unit_value * qty, 4) if (unit_value != '' and price_qty_avg is not None) else ''
-
-        row = {
+        g_results.append({
             'set_no': g_set_no,
             'part_no': part,
             'description': item.get('description', ''),
             'color_id': color_id,
             'qty': qty,
-            'weight_g': weight if weight is not None else '',
+            'weight_g': weight_g,
             'total_weight_g': total_weight,
-            'price_currency': price_currency,
-            'unit_qty_avg_price': unit_value,
+            'price_currency': currency,
+            'unit_qty_avg_price': qty_avg_price,
             'total_value': total_value,
-        }
-        g_results.append(row)
+        })
 
-        print(f'  [{i}/{len(g_inventory)}] {part} x{qty} | {weight}g | {price_currency} {unit_value}')
+        parts = []
+        parts.append(f'[{i}/{len(g_inventory)}]')
+        parts.append(f'{part} x{qty}')
+        if weight_g:
+            parts.append(f'{weight_g}g')
+        if currency and qty_avg_price is not None:
+            parts.append(f'{currency}{qty_avg_price}')
+        print('  ' + ' | '.join(parts), flush=True)
 
-        # 轻微节流，避免被限频（WebView 方式 WAF session 已稳定，不需要太长）
-        time.sleep(0.3)
+        # 礼貌间隔
+        time.sleep(0.8)
 
-    # --- 4. 写 CSV ---
-    print('\n[3/3] 生成 CSV ...')
+    # --- 4. 生成 CSV ---
+    print(f'\n[3/3] 生成 CSV ...')
     out_dir = os.path.expanduser('~/Documents')
-    os.makedirs(out_dir, exist_ok=True)
+    if not os.path.isdir(out_dir):
+        out_dir = os.path.expanduser('~')
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    csv_path = os.path.join(out_dir, f'BL_{g_set_no}_{ts}.csv')
+    out_path = os.path.join(out_dir, f'BL_{g_set_no}_{ts}.csv')
 
-    fieldnames = [
-        'set_no', 'part_no', 'description', 'color_id', 'qty',
-        'weight_g', 'total_weight_g',
-        'price_currency', 'unit_qty_avg_price', 'total_value'
-    ]
+    cols = ['set_no', 'part_no', 'description', 'color_id', 'qty',
+            'weight_g', 'total_weight_g', 'price_currency',
+            'unit_qty_avg_price', 'total_value']
 
-    with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(g_results)
+    try:
+        import csv
+        with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            for row in g_results:
+                w.writerow(row)
+        print(f'✅ 完成！CSV: {out_path}')
+        print(f'   共 {len(g_results)} 条记录')
 
-    # 汇总统计
-    total_parts = len(g_results)
-    total_qty = sum(r['qty'] for r in g_results)
-    total_w = sum(r['total_weight_g'] for r in g_results if isinstance(r['total_weight_g'], (int, float)))
-    total_v = sum(r['total_value'] for r in g_results if isinstance(r['total_value'], (int, float)))
-    cur = ''
-    for r in g_results:
-        if r['price_currency']:
-            cur = r['price_currency']
-            break
-
-    print('\n' + '=' * 50)
-    print(f'✅ 完成！CSV: {csv_path}')
-    print(f'  去重零件数: {total_parts}')
-    print(f'  零件总数 : {total_qty}')
-    print(f'  总重量   : {total_w} g')
-    if cur and total_v:
-        print(f'  总估算价 : {cur} {total_v:.4f}')
-    print('=' * 50)
-
-    # 在 UI 上也弹个提示
-    time.sleep(1)
-    browser.container.close()
+        # 汇总
+        total_parts = sum(r['qty'] for r in g_results)
+        total_wt = round(sum(r['total_weight_g'] for r in g_results), 3)
+        priced = [r for r in g_results if r['unit_qty_avg_price'] is not None]
+        if priced:
+            total_val = round(sum(r['total_value'] or 0 for r in priced), 2)
+            cur = priced[0]['price_currency'] or ''
+            print(f'   总零件数 : {total_parts}')
+            print(f'   总重量   : {total_wt} g')
+            print(f'   可估价   : {len(priced)}/{len(g_results)} 零件')
+            print(f'   总估算价 : {cur}{total_val}')
+    except Exception as e:
+        print(f'❌ CSV 写入失败: {e}')
+    finally:
+        time.sleep(2)
+        try:
+            browser.container.close()
+        except Exception:
+            pass
 
 
 def main():
     try:
         run()
     except KeyboardInterrupt:
-        print('\n用户中断')
-        sys.exit(130)
+        print('\n用户中断，退出')
     except Exception as e:
+        print(f'\n❌ 运行出错: {e}')
         import traceback
-        print('❌ 运行出错:', e)
         traceback.print_exc()
-        # 把错误也存下来方便排查
-        try:
-            out_dir = os.path.expanduser('~/Documents')
-            with open(os.path.join(out_dir, 'bl_error.log'), 'w') as f:
-                traceback.print_exc(file=f)
-        except Exception:
-            pass
 
 
 if __name__ == '__main__':
