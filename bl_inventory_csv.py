@@ -265,11 +265,13 @@ g_weight_cache = {}
 # ============================================================
 
 class _BLDelegate:
-    """Navigation delegate —— 通过 objc 回调告诉 Python 页面事件。"""
+    """Navigation delegate —— 每次导航（含 WAF 触发的 reload）都会触发回调。"""
     def __init__(self, br):
         self.br = br
 
     def webview_did_finish_load(self, webview):
+        # 每次导航完成都会触发（包括 AWS WAF 挑战页 JS 触发的 window.location.reload）
+        self.br._nav_finished_count += 1
         self.br._sig_load_finished.set()
 
     def webview_did_fail_load(self, webview, error_code, error_msg):
@@ -287,33 +289,27 @@ class BLBrowser:
         self._sig_load_finished = threading.Event()
         self._sig_load_error = threading.Event()
         self._last_error = None
+        self._nav_finished_count = 0   # 统计 didFinish 触发次数（含 WAF 自动 reload）
 
-        # 建容器 View
         import ui
         self.container = ui.View()
         w, h = ui.get_screen_size()
         self.container.frame = (0, 0, w, h)
 
-        # 创建 WKWebView（objc 层）
         self.wv = WKWebView(frame=self.container.bounds, flex='WH')
         self.wv.delegate = _BLDelegate(self)
         self.container.add_subview(self.wv)
 
-        # 注入反自动化脚本（每次页面加载都会注入）
         self.wv.add_script(ANTI_WEBDRIVER_JS, add_to_end=False)
-
-        # 设置 Safari UA
         self.wv.user_agent = SAFARI_UA
 
     def show(self):
         self.container.present('fullscreen', hide_title_bar=False)
 
     def eval_js(self, js, timeout=10):
-        """同步 eval_js（wkwebview.py 已用 queue 做了同步封装）。"""
         return self.wv.eval_js(js)
 
     def _detect_blocked(self):
-        """检测当前页面是否被 WAF/反爬拦截。返回拦截标记字符串（空 = 没被挡）。"""
         try:
             marker = self.eval_js(JS_HAS_BLOCKED)
             if marker and isinstance(marker, str) and len(marker) > 0:
@@ -322,80 +318,97 @@ class BLBrowser:
             pass
         return ''
 
-    def _poll_anchor(self, anchor_js, timeout=45, label='anchor'):
-        """反复执行 anchor_js，直到返回真值或超时。同时检测拦截标记。"""
-        import threading
-        t0 = time.time()
-        while time.time() - t0 < timeout:
-            # 先查拦截标记
-            blocked = self._detect_blocked()
-            if blocked:
-                self.progress_cb(f'  ⚠️  命中拦截标记: {blocked}')
-                return False
-            # 再查 anchor
-            try:
-                r = self.eval_js(anchor_js)
-                if r:
-                    return True
-            except Exception:
-                pass
-            # 进度提示（每 10s 一次）
-            elapsed = int(time.time() - t0)
-            if elapsed > 0 and elapsed % 10 == 0 and elapsed != (timeout // 10) * 10:
-                self.progress_cb(f'  ⏳ 等待 {label} ... {elapsed}s')
-            time.sleep(1.0)
-        self.progress_cb(f'  ⏰ {label} 超时 ({timeout}s)')
-        return False
-
     def goto(self, url, anchor_js=None, anchor_timeout=45):
         """
         加载 URL 并等待"真内容到达"。
-        返回 True 表示 anchor 通过（或超时但没被拦截，由调用方判断）。
-        返回 False 表示明确被 WAF/拦截标记挡住，或 Navigation 出错。
+
+        AWS WAF 挑战流程（两次导航）：
+          第 1 次 didFinish：服务器返回挑战页 HTML（2 行 div + script）
+                               JS 执行 AwsWafIntegration.getToken() → 自动 window.location.reload
+          第 2 次 didFinish：带着 ws-waf-token 再次请求 → 真页面
+
+        所以策略是：持续轮询
+          (拦截标记消失) AND (anchor JS 命中)
+        直到超时。期间会自然等到 WAF 自动 reload 完成。
         """
         self.progress_cb('→ 加载 ' + url[:90])
 
-        import threading
         self._sig_load_finished.clear()
         self._sig_load_error.clear()
         self._last_error = None
+        self._nav_finished_count = 0
 
         self.wv.load_url(url)
 
-        # 1) 等 Navigation delegate 信号（最多 30s）
-        self.progress_cb('  ⏳ 等 WKWebView 加载完成...')
-        finished = self._sig_load_finished.wait(timeout=30)
-        errored = self._sig_load_error.is_set()
+        t0 = time.time()
+        deadline = t0 + anchor_timeout
+        last_log = 0
+        nav_seen = 0
+        still_blocked = False
 
-        if errored:
-            self.progress_cb(f'  ❌ WKWebView load 失败: {self._last_error}')
-            return False
-        if not finished:
-            self.progress_cb('  ⚠️  WKWebView 没回调 didFinish（可能超时），继续尝试 anchor 轮询...')
+        while time.time() < deadline:
+            # 1) 等下一个 didFinish（每次导航都触发）
+            self._sig_load_finished.clear()
+            try:
+                self._sig_load_finished.wait(timeout=min(5, deadline - time.time()))
+            except Exception:
+                pass
 
-        # 2) 再等 WAF 挑战脚本执行（挑战页 readyState complete 之后才是真挑战）
-        self.progress_cb('  ⏳ 等 WAF 挑战通过 + 页面渲染...')
-        time.sleep(2.0)
-
-        # 3) 拦截标记快速检测
-        blocked = self._detect_blocked()
-        if blocked:
-            self.progress_cb(f'  ⚠️  加载后立即检测到拦截标记: {blocked}')
-            return False
-
-        # 4) Anchor JS 轮询（确定真内容到达）
-        if anchor_js:
-            ok = self._poll_anchor(anchor_js, timeout=anchor_timeout,
-                                   label='anchor')
-            if not ok:
-                # 即使 anchor 没到也别直接判失败——让调用方决定
-                # （inventory 页的 anchor 是 "Item No 链接 ≥ 1"，没到肯定有问题）
-                self.progress_cb('  ⚠️  anchor 未命中')
+            # 2) 失败检查
+            if self._sig_load_error.is_set():
+                self.progress_cb(f'  ❌ WKWebView load 失败: {self._last_error}')
                 return False
-        else:
-            # 没传 anchor 的保守等
-            time.sleep(3.0)
-        return True
+
+            if self._nav_finished_count > nav_seen:
+                nav_seen = self._nav_finished_count
+                cur_url = self.eval_js('location.href') or ''
+                self.progress_cb(f'  📄 第 {nav_seen} 次加载完成（{cur_url[:80]}）')
+
+            # 3) WAF/拦截标记
+            blocked = self._detect_blocked()
+            if blocked:
+                if not still_blocked:
+                    self.progress_cb(f'  🛡️  检测到拦截: {blocked}（等 JS 自动 reload...）')
+                still_blocked = True
+                # 检查是不是已经在挑战页卡很久了 —— 如果已经是第 3 次以上导航还卡，
+                # 可能真过不了，手动触发一次 reload 试试
+                if nav_seen >= 3:
+                    self.progress_cb('  🔄 已卡 3+ 次导航还在挑战页，手动 reload 一次...')
+                    try:
+                        self.wv.reload()
+                    except Exception:
+                        pass
+                    time.sleep(1.0)
+                # 拦截还在 → 继续等（别 return False！WAF 可能下一次导航就过去了）
+                time.sleep(1.0)
+                continue
+            else:
+                if still_blocked:
+                    self.progress_cb('  ✅ 拦截标记消失了（WAF 通过）')
+                still_blocked = False
+
+            # 4) anchor JS 检查
+            if anchor_js:
+                try:
+                    r = self.eval_js(anchor_js)
+                    if r:
+                        self.progress_cb('  ✅ anchor 命中，真内容到了')
+                        return True
+                except Exception:
+                    pass
+
+            # 5) 进度日志（每 10s 一次）
+            elapsed = int(time.time() - t0)
+            if elapsed - last_log >= 10:
+                last_log = elapsed
+                extra = f' 拦截={"是" if still_blocked else "否"}'
+                self.progress_cb(f'  ⏳ 等待中 ... {elapsed}s（导航 {nav_seen} 次）{extra}')
+
+            time.sleep(1.0)
+
+        # 超时
+        self.progress_cb(f'  ⏰ 超时 ({anchor_timeout}s)，拦截={still_blocked}, 导航次数={nav_seen}')
+        return False
 
     def dump_diagnostics(self):
         print('\n  ── 诊断 ──')
