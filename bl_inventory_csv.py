@@ -34,6 +34,14 @@ INV_URL = "https://www.bricklink.com/catalogItemInv.asp?S={set_no}&v=0&viewID=Y&
 PART_URL = "https://www.bricklink.com/v2/catalog/catalogitem.page?P={part}"
 PG_URL = "https://www.bricklink.com/catalogPG.asp?P={part}&colorID={color_id}"
 
+# catalogItemInv 页专用 anchor — 必须至少有一个 Item No 链接出现才算真实加载成功
+# （AWS WAF 挑战页本身 readyState=complete 但没有任何零件链接）
+JS_INV_ANCHOR = (
+    "document.querySelectorAll("
+    "'a[href*=\"catalogitem.page?P=\"], a[href*=\"catalogItemPic.asp?P=\"]'"
+    ").length >= 1"
+)
+
 # ---------- 全局状态 ----------
 g_set_no = ""
 g_inventory = []      # [{part, color_id, qty, color_name, description}, ...]
@@ -252,21 +260,30 @@ class BLBrowser:
     def _wait_load(self, timeout=30, anchor_js=None, anchor_timeout=15):
         """
         等待 WebView 完成加载 + WAF 挑战。
-        anchor_js: 如果提供，反复执行这个 JS 直到返回真值（可选的"渲染完成"锚点）。
+
+        AWS WAF 挑战页本身 HTML 极简（<2KB），document.readyState 秒变 'complete'，
+        但此时真正的 BrickLink 页面还没渲染——必须等 anchor_js 成立才可信。
+
+        anchor_js: 反复执行直到返回真值的 JS（必填！尤其 catalogItemInv 页）。
         """
         t0 = time.time()
-        # 1) 等 document.readyState == 'complete'
+        # 1) 等 readyState complete（只是第一道门，挑战页也算 complete）
         while time.time() - t0 < timeout:
-            ready = self.view.evaluate_javascript(
-                'document.readyState')
-            if ready == 'complete':
-                break
+            try:
+                ready = self.view.evaluate_javascript('document.readyState')
+                if ready == 'complete':
+                    break
+            except Exception:
+                pass
             time.sleep(0.3)
-        # 2) 额外延迟让 JS 渲染（WAF 挑战后的 SPA 渲染）
+
+        # 2) 轮询 anchor（真正的内容锚点）
+        #    注意：即使没传 anchor_js 也要额外睡一下给 WAF 留时间
         t1 = time.time()
         anchor_ok = False
-        while time.time() - t1 < anchor_timeout:
-            if anchor_js:
+        if anchor_js:
+            # 每秒检查一次
+            while time.time() - t1 < anchor_timeout:
                 try:
                     r = self.view.evaluate_javascript(anchor_js)
                     if r:
@@ -274,16 +291,20 @@ class BLBrowser:
                         break
                 except Exception:
                     pass
-            else:
-                # 无 anchor，等足够长时间让挑战通过
-                break
-            time.sleep(0.5)
-        # 再等一小段让数据落 DOM
+                remaining = int(anchor_timeout - (time.time() - t1))
+                if remaining > 0 and remaining % 5 == 0:
+                    self.progress_cb(f'  ⏳ 等待页面加载 {remaining}s ...')
+                time.sleep(1.0)
+        else:
+            # 无 anchor 的保守等待：挑战 + 渲染至少要 5s
+            time.sleep(5.0)
+
+        # 3) 最后留一点缓冲让 DOM 稳定
         time.sleep(1.0)
         return anchor_ok or True
 
     def goto(self, url, anchor_js=None, timeout=30):
-        self.progress_cb('→ 加载 ' + url[:70])
+        self.progress_cb('→ 加载 ' + url[:80])
         self.view.load_url(url)
         return self._wait_load(timeout=timeout, anchor_js=anchor_js)
 
@@ -304,15 +325,67 @@ def set_progress(text):
 
 
 def extract_set_no_from_user_input(user_input):
-    """用户可能输入 75290 或 75290-1，归一化到 BrickLink 格式。"""
-    s = (user_input or '').strip()
-    if not s:
-        return ''
-    # 如果没后缀，可能需要补 -1（BrickLink 多数套装是 -1）
-    if '-' not in s and not s.endswith(('-0', '-1', '-2')):
-        # 试试直接的（有些套装号没 -1 后缀）
-        return s
-    return s
+    """用户可能输入 75290 或 75290-1。保留用户原样输入，fallback 逻辑在 run() 里处理。"""
+    return (user_input or '').strip()
+
+
+def _dump_diagnostics(browser, label='诊断'):
+    """把当前 WebView 的状态打印出来，方便判断卡在哪一步。"""
+    print(f'\n  ── {label} ──')
+    try:
+        title = browser.eval_js('document.title') or '(空)'
+        cur_url = browser.eval_js('location.href') or '(空)'
+        ready = browser.eval_js('document.readyState') or '(空)'
+        table_cnt = browser.eval_js('document.querySelectorAll("table").length') or 0
+        tr_cnt = browser.eval_js('document.querySelectorAll("table tr").length') or 0
+        a_cnt = browser.eval_js('document.querySelectorAll("a").length') or 0
+        item_cnt = browser.eval_js(
+            'document.querySelectorAll('
+            'a[href*="catalogitem.page?P="], a[href*="catalogItemPic.asp?P="]'
+            ').length'
+        ) or 0
+        has_waf = browser.eval_js(
+            'document.body.innerHTML.indexOf("AwsWafIntegration") >= 0 || '
+            'document.body.innerHTML.indexOf("awsWafCookie") >= 0'
+        )
+        html_head = browser.eval_js(
+            'document.body.innerHTML.substring(0, 1000)'
+        ) or '(空 body)'
+
+        print(f'  标题       : {title}')
+        print(f'  当前 URL   : {cur_url[:100]}')
+        print(f'  readyState : {ready}')
+        print(f'  table 数   : {table_cnt}')
+        print(f'  tr 数      : {tr_cnt}')
+        print(f'  总 <a> 数  : {a_cnt}')
+        print(f'  Item No 链接数: {item_cnt}')
+        print(f'  含 WAF 挑战: {"是 ⚠️" if has_waf else "否 ✅"}')
+        print(f'  body 前 500字符:')
+        print(f'  {html_head[:500]}')
+        print(f'  ────────────\n')
+    except Exception as e:
+        print(f'  (诊断失败: {e})')
+
+
+def _try_load_inventory(browser, set_no, anchor_timeout=45):
+    """尝试加载指定套装的 inventory，返回 (inventory_list, used_set_no)。
+    没抓到任何零件时返回 ([], set_no)。"""
+    inv_url = INV_URL.format(set_no=set_no)
+    print(f'  尝试套装号: {set_no}')
+    ok = browser.goto(inv_url, anchor_js=JS_INV_ANCHOR, timeout=30,
+                      anchor_timeout=anchor_timeout)
+
+    raw = browser.eval_js(JS_EXTRACT_INVENTORY)
+    inv = []
+    if isinstance(raw, str):
+        try:
+            inv = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(f'  ❌ JSON 解析失败: {e}  raw前200={raw[:200]!r}')
+
+    if inv:
+        return inv, set_no
+    return [], set_no
 
 
 def run():
@@ -326,47 +399,46 @@ def run():
             user_input = input('乐高套装型号 (如 75290): ')
         except EOFError:
             user_input = ''
-    g_set_no = extract_set_no_from_user_input(user_input)
-    if not g_set_no:
+    user_input = extract_set_no_from_user_input(user_input)
+    if not user_input:
         print('未输入套装号，退出')
         return
 
     print('=' * 50)
-    print('套装:', g_set_no)
+    print('套装:', user_input)
     print('=' * 50)
 
     browser = BLBrowser(progress_cb=set_progress)
     browser.show()
-    time.sleep(1.0)  # 等窗口渲染
+    time.sleep(1.5)  # 等窗口 + WKWebView 初始化
 
-    # --- 2. 抓 inventory ---
+    # --- 2. 抓 inventory（带套装号 fallback + 诊断） ---
     print('\n[1/3] 加载零件清单 ...')
-    inv_url = INV_URL.format(set_no=g_set_no)
-    ok = browser.goto(inv_url)
-    if not ok:
-        print('❌ 零件清单页面加载失败')
-        time.sleep(2)
-        browser.container.close()
-        return
+    g_inventory, used_no = _try_load_inventory(browser, user_input)
 
-    raw = browser.eval_js(JS_EXTRACT_INVENTORY)
-    if isinstance(raw, str):
-        try:
-            g_inventory = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print('❌ JSON 解析失败:', e, 'raw=', raw[:200])
-            g_inventory = []
+    # Fallback：如果用户没输后缀且第一次没抓到，自动补 -1 再试
+    if not g_inventory and '-' not in user_input:
+        print(f'  ⚠️  没抓到零件，自动补 "-1" 后缀再试一次 ...')
+        time.sleep(1.0)
+        g_inventory, used_no = _try_load_inventory(browser, user_input + '-1')
+    # 如果用户本来就带后缀但没抓到，再试不带后缀的（覆盖罕见反转情况）
+    elif not g_inventory and '-' in user_input:
+        alt = user_input.split('-')[0]
+        if alt != user_input:
+            print(f'  ⚠️  没抓到零件，试不带后缀 "{alt}" ...')
+            time.sleep(1.0)
+            g_inventory, used_no = _try_load_inventory(browser, alt)
+
+    g_set_no = used_no
 
     if not g_inventory:
-        print('❌ 未提取到任何零件，请确认套装号是否正确')
-        # 打印当前页面标题辅助调试
-        title = browser.eval_js('document.title')
-        print('  当前页面标题:', title)
+        print('❌ 所有尝试都没抓到零件')
+        _dump_diagnostics(browser)
         time.sleep(3)
         browser.container.close()
         return
 
-    print(f'  ✓ 提取到 {len(g_inventory)} 个不重复零件')
+    print(f'  ✓ 提取到 {len(g_inventory)} 个不重复零件 (用套装号: {g_set_no})')
     # 预览前 3 个
     for it in g_inventory[:3]:
         print('    {part} | color={color_id} | qty={qty}'.format(**it))
