@@ -360,7 +360,7 @@ import ui
 import threading
 import queue
 import functools
-from objc_util import (ObjCClass, ObjCInstance, ObjCBlock,
+from objc_util import (ObjCClass, ObjCInstance, ObjCBlock, retain_global,
                        c_void_p, on_main_thread)
 
 # wkwebview.py 里的 block descriptor（复用）
