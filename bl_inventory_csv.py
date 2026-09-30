@@ -761,18 +761,11 @@ def _try_load_inventory(browser, set_no, anchor_timeout=45):
 
 
 @ui.in_background
-def run():
+def run(user_input):
     global g_set_no, g_inventory, g_results, g_browser
 
     if g_browser is None:
         print('❌ g_browser 未初始化')
-        return
-
-    # user_input 从 sys.argv 拿（main() 已经处理过）
-    if len(sys.argv) > 1:
-        user_input = sys.argv[1].strip()
-    else:
-        print('❌ 缺少套装号，需要命令行参数')
         return
 
     print('=' * 50)
@@ -982,7 +975,7 @@ def main():
     _main_thread_init(user_input)
 
     # 后台线程跑抓取
-    run()
+    run(user_input)
 
 
 if __name__ == '__main__':
