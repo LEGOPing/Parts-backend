@@ -808,9 +808,14 @@ def run():
 
     # --- 4. 生成 CSV ---
     print(f'\n[3/3] 生成 CSV ...')
-    out_dir = os.path.expanduser('~/Documents')
-    if not os.path.isdir(out_dir):
-        out_dir = os.path.expanduser('~')
+    # CSV 输出到脚本所在目录（bl_inventory_csv.py 放哪个文件夹，CSV 就落哪）
+    # 如果脚本路径取不到（特殊启动方式），fallback 到 ~/Documents/套装零件清单/
+    script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else ''
+    if script_dir and os.path.isdir(script_dir):
+        out_dir = script_dir
+    else:
+        out_dir = os.path.join(os.path.expanduser('~/Documents'), '套装零件清单')
+        os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     out_path = os.path.join(out_dir, f'BL_{g_set_no}_{ts}.csv')
 
