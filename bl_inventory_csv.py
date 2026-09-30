@@ -488,7 +488,8 @@ def _build_objc_delegate_class():
     cls = create_objc_class(
         'BLNavigationDelegate_' + str(id(_BLObjCDelegate)),
         superclass=NSObject,
-        methods=list(zip(methods, encodings)),
+        methods=[didCommit, didFinish, didFail, didFailProv, decidePolicy],
+        encodings=[f3_sign, f3_sign, f4_sign, f4_sign, f_sign],
         protocols=['WKNavigationDelegate']
     )
     return cls
