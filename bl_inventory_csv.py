@@ -360,45 +360,14 @@ import ui
 import threading
 import queue
 import functools
-from objc_util import (ObjCClass, ObjCInstance, create_objc_class, retain_global,
-                       ObjCBlock, c_void_p, c_long, c_bool, ctypes, on_main_thread)
+from objc_util import (ObjCClass, ObjCInstance, retain_global,
+                       ObjCBlock, c_void_p, on_main_thread)
 
 # wkwebview.py 里的 block descriptor（复用）
-class _block_decision_handler(ctypes.Structure):
-    _fields_ = [
-        ('reserved', ctypes.c_ulong),
-        ('size', ctypes.c_ulong),
-        ('copy_helper', c_void_p),
-        ('dispose_helper', c_void_p),
-        ('signature', ctypes.c_char_p)
-    ]
-
-
 def _make_ns_url(url_str):
     """str → NSURL (ObjCInstance)"""
     NSURL = ObjCClass('NSURL')
     return NSURL.URLWithString_(url_str)
-
-
-class _BlockLiteral(ctypes.Structure):
-    """ObjCBlock 的 _fields_ 模板（wkwebview.py 里已经有，这里重复免得依赖）"""
-    _fields_ = [
-        ('isa', c_void_p),
-        ('flags', ctypes.c_int),
-        ('reserved', ctypes.c_int),
-        ('invoke', ctypes.CFUNCTYPE(c_void_p, c_void_p, c_void_p)),
-        ('descriptor', _block_decision_handler)
-    ]
-
-
-def _make_block_literal(*arg_types):
-    return [
-        ('isa', c_void_p),
-        ('flags', ctypes.c_int),
-        ('reserved', ctypes.c_int),
-        ('invoke', ctypes.CFUNCTYPE(c_void_p, c_void_p, *arg_types)),
-        ('descriptor', _block_decision_handler)
-    ]
 
 
 class BLBrowser:
@@ -475,9 +444,7 @@ class BLBrowser:
         self._log_async(f'  ❌ 导航失败: {self._last_error}')
 
     def show(self):
-        self.container.present('fullscreen', hide_title_bar=False)
-        # 等一下窗口和 WKWebView 初始化
-        time.sleep(2.0)
+        self.container.present('fullscreen')  # 别传 hide_title_bar，可能引起闪退
 
     def eval_js(self, js, timeout=12):
         """
@@ -848,14 +815,6 @@ def run(user_input):
             pass
 
 
-@on_main_thread
-def _main_thread_init(user_input):
-    """主线程：创建浏览器 + 显示窗口。"""
-    global g_browser
-    g_browser = BLBrowser(progress_cb=set_progress)
-    g_browser.show()
-
-
 def main():
     global g_browser
 
@@ -875,9 +834,21 @@ def main():
     print('=' * 50)
     print('套装:', user_input)
     print('=' * 50)
+    sys.stdout.flush()
 
-    # 主线程建 UI
-    _main_thread_init(user_input)
+    # 主线程建 UI（显式 try/except 防止闪退无日志）
+    try:
+        g_browser = BLBrowser(progress_cb=set_progress)
+        print('✅ BLBrowser 创建成功')
+        sys.stdout.flush()
+        g_browser.show()
+        print('✅ 窗口已显示')
+        sys.stdout.flush()
+    except Exception as e:
+        print(f'❌ 初始化失败: {type(e).__name__}: {e}')
+        import traceback
+        traceback.print_exc()
+        return
 
     # 后台线程跑抓取
     run(user_input)
@@ -885,4 +856,11 @@ def main():
 
 if __name__ == '__main__':
     g_browser = None
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f'❌ main() 异常: {type(e).__name__}: {e}')
+        import traceback
+        traceback.print_exc()
+        # 别直接退出，让用户能看到错误
+        input('按回车退出...')
