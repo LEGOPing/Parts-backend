@@ -73,9 +73,11 @@ BLOCKED_MARKERS = (
 )
 
 # ---- Anchor JS ---- 必须至少有一个命中才算"真内容到了" ----
+# 必须是 /v2/catalog/catalogitem.page 且带 ?P= 或 ?M= 的链接
+# v2 SPA 渲染比 v1 HTML 晚，严格等 v2 真正出现才算真内容
 INV_ANCHOR_JS = (
     "document.querySelectorAll("
-    "'a[href*=\"catalogitem.page?P=\"], a[href*=\"catalogItemPic.asp?P=\"]'"
+    "'a[href*=\"/v2/catalog/catalogitem.page?P=\"], a[href*=\"/v2/catalog/catalogitem.page?M=\"]'"
     ").length >= 1"
 )
 PART_WEIGHT_ANCHOR_JS = (
@@ -95,58 +97,71 @@ JS_EXTRACT_INVENTORY = r"""(() => {
   var rows = [];
   var seen = new Set();
 
-  // 找所有指向零件/人仔详情页的 <a>
-  // BrickLink inventory 页上每个实际零件都会有：
-  //   /v2/catalog/catalogitem.page?P=3020&idColor=7  ← 零件
-  //   /v2/catalog/catalogitem.page?M=cty0406          ← 人仔（无颜色）
-  var links = document.querySelectorAll('a[href*="catalogitem.page"]');
+  // 同时支持 v2（主）和 v1（fallback）
+  var links = document.querySelectorAll('a[href*="catalogitem.page"], a[href*="catalogItemPic.asp"]');
 
   for (var i = 0; i < links.length; i++) {
     var a = links[i];
     var href = a.getAttribute('href') || '';
 
-    // 过滤：必须是 /v2/catalog/catalogitem.page 且带 ?P= 或 ?M=
-    if (href.indexOf('/v2/catalog/catalogitem.page') < 0) continue;
-    if (href.indexOf('?P=') < 0 && href.indexOf('?M=') < 0) continue;
+    // 必须包含 ?P= 或 ?M=
+    var isPart = (href.indexOf('?P=') >= 0 || href.indexOf('&P=') >= 0);
+    var isMinifig = (href.indexOf('?M=') >= 0 || href.indexOf('&M=') >= 0);
+    if (!isPart && !isMinifig) continue;
 
-    // 零件号
-    var pm = href.match(/[?&]P=([A-Za-z0-9]+)/);
-    var mm = href.match(/[?&]M=([A-Za-z0-9]+)/);
-    var partText = pm ? pm[1] : (mm ? mm[1] : '');
+    // 零件号 / 人仔号
+    var m_p = href.match(/[?&]P=([A-Za-z0-9]+)/);
+    var m_m = href.match(/[?&]M=([A-Za-z0-9]+)/);
+    var partText = m_p ? m_p[1] : (m_m ? m_m[1] : '');
     if (!partText) continue;
 
-    // 颜色 ID — BrickLink 用 idColor= 参数（不是 colorID=！）
-    var cm = href.match(/[?&]idColor=(-?\d+)/);
-    var colorId = cm ? cm[1] : '-1';
+    // 颜色 ID — 优先 idColor=（v2），fallback colorID=（v1）
+    var colorId = '-1';
+    var m_c1 = href.match(/[?&]idColor=(-?\d+)/);
+    var m_c2 = href.match(/[?&]colorID=(-?\d+)/);
+    if (m_c1) colorId = m_c1[1];
+    else if (m_c2) colorId = m_c2[1];
 
-    // 找最近的祖先 <tr>
+    // 找最近祖先 <tr>
     var tr = a;
     while (tr && tr.tagName && tr.tagName !== 'TR') tr = tr.parentElement;
     if (!tr) continue;
 
-    var trText = tr.textContent || '';
+    var trText = (tr.textContent || '').replace(/\s+/g, ' ').trim();
 
-    // Qty：行里 "Yes"/"No" 和零件号之间的那个数字
-    // BrickLink inventory 行结构：[InvID] [Yes/No] [Qty] [PartNo] [Desc]
+    // ── Qty：双重策略 ──
     var qty = 1;
-    var yesIdx = trText.search(/\bYes\b|\bNo\b/);
-    var partLabel = (a.textContent || '').trim();
+    var partLabel = (a.textContent || '').trim() || partText;
     var partIdx = trText.indexOf(partLabel);
+    if (partIdx <= 0) partIdx = trText.indexOf(partText);
+
+    // 策略 A：Yes/No 和 PartNo 之间的数字
+    var yesIdx = trText.search(/\b(Yes|No)\b/);
     if (yesIdx >= 0 && partIdx > yesIdx) {
       var between = trText.substring(yesIdx, partIdx);
       var bm = between.match(/\b(\d{1,3})\b/g);
       if (bm && bm.length > 0) {
-        var cand = parseInt(bm[0], 10);
-        if (cand > 0 && cand < 1000) qty = cand;
+        var candA = parseInt(bm[0], 10);
+        if (candA > 0 && candA < 1000) qty = candA;
       }
     }
 
-    // 去重（同 part+color 只取第一次出现）
+    // 策略 B：零件号之前最近的 1-3 位小数字
+    if (qty === 1 && partIdx > 0) {
+      var before = trText.substring(0, partIdx);
+      var allNums = before.match(/\b(\d{1,3})\b/g);
+      if (allNums && allNums.length > 0) {
+        var last = parseInt(allNums[allNums.length - 1], 10);
+        if (last > 0 && last <= 999) qty = last;
+      }
+    }
+
+    // 去重
     var key = partText + '|' + colorId;
     if (seen.has(key)) continue;
     seen.add(key);
 
-    // 描述：零件号链接所在 td 的下一个兄弟 td 的文本
+    // 描述：零件号链接所在 td 后面的兄弟 td
     var desc = '';
     var parentTd = a.parentElement;
     while (parentTd && parentTd.tagName !== 'TD') parentTd = parentTd.parentElement;
@@ -154,8 +169,8 @@ JS_EXTRACT_INVENTORY = r"""(() => {
       var nextTd = parentTd.nextElementSibling;
       while (nextTd) {
         var t = (nextTd.textContent || '').trim();
-        if (t && t !== partText && t !== 'Yes' && t !== 'No' && t.length > 2) {
-          // 取第一个有意义的 td 作为描述（通常就是 Description 列）
+        if (t && t !== partText && t !== partLabel && t !== 'Yes' && t !== 'No'
+            && t.length > 2 && !/^\d+$/.test(t)) {
           desc = t.substring(0, 120);
           break;
         }
@@ -172,8 +187,10 @@ JS_EXTRACT_INVENTORY = r"""(() => {
   }
 
   return JSON.stringify(rows);
-})();"""
+})();
 
+
+"""
 
 JS_EXTRACT_WEIGHT = r"""
 (() => {
