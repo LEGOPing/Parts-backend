@@ -740,10 +740,10 @@ def run():
         weight_str = g_weight_cache.get(part)
         if not weight_str:
             part_url = PART_URL.format(part=part)
-            ok_w = browser.goto(part_url, anchor_js=PART_WEIGHT_ANCHOR_JS,
+            ok_w = g_browser.goto(part_url, anchor_js=PART_WEIGHT_ANCHOR_JS,
                                 anchor_timeout=25)
             if ok_w:
-                weight_str = browser.eval_js(JS_EXTRACT_WEIGHT) or ''
+                weight_str = g_browser.eval_js(JS_EXTRACT_WEIGHT) or ''
             if weight_str:
                 g_weight_cache[part] = weight_str
 
@@ -755,13 +755,13 @@ def run():
 
         # --- 3b. 价格 ---
         pg_url = PG_URL.format(part=part, color_id=color_id)
-        ok_p = browser.goto(pg_url, anchor_js=PRICE_ANCHOR_JS,
+        ok_p = g_browser.goto(pg_url, anchor_js=PRICE_ANCHOR_JS,
                             anchor_timeout=25)
         currency = ''
         qty_avg_price = None
         price_data = {}
         if ok_p:
-            raw_p = browser.eval_js(JS_EXTRACT_PRICE)
+            raw_p = g_browser.eval_js(JS_EXTRACT_PRICE)
             if isinstance(raw_p, str):
                 try:
                     price_data = json.loads(raw_p)
