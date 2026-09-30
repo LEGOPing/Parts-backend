@@ -453,8 +453,13 @@ class BLBrowser:
         time.sleep(2.0)
 
     def eval_js(self, js, timeout=15):
-        """用 wkwebview 自带的 eval_js（内部已处理 ObjCBlock + retain_global）。"""
-        return self.wv.eval_js(js, timeout=timeout)
+        """用 wkwebview 自带的 eval_js（内部已处理 ObjCBlock + retain_global）。
+        
+        注意：wkwebview.eval_js 签名是 (self, js)，**不接受 timeout 参数**。
+        它内部 queue.get() 无限等 —— WKWebView evaluateJavaScript 的 completionHandler
+        一定会被调用（JS 成功/失败/空页面都会触发），所以不会真的卡死。
+        """
+        return self.wv.eval_js(js)  # timeout 参数被忽略
 
     def _detect_blocked(self):
         try:
