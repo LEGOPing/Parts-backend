@@ -264,50 +264,275 @@ g_weight_cache = {}
 # BLBrowser —— 基于 wkwebview.WKWebView 的浏览器驱动
 # ============================================================
 
-class _BLDelegate:
-    """Navigation delegate —— 每次导航（含 WAF 触发的 reload）都会触发回调。"""
-    def __init__(self, br):
-        self.br = br
+"""BLBrowser —— 重写版
 
-    def webview_did_finish_load(self, webview):
-        # 每次导航完成都会触发（包括 AWS WAF 挑战页 JS 触发的 window.location.reload）
-        self.br._nav_finished_count += 1
-        self.br._sig_load_finished.set()
+核心修复：
+1. main() 用 @ui.in_background → 脚本跑后台线程，主线程留给 objc 回调
+2. 自己建 objc WKNavigationDelegate（create_objc_class），直接覆盖 wkwebview 的转发链
+3. 自己实现带 timeout 的 eval_js（queue.get(timeout=12)）
+4. eval_js_async 用 @on_main_thread 包装（objc evaluateJavaScript 需要主线程）
+"""
+import ui
+import threading
+import queue
+import functools
+from objc_util import (ObjCClass, ObjCInstance, create_objc_class, retain_global,
+                       ObjCBlock, c_void_p, c_long, c_bool, ctypes, on_main_thread)
 
-    def webview_did_fail_load(self, webview, error_code, error_msg):
-        self.br._sig_load_error.set()
-        self.br._last_error = f"WKWebView error {error_code}: {error_msg}"
+# wkwebview.py 里的 block descriptor（复用）
+class _block_decision_handler(ctypes.Structure):
+    _fields_ = [
+        ('reserved', ctypes.c_ulong),
+        ('size', ctypes.c_ulong),
+        ('copy_helper', c_void_p),
+        ('dispose_helper', c_void_p),
+        ('signature', ctypes.c_char_p)
+    ]
 
-    def webview_should_start_load(self, webview, url, nav_type):
-        return True
+
+def _make_ns_url(url_str):
+    """str → NSURL (ObjCInstance)"""
+    NSURL = ObjCClass('NSURL')
+    return NSURL.URLWithString_(url_str)
+
+
+class _BlockLiteral(ctypes.Structure):
+    """ObjCBlock 的 _fields_ 模板（wkwebview.py 里已经有，这里重复免得依赖）"""
+    _fields_ = [
+        ('isa', c_void_p),
+        ('flags', ctypes.c_int),
+        ('reserved', ctypes.c_int),
+        ('invoke', ctypes.CFUNCTYPE(c_void_p, c_void_p, c_void_p)),
+        ('descriptor', _block_decision_handler)
+    ]
+
+
+def _make_block_literal(*arg_types):
+    return [
+        ('isa', c_void_p),
+        ('flags', ctypes.c_int),
+        ('reserved', ctypes.c_int),
+        ('invoke', ctypes.CFUNCTYPE(c_void_p, c_void_p, *arg_types)),
+        ('descriptor', _block_decision_handler)
+    ]
+
+
+class _BLObjCDelegate:
+    """纯 objc_util 写的 WKNavigationDelegate，直接注册到 objc WKWebView 上。"""
+
+    # --- 这些是 objc delegate 方法，create_objc_class 会把它们桥接成 objc ---
+
+    @staticmethod
+    def webView_didCommitNavigation_(_self, _cmd, _webview, _navigation):
+        # 每次开始加载都会触发
+        inst = ObjCInstance(_self)
+        br = getattr(inst, '_blbrowser', None)
+        if br:
+            br._nav_started_count += 1
+            br._log_async(f'  🚀 开始加载 #{br._nav_started_count}')
+
+    @staticmethod
+    def webView_didFinishNavigation_(_self, _cmd, _webview, _navigation):
+        inst = ObjCInstance(_self)
+        br = getattr(inst, '_blbrowser', None)
+        if br:
+            br._nav_finished_count += 1
+            br._sig_load_finished.set()
+            br._log_async(f'  📄 完成加载 #{br._nav_finished_count}')
+
+    @staticmethod
+    def webView_didFailNavigation_withError_(_self, _cmd, _webview, _navigation, _error):
+        inst = ObjCInstance(_self)
+        br = getattr(inst, '_blbrowser', None)
+        if br:
+            err = ObjCInstance(_error)
+            code = int(err.code())
+            msg = str(err.localizedDescription())
+            br._last_error = f'WKWebView error {code}: {msg}'
+            br._sig_load_error.set()
+            br._log_async(f'  ❌ 导航失败: {br._last_error}')
+
+    @staticmethod
+    def webView_didFailProvisionalNavigation_withError_(_self, _cmd, _webview, _navigation, _error):
+        # 主资源加载失败（DNS、SSL 等）
+        _BLObjCDelegate.webView_didFailNavigation_withError_(
+            _self, _cmd, _webview, _navigation, _error)
+
+    @staticmethod
+    def webView_decidePolicyForNavigationAction_decisionHandler_(
+            _self, _cmd, _webview, _navigation_action, _decision_handler):
+        # 允许所有导航（包括 WAF 触发的 window.location.reload）
+        blk = _block_decision_handler.from_address(_decision_handler)
+        blk.invoke(_decision_handler, 1)  # NSURLSessionAuthChallengePerformDefaultHandling
+
+
+def _build_objc_delegate_class():
+    """用 objc_util 动态创建 WKNavigationDelegate 类。"""
+    NSObject = ObjCClass('NSObject')
+    WKNavigationDelegate = ObjCClass('NSObject')  # protocol
+
+    # 方法的 CFUNCTYPE 签名（wkwebview.py 里验证过）
+    # v@:@@@? 表示 void return, self, _cmd, @, @, @, ?
+    f_sign = 'v@:@@@?'
+    f3_sign = 'v@:@@@'    # 3 个 @ args
+    f4_sign = 'v@:@@@@'   # 4 个 @ args（didFailProvisional）
+
+    # 各方法
+    def didCommit(_self, _cmd, _webview, _navigation):
+        _BLObjCDelegate.webView_didCommitNavigation_(_self, _cmd, _webview, _navigation)
+
+    def didFinish(_self, _cmd, _webview, _navigation):
+        _BLObjCDelegate.webView_didFinishNavigation_(_self, _cmd, _webview, _navigation)
+
+    def didFail(_self, _cmd, _webview, _navigation, _error):
+        _BLObjCDelegate.webView_didFailNavigation_withError_(
+            _self, _cmd, _webview, _navigation, _error)
+
+    def didFailProv(_self, _cmd, _webview, _navigation, _error):
+        _BLObjCDelegate.webView_didFailProvisionalNavigation_withError_(
+            _self, _cmd, _webview, _navigation, _error)
+
+    def decidePolicy(_self, _cmd, _webview, _nav_action, _handler):
+        blk = _block_decision_handler.from_address(_handler)
+        blk.invoke(_handler, 1)  # allow
+
+    methods = [
+        didCommit, didFinish, didFail, didFailProv, decidePolicy
+    ]
+    encodings = [f3_sign, f3_sign, f4_sign, f4_sign, f_sign]
+
+    cls = create_objc_class(
+        'BLNavigationDelegate_' + str(id(_BLObjCDelegate)),
+        superclass=NSObject,
+        methods=list(zip(methods, encodings)),
+        protocols=['WKNavigationDelegate']
+    )
+    return cls
 
 
 class BLBrowser:
+    """重写的 BrickLink 浏览器驱动。
+
+    关键设计：
+    - __init__ 在**主线程**调用（因为 objc 初始化要主线程）
+    - load_url / eval_js 在**主线程**调用（objc 方法要求）
+    - goto / run 在**后台线程**（@ui.in_background），用 queue.get(timeout) 等回调
+    """
+
     def __init__(self, progress_cb=None):
-        import threading
         self.progress_cb = progress_cb or (lambda msg: None)
         self._sig_load_finished = threading.Event()
         self._sig_load_error = threading.Event()
         self._last_error = None
-        self._nav_finished_count = 0   # 统计 didFinish 触发次数（含 WAF 自动 reload）
+        self._nav_finished_count = 0
+        self._nav_started_count = 0
 
-        import ui
-        self.container = ui.View()
+        # 建容器 View
         w, h = ui.get_screen_size()
+        self.container = ui.View()
         self.container.frame = (0, 0, w, h)
 
+        # 创建 wkwebview.WKWebView（走主线程）
         self.wv = WKWebView(frame=self.container.bounds, flex='WH')
-        self.wv.delegate = _BLDelegate(self)
         self.container.add_subview(self.wv)
 
+        # 注入反自动化脚本
         self.wv.add_script(ANTI_WEBDRIVER_JS, add_to_end=False)
+
+        # 设置 Safari UA
         self.wv.user_agent = SAFARI_UA
+
+        # ---- 关键：自己的 objc NavigationDelegate ----
+        # 覆盖 wkwebview.WKWebView 自己的 CustomNavigationDelegate
+        self._delegate_cls = _build_objc_delegate_class()
+        self._objc_delegate = self._delegate_cls.new().autorelease()
+        retain_global(self._objc_delegate)
+
+        # 在 objc delegate 上挂 Python 引用（让 objc 方法能回调我们）
+        # wkwebview 的模式是用 Python 属性挂在 ObjCInstance 上
+        ObjCInstance(self._objc_delegate)._blbrowser = self
+
+        # 设到 objc WKWebView 上（主线程）
+        self._set_nav_delegate()
+
+        # eval_js queue（自己管，不用 wkwebview 的）
+        self._eval_queue = queue.Queue()
+
+    @on_main_thread
+    def _set_nav_delegate(self):
+        """在主线程设 objc navigation delegate。"""
+        self.wv.webview.setNavigationDelegate_(self._objc_delegate)
+
+    @on_main_thread
+    def _load_url_on_main(self, url):
+        """在主线程触发加载。"""
+        NSURLRequest = ObjCClass('NSURLRequest')
+        nsurl = _make_ns_url(url)
+        request = NSURLRequest.requestWithURL_cachePolicy_timeoutInterval_(
+            nsurl, 0, 30)  # cachePolicy=0(useProtocolCachePolicy), timeout=30s
+        self.wv.webview.loadRequest_(request)
+
+    @on_main_thread
+    def _reload_on_main(self):
+        self.wv.webview.reload()
+
+    def _log_async(self, msg):
+        """从后台线程安全打日志（用 Python 的 print，flush）。"""
+        self.progress_cb(msg)
 
     def show(self):
         self.container.present('fullscreen', hide_title_bar=False)
+        # 等一下窗口和 WKWebView 初始化
+        time.sleep(2.0)
 
-    def eval_js(self, js, timeout=10):
-        return self.wv.eval_js(js)
+    def eval_js(self, js, timeout=12):
+        """
+        同步 eval JS（主线程安全）。
+
+        关键修复：
+        - eval_js_async 用 @on_main_thread（objc evaluateJavaScript 要主线程）
+        - queue.get(timeout=12) 超时保护（不无限阻塞）
+        - completion handler 被 @on_main_thread 包装后，能在主线程被调用
+        - 我们的脚本在后台线程跑（@ui.in_background），所以 queue.get() 不阻塞主线程
+        """
+        q = queue.Queue()
+
+        @on_main_thread
+        def _do_eval():
+            # 必须在主线程调 objc evaluateJavaScript
+            def _completion_handler(_obj, _err):
+                # completion handler 可能在主线程也可能在别的线程
+                # 保险起见包装一下
+                try:
+                    if _obj is not None:
+                        val = str(ObjCInstance(_obj))
+                    elif _err is not None:
+                        val = None  # JS 执行出错或返回空
+                    else:
+                        val = None
+                except Exception:
+                    val = None
+                try:
+                    q.put(val)
+                except Exception:
+                    pass
+
+            block = ObjCBlock(
+                _completion_handler,
+                restype=None,
+                argtypes=[c_void_p, c_void_p, c_void_p]
+            )
+            retain_global(block)
+            self.wv.webview.evaluateJavaScript_completionHandler_(js, block)
+
+        _do_eval()
+
+        try:
+            val = q.get(timeout=timeout)
+            return val
+        except queue.Empty:
+            self.progress_cb(f'  ⏱️  eval_js 超时 ({timeout}s) JS={js[:60]}...')
+            return None
 
     def _detect_blocked(self):
         try:
@@ -322,14 +547,8 @@ class BLBrowser:
         """
         加载 URL 并等待"真内容到达"。
 
-        AWS WAF 挑战流程（两次导航）：
-          第 1 次 didFinish：服务器返回挑战页 HTML（2 行 div + script）
-                               JS 执行 AwsWafIntegration.getToken() → 自动 window.location.reload
-          第 2 次 didFinish：带着 ws-waf-token 再次请求 → 真页面
-
-        所以策略是：持续轮询
-          (拦截标记消失) AND (anchor JS 命中)
-        直到超时。期间会自然等到 WAF 自动 reload 完成。
+        在后台线程运行（由 @ui.in_background 的 run() 调用）。
+        主线程专门留给 objc delegate 回调和 evaluateJavaScript。
         """
         self.progress_cb('→ 加载 ' + url[:90])
 
@@ -337,8 +556,9 @@ class BLBrowser:
         self._sig_load_error.clear()
         self._last_error = None
         self._nav_finished_count = 0
+        self._nav_started_count = 0
 
-        self.wv.load_url(url)
+        self._load_url_on_main(url)
 
         t0 = time.time()
         deadline = t0 + anchor_timeout
@@ -347,47 +567,42 @@ class BLBrowser:
         still_blocked = False
 
         while time.time() < deadline:
-            # 1) 等下一个 didFinish（每次导航都触发）
+            # 1) 等下一个 didFinish（每次导航都触发，包括 WAF 自动 reload）
             self._sig_load_finished.clear()
-            try:
-                self._sig_load_finished.wait(timeout=min(5, deadline - time.time()))
-            except Exception:
-                pass
+            remaining = deadline - time.time()
+            wait_time = min(5, max(1, remaining))
+            self._sig_load_finished.wait(timeout=wait_time)
 
             # 2) 失败检查
             if self._sig_load_error.is_set():
                 self.progress_cb(f'  ❌ WKWebView load 失败: {self._last_error}')
                 return False
 
+            # 3) 新导航完成
             if self._nav_finished_count > nav_seen:
                 nav_seen = self._nav_finished_count
                 cur_url = self.eval_js('location.href') or ''
-                self.progress_cb(f'  📄 第 {nav_seen} 次加载完成（{cur_url[:80]}）')
+                self.progress_cb(f'  📄 第 {nav_seen} 次完成（{cur_url[:80]}）')
 
-            # 3) WAF/拦截标记
+            # 4) 拦截标记（AWS WAF 在第 1 次 didFinish 后通常还在）
             blocked = self._detect_blocked()
             if blocked:
                 if not still_blocked:
-                    self.progress_cb(f'  🛡️  检测到拦截: {blocked}（等 JS 自动 reload...）')
+                    self.progress_cb(f'  🛡️  检测到拦截: {blocked}（等 JS 自动 reload）')
                 still_blocked = True
-                # 检查是不是已经在挑战页卡很久了 —— 如果已经是第 3 次以上导航还卡，
-                # 可能真过不了，手动触发一次 reload 试试
+                # 卡 3+ 次导航还在挑战页 → 手动 reload 一次救场
                 if nav_seen >= 3:
-                    self.progress_cb('  🔄 已卡 3+ 次导航还在挑战页，手动 reload 一次...')
-                    try:
-                        self.wv.reload()
-                    except Exception:
-                        pass
+                    self.progress_cb('  🔄 已卡 3+ 次导航，手动 reload 一次...')
+                    self._reload_on_main()
                     time.sleep(1.0)
-                # 拦截还在 → 继续等（别 return False！WAF 可能下一次导航就过去了）
                 time.sleep(1.0)
-                continue
+                continue  # 关键：别 return False，继续等下一次导航
             else:
                 if still_blocked:
-                    self.progress_cb('  ✅ 拦截标记消失了（WAF 通过）')
+                    self.progress_cb('  ✅ 拦截标记消失（WAF 通过）')
                 still_blocked = False
 
-            # 4) anchor JS 检查
+            # 5) anchor JS
             if anchor_js:
                 try:
                     r = self.eval_js(anchor_js)
@@ -397,17 +612,16 @@ class BLBrowser:
                 except Exception:
                     pass
 
-            # 5) 进度日志（每 10s 一次）
+            # 6) 进度
             elapsed = int(time.time() - t0)
             if elapsed - last_log >= 10:
                 last_log = elapsed
                 extra = f' 拦截={"是" if still_blocked else "否"}'
-                self.progress_cb(f'  ⏳ 等待中 ... {elapsed}s（导航 {nav_seen} 次）{extra}')
+                self.progress_cb(f'  ⏳ {elapsed}s / {nav_seen} 次导航{extra}')
 
-            time.sleep(1.0)
+            time.sleep(0.5)
 
-        # 超时
-        self.progress_cb(f'  ⏰ 超时 ({anchor_timeout}s)，拦截={still_blocked}, 导航次数={nav_seen}')
+        self.progress_cb(f'  ⏰ 超时 ({anchor_timeout}s)，拦截={still_blocked}, 导航={nav_seen}')
         return False
 
     def dump_diagnostics(self):
@@ -416,22 +630,20 @@ class BLBrowser:
             title = self.eval_js(JS_TITLE) or '(空)'
             cur_url = self.eval_js('location.href') or '(空)'
             html_len = self.eval_js(JS_HTML_LEN) or 0
+            ready = self.eval_js('document.readyState') or '(空)'
             blocked = self.eval_js(JS_HAS_BLOCKED) or '(无拦截)'
             html_head = self.eval_js(JS_HTML_SNIPPET) or '(空 body)'
             print(f'  标题          : {title}')
             print(f'  当前 URL      : {cur_url[:120]}')
+            print(f'  readyState    : {ready}')
             print(f'  HTML 长度     : {html_len}')
+            print(f'  导航次数      : {self._nav_finished_count} 完成 / {self._nav_started_count} 开始')
             print(f'  拦截标记      : {blocked}')
             print(f'  body 前 500字符:')
             print(f'  {html_head[:500]}')
             print(f'  ────────────\n')
         except Exception as e:
             print(f'  (诊断失败: {e})')
-
-
-# ============================================================
-# 主流程
-# ============================================================
 
 def set_progress(text):
     print(text, flush=True)
@@ -459,39 +671,37 @@ def _try_load_inventory(browser, set_no, anchor_timeout=45):
     return [], set_no
 
 
+@ui.in_background
 def run():
-    global g_set_no, g_inventory, g_results
+    global g_set_no, g_inventory, g_results, g_browser
 
-    # --- 1. 输入套装号 ---
+    if g_browser is None:
+        print('❌ g_browser 未初始化')
+        return
+
+    # user_input 从 sys.argv 拿（main() 已经处理过）
     if len(sys.argv) > 1:
-        user_input = sys.argv[1]
+        user_input = sys.argv[1].strip()
     else:
-        try:
-            user_input = input('乐高套装型号 (如 75290): ')
-        except EOFError:
-            user_input = ''
-    user_input = (user_input or '').strip()
-    if not user_input:
-        print('未输入套装号，退出')
+        print('❌ 缺少套装号，需要命令行参数')
         return
 
     print('=' * 50)
     print('套装:', user_input)
     print('=' * 50)
 
-    browser = BLBrowser(progress_cb=set_progress)
-    browser.show()
-    time.sleep(1.5)  # 等容器 + WKWebView 初始化 + UA 生效
+    # 等主线程 UI 初始化稳定一下
+    time.sleep(2.0)
 
-    # --- 2. 抓 inventory（带 fallback） ---
+    # --- 1. 抓 inventory（带 fallback） ---
     print('\n[1/3] 加载零件清单 ...')
-    g_inventory, used_no = _try_load_inventory(browser, user_input)
+    g_inventory, used_no = _try_load_inventory(g_browser, user_input)
 
     # Fallback 1：没后缀 → 补 -1
     if not g_inventory and '-' not in user_input:
         print(f'  ⚠️  没抓到零件，自动补 "-1" 后缀再试一次 ...')
         time.sleep(1.0)
-        g_inventory, used_no = _try_load_inventory(browser, user_input + '-1')
+        g_inventory, used_no = _try_load_inventory(g_browser, user_input + '-1')
 
     # Fallback 2：有后缀 → 试不带后缀
     elif not g_inventory and '-' in user_input:
@@ -499,16 +709,16 @@ def run():
         if alt != user_input:
             print(f'  ⚠️  没抓到零件，试不带后缀 "{alt}" ...')
             time.sleep(1.0)
-            g_inventory, used_no = _try_load_inventory(browser, alt)
+            g_inventory, used_no = _try_load_inventory(g_browser, alt)
 
     g_set_no = used_no
 
     if not g_inventory:
         print('❌ 所有尝试都没抓到零件')
-        browser.dump_diagnostics()
+        g_browser.dump_diagnostics()
         time.sleep(3)
         try:
-            browser.container.close()
+            g_browser.container.close()
         except Exception:
             pass
         return
@@ -634,21 +844,46 @@ def run():
     finally:
         time.sleep(2)
         try:
-            browser.container.close()
+            g_browser.container.close()
         except Exception:
             pass
 
 
+@on_main_thread
+def _main_thread_init(user_input):
+    """主线程：创建浏览器 + 显示窗口。"""
+    global g_browser
+    g_browser = BLBrowser(progress_cb=set_progress)
+    g_browser.show()
+
+
 def main():
-    try:
-        run()
-    except KeyboardInterrupt:
-        print('\n用户中断，退出')
-    except Exception as e:
-        print(f'\n❌ 运行出错: {e}')
-        import traceback
-        traceback.print_exc()
+    global g_browser
+
+    # 用户输入（主线程）
+    if len(sys.argv) > 1:
+        user_input = sys.argv[1]
+    else:
+        try:
+            user_input = input('乐高套装型号 (如 75290): ')
+        except EOFError:
+            user_input = ''
+    user_input = (user_input or '').strip()
+    if not user_input:
+        print('未输入套装号，退出')
+        return
+
+    print('=' * 50)
+    print('套装:', user_input)
+    print('=' * 50)
+
+    # 主线程建 UI
+    _main_thread_init(user_input)
+
+    # 后台线程跑抓取
+    run()
 
 
 if __name__ == '__main__':
+    g_browser = None
     main()
