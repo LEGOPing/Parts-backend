@@ -451,56 +451,53 @@ class _BLObjCDelegate:
 
 
 def _build_objc_delegate_class():
-    """用 objc_util 动态创建 WKNavigationDelegate 类。"""
+    """用 objc_util 动态创建 WKNavigationDelegate 类。
+
+    完全对齐 wkwebview.py 的做法：
+    - 函数名就是 ObjC selector 名（_ 结尾 = 冒号）
+    - 不手动指定 encoding，让 create_objc_class 从函数名自动推断
+    """
     NSObject = ObjCClass('NSObject')
-    WKNavigationDelegate = ObjCClass('NSObject')  # protocol
 
-    # 方法的 CFUNCTYPE 签名（wkwebview.py 里验证过）
-    # v@:@@@? 表示 void return, self, _cmd, @, @, @, ?
-    f_sign = 'v@:@@@?'
-    f3_sign = 'v@:@@@'    # 3 个 @ args
-    f4_sign = 'v@:@@@@'   # 4 个 @ args（didFailProvisional）
-
-    # 各方法
-    def didCommit(_self, _cmd, _webview, _navigation):
+    def webView_didCommitNavigation_(_self, _cmd, _webview, _navigation):
         _BLObjCDelegate.webView_didCommitNavigation_(_self, _cmd, _webview, _navigation)
 
-    def didFinish(_self, _cmd, _webview, _navigation):
+    def webView_didFinishNavigation_(_self, _cmd, _webview, _navigation):
         _BLObjCDelegate.webView_didFinishNavigation_(_self, _cmd, _webview, _navigation)
 
-    def didFail(_self, _cmd, _webview, _navigation, _error):
+    def webView_didFailNavigation_withError_(
+            _self, _cmd, _webview, _navigation, _error):
         _BLObjCDelegate.webView_didFailNavigation_withError_(
             _self, _cmd, _webview, _navigation, _error)
 
-    def didFailProv(_self, _cmd, _webview, _navigation, _error):
+    def webView_didFailProvisionalNavigation_withError_(
+            _self, _cmd, _webview, _navigation, _error):
         _BLObjCDelegate.webView_didFailProvisionalNavigation_withError_(
             _self, _cmd, _webview, _navigation, _error)
 
-    def decidePolicy(_self, _cmd, _webview, _nav_action, _handler):
-        blk = _block_decision_handler.from_address(_handler)
-        blk.invoke(_handler, 1)  # allow
-
-    methods = [
-        didCommit, didFinish, didFail, didFailProv, decidePolicy
-    ]
-    encodings = [f3_sign, f3_sign, f4_sign, f4_sign, f_sign]
-
-    # Pythonista 的 create_objc_class 不接受 encodings 参数
-    # encoding 要挂在每个方法函数自身上
-    didCommit.objc_encoding = f3_sign
-    didFinish.objc_encoding = f3_sign
-    didFail.objc_encoding = f4_sign
-    didFailProv.objc_encoding = f4_sign
-    decidePolicy.objc_encoding = f_sign
+    def webView_decidePolicyForNavigationAction_decisionHandler_(
+            _self, _cmd, _webview, _nav_action, _handler):
+        # 允许所有导航（包括 WAF 触发的 window.location.reload）
+        # 用 ctypes 调 block，wkwebview.py 里已有这个 block 引用
+        try:
+            blk = _block_decision_handler.from_address(_handler)
+            blk.invoke(_handler, 1)  # allow
+        except Exception:
+            pass
 
     cls = create_objc_class(
         'BLNavigationDelegate_' + str(id(_BLObjCDelegate)),
         superclass=NSObject,
-        methods=[didCommit, didFinish, didFail, didFailProv, decidePolicy],
+        methods=[
+            webView_didCommitNavigation_,
+            webView_didFinishNavigation_,
+            webView_didFailNavigation_withError_,
+            webView_didFailProvisionalNavigation_withError_,
+            webView_decidePolicyForNavigationAction_decisionHandler_,
+        ],
         protocols=['WKNavigationDelegate']
     )
     return cls
-
 
 class BLBrowser:
     """重写的 BrickLink 浏览器驱动。
