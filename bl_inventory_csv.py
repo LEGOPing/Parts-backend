@@ -360,8 +360,7 @@ import ui
 import threading
 import queue
 import functools
-from objc_util import (ObjCClass, ObjCInstance, ObjCBlock, retain_global,
-                       c_void_p, on_main_thread)
+from objc_util import (ObjCClass, ObjCInstance, on_main_thread)
 
 # wkwebview.py 里的 block descriptor（复用）
 def _make_ns_url(url_str):
@@ -430,8 +429,6 @@ class BLBrowser:
         # wkwebview.py 自带的 CustomNavigationDelegate 会自动把 objc 回调转到这里
         self.wv.delegate = _BLDelegate(self)
 
-        # eval_js queue（自己管，不用 wkwebview 的）
-        self._eval_queue = queue.Queue()
 
     @on_main_thread
     def _load_url_on_main(self, url):
@@ -455,54 +452,9 @@ class BLBrowser:
         # 等一下窗口和 WKWebView 初始化
         time.sleep(2.0)
 
-    def eval_js(self, js, timeout=12):
-        """
-        同步 eval JS（主线程安全）。
-
-        关键修复：
-        - eval_js_async 用 @on_main_thread（objc evaluateJavaScript 要主线程）
-        - queue.get(timeout=12) 超时保护（不无限阻塞）
-        - completion handler 被 @on_main_thread 包装后，能在主线程被调用
-        - 我们的脚本在后台线程跑（@ui.in_background），所以 queue.get() 不阻塞主线程
-        """
-        q = queue.Queue()
-
-        @on_main_thread
-        def _do_eval():
-            # 必须在主线程调 objc evaluateJavaScript
-            def _completion_handler(_obj, _err):
-                # completion handler 可能在主线程也可能在别的线程
-                # 保险起见包装一下
-                try:
-                    if _obj is not None:
-                        val = str(ObjCInstance(_obj))
-                    elif _err is not None:
-                        val = None  # JS 执行出错或返回空
-                    else:
-                        val = None
-                except Exception:
-                    val = None
-                try:
-                    q.put(val)
-                except Exception:
-                    pass
-
-            block = ObjCBlock(
-                _completion_handler,
-                restype=None,
-                argtypes=[c_void_p, c_void_p, c_void_p]
-            )
-            retain_global(block)
-            self.wv.webview.evaluateJavaScript_completionHandler_(js, block)
-
-        _do_eval()
-
-        try:
-            val = q.get(timeout=timeout)
-            return val
-        except queue.Empty:
-            self.progress_cb(f'  ⏱️  eval_js 超时 ({timeout}s) JS={js[:60]}...')
-            return None
+    def eval_js(self, js, timeout=15):
+        """用 wkwebview 自带的 eval_js（内部已处理 ObjCBlock + retain_global）。"""
+        return self.wv.eval_js(js, timeout=timeout)
 
     def _detect_blocked(self):
         try:
