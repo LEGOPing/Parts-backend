@@ -485,11 +485,18 @@ def _build_objc_delegate_class():
     ]
     encodings = [f3_sign, f3_sign, f4_sign, f4_sign, f_sign]
 
+    # Pythonista 的 create_objc_class 不接受 encodings 参数
+    # encoding 要挂在每个方法函数自身上
+    didCommit.objc_encoding = f3_sign
+    didFinish.objc_encoding = f3_sign
+    didFail.objc_encoding = f4_sign
+    didFailProv.objc_encoding = f4_sign
+    decidePolicy.objc_encoding = f_sign
+
     cls = create_objc_class(
         'BLNavigationDelegate_' + str(id(_BLObjCDelegate)),
         superclass=NSObject,
         methods=[didCommit, didFinish, didFail, didFailProv, decidePolicy],
-        encodings=[f3_sign, f3_sign, f4_sign, f4_sign, f_sign],
         protocols=['WKNavigationDelegate']
     )
     return cls
