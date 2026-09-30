@@ -401,104 +401,6 @@ def _make_block_literal(*arg_types):
     ]
 
 
-class _BLObjCDelegate:
-    """纯 objc_util 写的 WKNavigationDelegate，直接注册到 objc WKWebView 上。"""
-
-    # --- 这些是 objc delegate 方法，create_objc_class 会把它们桥接成 objc ---
-
-    @staticmethod
-    def webView_didCommitNavigation_(_self, _cmd, _webview, _navigation):
-        # 每次开始加载都会触发
-        inst = ObjCInstance(_self)
-        br = getattr(inst, '_blbrowser', None)
-        if br:
-            br._nav_started_count += 1
-            br._log_async(f'  🚀 开始加载 #{br._nav_started_count}')
-
-    @staticmethod
-    def webView_didFinishNavigation_(_self, _cmd, _webview, _navigation):
-        inst = ObjCInstance(_self)
-        br = getattr(inst, '_blbrowser', None)
-        if br:
-            br._nav_finished_count += 1
-            br._sig_load_finished.set()
-            br._log_async(f'  📄 完成加载 #{br._nav_finished_count}')
-
-    @staticmethod
-    def webView_didFailNavigation_withError_(_self, _cmd, _webview, _navigation, _error):
-        inst = ObjCInstance(_self)
-        br = getattr(inst, '_blbrowser', None)
-        if br:
-            err = ObjCInstance(_error)
-            code = int(err.code())
-            msg = str(err.localizedDescription())
-            br._last_error = f'WKWebView error {code}: {msg}'
-            br._sig_load_error.set()
-            br._log_async(f'  ❌ 导航失败: {br._last_error}')
-
-    @staticmethod
-    def webView_didFailProvisionalNavigation_withError_(_self, _cmd, _webview, _navigation, _error):
-        # 主资源加载失败（DNS、SSL 等）
-        _BLObjCDelegate.webView_didFailNavigation_withError_(
-            _self, _cmd, _webview, _navigation, _error)
-
-    @staticmethod
-    def webView_decidePolicyForNavigationAction_decisionHandler_(
-            _self, _cmd, _webview, _navigation_action, _decision_handler):
-        # 允许所有导航（包括 WAF 触发的 window.location.reload）
-        blk = _block_decision_handler.from_address(_decision_handler)
-        blk.invoke(_decision_handler, 1)  # NSURLSessionAuthChallengePerformDefaultHandling
-
-
-def _build_objc_delegate_class():
-    """用 objc_util 动态创建 WKNavigationDelegate 类。
-
-    完全对齐 wkwebview.py 的做法：
-    - 函数名就是 ObjC selector 名（_ 结尾 = 冒号）
-    - 不手动指定 encoding，让 create_objc_class 从函数名自动推断
-    """
-    NSObject = ObjCClass('NSObject')
-
-    def webView_didCommitNavigation_(_self, _cmd, _webview, _navigation):
-        _BLObjCDelegate.webView_didCommitNavigation_(_self, _cmd, _webview, _navigation)
-
-    def webView_didFinishNavigation_(_self, _cmd, _webview, _navigation):
-        _BLObjCDelegate.webView_didFinishNavigation_(_self, _cmd, _webview, _navigation)
-
-    def webView_didFailNavigation_withError_(
-            _self, _cmd, _webview, _navigation, _error):
-        _BLObjCDelegate.webView_didFailNavigation_withError_(
-            _self, _cmd, _webview, _navigation, _error)
-
-    def webView_didFailProvisionalNavigation_withError_(
-            _self, _cmd, _webview, _navigation, _error):
-        _BLObjCDelegate.webView_didFailProvisionalNavigation_withError_(
-            _self, _cmd, _webview, _navigation, _error)
-
-    def webView_decidePolicyForNavigationAction_decisionHandler_(
-            _self, _cmd, _webview, _nav_action, _handler):
-        # 允许所有导航（包括 WAF 触发的 window.location.reload）
-        # 用 ctypes 调 block，wkwebview.py 里已有这个 block 引用
-        try:
-            blk = _block_decision_handler.from_address(_handler)
-            blk.invoke(_handler, 1)  # allow
-        except Exception:
-            pass
-
-    cls = create_objc_class(
-        'BLNavigationDelegate_' + str(id(_BLObjCDelegate)),
-        superclass=NSObject,
-        methods=[
-            webView_didCommitNavigation_,
-            webView_didFinishNavigation_,
-            webView_didFailNavigation_withError_,
-            webView_didFailProvisionalNavigation_withError_,
-            webView_decidePolicyForNavigationAction_decisionHandler_,
-        ],
-        protocols=['WKNavigationDelegate']
-    )
-    return cls
-
 class BLBrowser:
     """重写的 BrickLink 浏览器驱动。
 
@@ -531,26 +433,13 @@ class BLBrowser:
         # 设置 Safari UA
         self.wv.user_agent = SAFARI_UA
 
-        # ---- 关键：自己的 objc NavigationDelegate ----
-        # 覆盖 wkwebview.WKWebView 自己的 CustomNavigationDelegate
-        self._delegate_cls = _build_objc_delegate_class()
-        self._objc_delegate = self._delegate_cls.new().autorelease()
-        retain_global(self._objc_delegate)
-
-        # 在 objc delegate 上挂 Python 引用（让 objc 方法能回调我们）
-        # wkwebview 的模式是用 Python 属性挂在 ObjCInstance 上
-        ObjCInstance(self._objc_delegate)._blbrowser = self
-
-        # 设到 objc WKWebView 上（主线程）
-        self._set_nav_delegate()
+        # ---- 关键：用 wkwebview.WKWebView 自带的 CustomNavigationDelegate ----
+        # wkwebview 已经在 objc 层桥好了：objc 回调 → 调 webview.delegate 的 Python 方法
+        # 我们只需要把自己挂到 self.wv.delegate 上，实现三个 Python 回调方法
+        self.wv.delegate = self
 
         # eval_js queue（自己管，不用 wkwebview 的）
         self._eval_queue = queue.Queue()
-
-    @on_main_thread
-    def _set_nav_delegate(self):
-        """在主线程设 objc navigation delegate。"""
-        self.wv.webview.setNavigationDelegate_(self._objc_delegate)
 
     @on_main_thread
     def _load_url_on_main(self, url):
@@ -568,6 +457,22 @@ class BLBrowser:
     def _log_async(self, msg):
         """从后台线程安全打日志（用 Python 的 print，flush）。"""
         self.progress_cb(msg)
+
+    # ── wkwebview 原生 Python delegate 回调 ──
+    # wkwebview 的 CustomNavigationDelegate 会从 objc 层调到这里
+    def webview_did_start_load(self, webview):
+        self._nav_started_count += 1
+        self._log_async(f'  🚀 开始加载 #{self._nav_started_count}')
+
+    def webview_did_finish_load(self, webview):
+        self._nav_finished_count += 1
+        self._sig_load_finished.set()
+        self._log_async(f'  📄 完成加载 #{self._nav_finished_count}')
+
+    def webview_did_fail_load(self, webview, error_code, error_msg):
+        self._last_error = f'WKWebView error {error_code}: {error_msg}'
+        self._sig_load_error.set()
+        self._log_async(f'  ❌ 导航失败: {self._last_error}')
 
     def show(self):
         self.container.present('fullscreen', hide_title_bar=False)
