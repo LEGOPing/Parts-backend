@@ -257,10 +257,10 @@ def _load_bl_colors():
     """加载套装零件清单文件夹里的 bl-color.json（或 Gitee 上的 bl_colors.json）。"""
     global BL_COLORS, BL_COLOR_BY_NAME
     candidates = [
-        os.path.join(os.path.expanduser('~/Documents'), '套装零件清单', 'bl-color.json'),
+        os.path.join(os.path.expanduser('~/Documents'), '套装零件清单', 'bl-colors.json'),
         os.path.join(os.path.expanduser('~/Documents'), '套装零件清单', 'bl_colors.json'),
-        os.path.join(os.path.expanduser('~/Documents'), 'bl-color.json'),
-        os.path.join(os.path.expanduser('~/Documents'), 'bl_colors.json'),
+        os.path.join(os.path.expanduser('~/Documents'), '套装零件清单', 'bl-color.json'),
+        os.path.join(os.path.expanduser('~/Documents'), 'bl-colors.json'),
     ]
     data = None
     for p in candidates:
