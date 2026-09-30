@@ -91,98 +91,71 @@ PRICE_ANCHOR_JS = (
 # JS 提取函数（全部在 BrickLink 页面内执行）
 # ============================================================
 
-JS_EXTRACT_INVENTORY = r"""
-(() => {
+JS_EXTRACT_INVENTORY = r"""(() => {
   var rows = [];
   var seen = new Set();
 
-  var trs = document.querySelectorAll('table tr');
-  for (var i = 0; i < trs.length; i++) {
-    var tr = trs[i];
-    var partLink = tr.querySelector(
-      'a[href*="catalogitem.page?P="], a[href*="catalogItemPic.asp?P="]'
-    );
-    if (!partLink) continue;
+  // 找所有指向零件/人仔详情页的 <a>
+  // BrickLink inventory 页上每个实际零件都会有：
+  //   /v2/catalog/catalogitem.page?P=3020&idColor=7  ← 零件
+  //   /v2/catalog/catalogitem.page?M=cty0406          ← 人仔（无颜色）
+  var links = document.querySelectorAll('a[href*="catalogitem.page"]');
 
-    var href = partLink.getAttribute('href') || '';
+  for (var i = 0; i < links.length; i++) {
+    var a = links[i];
+    var href = a.getAttribute('href') || '';
+
+    // 过滤：必须是 /v2/catalog/catalogitem.page 且带 ?P= 或 ?M=
+    if (href.indexOf('/v2/catalog/catalogitem.page') < 0) continue;
+    if (href.indexOf('?P=') < 0 && href.indexOf('?M=') < 0) continue;
+
+    // 零件号
     var pm = href.match(/[?&]P=([A-Za-z0-9]+)/);
-    if (!pm) continue;
-    var partText = pm[1];
+    var mm = href.match(/[?&]M=([A-Za-z0-9]+)/);
+    var partText = pm ? pm[1] : (mm ? mm[1] : '');
+    if (!partText) continue;
 
-    // 颜色 ID
-    var colorId = '';
-    var cm = href.match(/[?&]colorID=(-?\d+)/i);
-    if (cm) {
-      colorId = cm[1];
-    } else {
-      var colorLink = tr.querySelector('a[href*="colorID="]');
-      if (colorLink) {
-        var ch = colorLink.getAttribute('href') || '';
-        var cm2 = ch.match(/[?&]colorID=(-?\d+)/i);
-        if (cm2) colorId = cm2[1];
-      }
-    }
+    // 颜色 ID — BrickLink 用 idColor= 参数（不是 colorID=！）
+    var cm = href.match(/[?&]idColor=(-?\d+)/);
+    var colorId = cm ? cm[1] : '-1';
 
-    // Qty：取同 tr 里最大的纯数字 td
+    // 找最近的祖先 <tr>
+    var tr = a;
+    while (tr && tr.tagName && tr.tagName !== 'TR') tr = tr.parentElement;
+    if (!tr) continue;
+
+    var trText = tr.textContent || '';
+
+    // Qty：行里 "Yes"/"No" 和零件号之间的那个数字
+    // BrickLink inventory 行结构：[InvID] [Yes/No] [Qty] [PartNo] [Desc]
     var qty = 1;
-    var trTds = tr.querySelectorAll('td');
-    var candidates = [];
-    for (var c = 0; c < trTds.length; c++) {
-      var tdTxt = (trTds[c].textContent || '').trim();
-      var qm = tdTxt.match(/^([\d,]+)$/);
-      if (!qm) continue;
-      var n = parseInt(qm[1].replace(/,/g, ''));
-      if (isNaN(n) || n <= 0 || n > 50000) continue;
-      if (tdTxt === partText) continue;
-      candidates.push(n);
-    }
-    if (candidates.length > 0) {
-      candidates.sort(function(a, b) { return b - a; });
-      qty = candidates[0];
-    }
-
-    // 描述
-    var desc = '';
-    var itemNoTd = partLink.closest('td');
-    if (itemNoTd) {
-      var allLinks = itemNoTd.querySelectorAll('a');
-      for (var l = 0; l < allLinks.length; l++) {
-        var at = (allLinks[l].textContent || '').trim();
-        if (at && at !== partText && at.length > 2) {
-          desc += (desc ? ' ' : '') + at;
-        }
-      }
-      if (!desc) {
-        var full = itemNoTd.textContent || '';
-        desc = full.replace(partText, '').replace(/\s+/g, ' ').trim();
+    var yesIdx = trText.search(/\bYes\b|\bNo\b/);
+    var partLabel = (a.textContent || '').trim();
+    var partIdx = trText.indexOf(partLabel);
+    if (yesIdx >= 0 && partIdx > yesIdx) {
+      var between = trText.substring(yesIdx, partIdx);
+      var bm = between.match(/\b(\d{1,3})\b/g);
+      if (bm && bm.length > 0) {
+        var cand = parseInt(bm[0], 10);
+        if (cand > 0 && cand < 1000) qty = cand;
       }
     }
-    if (desc.length > 100) desc = desc.substring(0, 100);
 
+    // 去重（同 part+color 只取第一次出现）
     var key = partText + '|' + colorId;
-    if (seen.has(key)) {
-      for (var r = 0; r < rows.length; r++) {
-        if (rows[r].part === partText && rows[r].color_id === colorId) {
-          rows[r].qty += qty;
-          break;
-        }
-      }
-      continue;
-    }
+    if (seen.has(key)) continue;
     seen.add(key);
 
     rows.push({
       part: partText,
-      color_id: colorId || '-1',
+      color_id: colorId,
       qty: qty,
-      color_name: '',
-      description: desc
+      description: ''
     });
   }
 
   return JSON.stringify(rows);
-})();
-"""
+})();"""
 
 
 JS_EXTRACT_WEIGHT = r"""
