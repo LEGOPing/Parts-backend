@@ -146,11 +146,28 @@ JS_EXTRACT_INVENTORY = r"""(() => {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    // 描述：零件号链接所在 td 的下一个兄弟 td 的文本
+    var desc = '';
+    var parentTd = a.parentElement;
+    while (parentTd && parentTd.tagName !== 'TD') parentTd = parentTd.parentElement;
+    if (parentTd) {
+      var nextTd = parentTd.nextElementSibling;
+      while (nextTd) {
+        var t = (nextTd.textContent || '').trim();
+        if (t && t !== partText && t !== 'Yes' && t !== 'No' && t.length > 2) {
+          // 取第一个有意义的 td 作为描述（通常就是 Description 列）
+          desc = t.substring(0, 120);
+          break;
+        }
+        nextTd = nextTd.nextElementSibling;
+      }
+    }
+
     rows.push({
       part: partText,
       color_id: colorId,
       qty: qty,
-      description: ''
+      description: desc
     });
   }
 
@@ -231,6 +248,83 @@ g_set_no = ""
 g_inventory = []
 g_results = []
 g_weight_cache = {}
+
+# ---- BL 颜色表 ----
+BL_COLORS = {}         # id → {"name": ..., "type": ...}
+BL_COLOR_BY_NAME = {}  # lowercase name → id
+
+def _load_bl_colors():
+    """加载套装零件清单文件夹里的 bl-color.json（或 Gitee 上的 bl_colors.json）。"""
+    global BL_COLORS, BL_COLOR_BY_NAME
+    candidates = [
+        os.path.join(os.path.expanduser('~/Documents'), '套装零件清单', 'bl-color.json'),
+        os.path.join(os.path.expanduser('~/Documents'), '套装零件清单', 'bl_colors.json'),
+        os.path.join(os.path.expanduser('~/Documents'), 'bl-color.json'),
+        os.path.join(os.path.expanduser('~/Documents'), 'bl_colors.json'),
+    ]
+    data = None
+    for p in candidates:
+        if os.path.isfile(p):
+            try:
+                data = json.load(open(p, encoding='utf-8'))
+                print(f'  🎨 加载本地颜色表: {p}')
+                break
+            except Exception as e:
+                print(f'  ⚠️  本地颜色表加载失败 {p}: {e}')
+    if data is None:
+        # 回退：从 Gitee 拉
+        try:
+            url = 'https://gitee.com/legoping/parts-rb/raw/main/bl_colors.json'
+            req = urllib.request.Request(url, headers={'User-Agent': 'curl/8'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+            print(f'  🎨 从 Gitee 拉到颜色表 ({len(data)} 条)')
+        except Exception as e:
+            print(f'  ⚠️  Gitee 颜色表拉取失败: {e}')
+            data = []
+    for rec in data:
+        cid = rec.get('id')
+        cname = rec.get('name', '')
+        if cid is None: continue
+        BL_COLORS[str(cid)] = rec
+        key = (cname or '').strip().lower()
+        if key:
+            BL_COLOR_BY_NAME[key] = str(cid)
+    print(f'  ✅ 颜色表 {len(BL_COLORS)} 条可查')
+
+
+def _resolve_color_from_name(color_name):
+    """从颜色名（英文）查 BL 颜色 ID。返回 str 或 None。"""
+    if not color_name:
+        return None
+    key = color_name.strip().lower()
+    # 精确匹配
+    if key in BL_COLOR_BY_NAME:
+        return BL_COLOR_BY_NAME[key]
+    # 模糊匹配（包含）
+    for k, v in BL_COLOR_BY_NAME.items():
+        if key in k or k in key:
+            return v
+    return None
+
+
+def _resolve_color_id(part_color_id, part_description):
+    """
+    优先用 inventory 页面 URL 里的 idColor。
+    如果是 -1 或空 → 从描述里解析颜色名 → bl_colors.json 匹配。
+    """
+    if part_color_id not in ('', '-1', '-'):
+        return str(part_color_id)
+    # 从描述里找颜色词
+    desc = (part_description or '').strip()
+    # 描述通常以颜色名开头："Dark Bluish Gray Brick 1 x 2" / "Blue Plate 2 x 4"
+    # 尝试匹配 bl_colors 里已知颜色名
+    for cname, cid in BL_COLOR_BY_NAME.items():
+        # 用  边界避免 "Red" 匹配 "Redstone" 之类
+        if re.search(r'' + re.escape(cname) + r'', desc, re.IGNORECASE):
+            return cid
+    return '-1'
+
 
 
 # ============================================================
@@ -667,6 +761,7 @@ def run():
     time.sleep(2.0)
 
     # --- 1. 抓 inventory（带 fallback） ---
+    _load_bl_colors()
     print('\n[1/3] 加载零件清单 ...')
     g_inventory, used_no = _try_load_inventory(g_browser, user_input)
 
@@ -696,6 +791,17 @@ def run():
             pass
         return
 
+    # 颜色 ID fallback：如果 URL 里拿不到 idColor → 从描述解析
+    fixed = 0
+    for item in g_inventory:
+        orig = item.get('color_id', '-1')
+        desc = item.get('description', '')
+        resolved = _resolve_color_id(orig, desc)
+        if resolved != orig:
+            item['color_id'] = resolved
+            fixed += 1
+    if fixed:
+        print(f'  🎨  从描述补到 {fixed} 个零件的颜色 ID')
     print(f'  ✓ 提取到 {len(g_inventory)} 个不重复零件 (用套装号: {g_set_no})')
     for it in g_inventory[:3]:
         print('    {part} | color={color_id} | qty={qty}'.format(**it))
@@ -781,14 +887,9 @@ def run():
 
     # --- 4. 生成 CSV ---
     print(f'\n[3/3] 生成 CSV ...')
-    # CSV 输出到脚本所在目录（bl_inventory_csv.py 放哪个文件夹，CSV 就落哪）
-    # 如果脚本路径取不到（特殊启动方式），fallback 到 ~/Documents/套装零件清单/
-    script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else ''
-    if script_dir and os.path.isdir(script_dir):
-        out_dir = script_dir
-    else:
-        out_dir = os.path.join(os.path.expanduser('~/Documents'), '套装零件清单')
-        os.makedirs(out_dir, exist_ok=True)
+    # CSV 固定输出到 ~/Documents/套装零件清单/
+    out_dir = os.path.join(os.path.expanduser('~/Documents'), '套装零件清单')
+    os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     out_path = os.path.join(out_dir, f'BL_{g_set_no}_{ts}.csv')
 
