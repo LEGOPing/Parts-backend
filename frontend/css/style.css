@@ -1752,6 +1752,157 @@ body {
     box-sizing: border-box;
 }
 
+/* 拆分零件弹窗：六行布局 */
+.split-part-modal {
+    max-width: 420px !important;
+    width: 92%;
+    box-sizing: border-box;
+    padding: 14px 16px;
+}
+
+/* 第一行：取消（左）+ 标题（中）+ 确认（右） */
+.split-part-modal .sp-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.split-part-modal .sp-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #34495e;
+    text-align: center;
+}
+
+.split-part-modal .sp-btn {
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    height: 36px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+}
+
+.split-part-modal .sp-cancel-btn {
+    background: #f44336;
+}
+
+.split-part-modal .sp-confirm-btn {
+    background: #27ae60;
+}
+
+/* 主体 */
+.split-part-modal .sp-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* 第二/三行：左右两半（右半区标签从 1/2 宽度起，数值右对齐） */
+.split-part-modal .sp-row {
+    display: flex;
+    align-items: center;
+}
+
+.split-part-modal .sp-half {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.split-part-modal .sp-label {
+    font-size: 13px;
+    color: #666;
+    flex-shrink: 0;
+}
+
+.split-part-modal .sp-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin-left: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.split-part-modal .sp-num {
+    margin-left: auto;
+    color: #27ae60;
+}
+
+/* 第四行：四个输入框 */
+.split-part-modal .sp-input-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.split-part-modal .sp-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 38px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 0 8px;
+    font-size: 15px;
+    text-align: center;
+    color: #333;
+    background: #fafafa;
+    outline: none;
+}
+
+.split-part-modal .sp-input:focus {
+    border-color: #2196F3;
+    background: #fff;
+}
+
+/* 第五行：输入框标签 */
+.split-part-modal .sp-label-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.split-part-modal .sp-input-label {
+    font-size: 11px;
+    color: #999;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* 第六行：拆分结果 */
+.split-part-modal .sp-result-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: #f9f9f9;
+    border-radius: 6px;
+    padding: 10px 0;
+    margin-top: 2px;
+}
+
+.split-part-modal .sp-result-num {
+    font-size: 16px;
+    font-weight: 700;
+    color: #27ae60;
+    min-width: 20px;
+    text-align: center;
+}
+
+.split-part-modal .sp-result-op {
+    font-size: 14px;
+    color: #888;
+}
+
 .add-part-body {
     max-height: 60vh;
     overflow-y: auto;
