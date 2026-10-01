@@ -5343,6 +5343,7 @@ async function showPartDetail(part) {
         <div class="pd-row pd-title-row">
             <span class="pd-title">零件详情</span>
             <div class="pd-title-btns">
+                <button class="pd-split-btn" id="pd-split-btn" data-part-id="${part.id}">拆</button>
                 <button class="pd-del-btn" id="pd-del-btn" data-part-id="${part.id}">删</button>
                 <button class="pd-merge-btn" id="pd-merge-btn" data-part-id="${part.id}">并</button>
                 <button class="pd-close-btn" id="pd-close-btn">返</button>
@@ -5575,6 +5576,12 @@ async function showPartDetail(part) {
     const mergeBtn = sheet.querySelector('#pd-merge-btn');
     mergeBtn.addEventListener('click', () => {
         showMergePartSelector(part);
+    });
+
+    // 拆分按钮点击事件
+    const splitBtn = sheet.querySelector('#pd-split-btn');
+    splitBtn.addEventListener('click', () => {
+        showSplitPartDialog(part);
     });
 }
 
@@ -6798,6 +6805,171 @@ async function showMergePartSelector(currentPart) {
 
         alert(`合并成功！已将 ${currentPart.quantity} 个零件合并到目标零件，新数量为 ${newQty}`);
     });
+}
+
+// 拆分零件：弹窗输入N1，确认后将当前零件拆分为两个（N1 和 N2=N-N1），放在同一个盒子
+async function showSplitPartDialog(part) {
+    const totalQty = part.quantity;
+
+    if (totalQty <= 1) {
+        alert('数量为 1 的零件无法拆分');
+        return;
+    }
+
+    // 弹窗
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'split-part-overlay';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'modal-content add-part-modal';
+
+    sheet.innerHTML = `
+        <div class="modal-header">
+            <span class="modal-title">拆分零件</span>
+            <button class="btn-cancel" id="split-cancel-btn">取消</button>
+        </div>
+        <div class="modal-body" style="padding: 16px;">
+            <div style="font-size: 14px; color: #333; margin-bottom: 12px; text-align: center;">
+                当前零件：${part.part_num}（共 ${totalQty} 个）
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">拆分数量 N1：</label>
+                <input type="number" id="split-qty-input" class="form-input" min="1" max="${totalQty - 1}" value="1" placeholder="请输入拆分数量" />
+            </div>
+            <div id="split-weight-info" style="font-size: 13px; color: #888; margin-bottom: 12px; text-align: center; min-height: 20px;"></div>
+            <div style="font-size: 13px; color: #555; margin-bottom: 16px; background: #f9f9f9; padding: 10px; border-radius: 6px;">
+                拆分结果：<span id="split-n1" style="font-weight: 600; color: #27ae60;">1</span> + <span id="split-n2" style="font-weight: 600; color: #e74c3c;">${totalQty - 1}</span> = ${totalQty}
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button id="split-confirm-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">确认拆分</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    const qtyInput = sheet.querySelector('#split-qty-input');
+    const n1El = sheet.querySelector('#split-n1');
+    const n2El = sheet.querySelector('#split-n2');
+    const weightInfo = sheet.querySelector('#split-weight-info');
+
+    // 查询零件重量（异步）
+    let unitWeight = null;
+    fetchBricklinkPartWeight(part.part_num).then(result => {
+        if (result && result.weight != null && result.weight > 0) {
+            unitWeight = result.weight;
+            updateWeightDisplay();
+        }
+    }).catch(() => {
+        // 忽略重量查询错误
+    });
+
+    function updateWeightDisplay() {
+        const n1 = parseInt(qtyInput.value);
+        if (!n1 || n1 <= 0) {
+            weightInfo.textContent = '';
+            return;
+        }
+        if (unitWeight != null) {
+            const totalW = (unitWeight * totalQty).toFixed(3);
+            const n1W = (unitWeight * n1).toFixed(3);
+            const n2W = (unitWeight * (totalQty - n1)).toFixed(3);
+            weightInfo.innerHTML = `单重 ${unitWeight}g · 总重 ${totalW}g · N1 重 <b style="color:#27ae60;">${n1W}g</b> / N2 重 <b style="color:#e74c3c;">${n2W}g</b>`;
+        } else {
+            weightInfo.textContent = '暂无重量数据';
+        }
+    }
+
+    function validateAndUpdate() {
+        let n1 = parseInt(qtyInput.value);
+        if (isNaN(n1) || n1 < 1) n1 = 1;
+        if (n1 > totalQty - 1) n1 = totalQty - 1;
+        qtyInput.value = n1;
+        n1El.textContent = n1;
+        n2El.textContent = totalQty - n1;
+        updateWeightDisplay();
+    }
+
+    qtyInput.addEventListener('input', validateAndUpdate);
+    qtyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doSplit();
+        }
+    });
+
+    sheet.querySelector('#split-cancel-btn').addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    sheet.querySelector('#split-confirm-btn').addEventListener('click', doSplit);
+
+    // 遮罩点击关闭
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+
+    async function doSplit() {
+        const n1 = parseInt(qtyInput.value);
+        if (isNaN(n1) || n1 < 1 || n1 >= totalQty) {
+            alert(`拆分数量必须在 1 到 ${totalQty - 1} 之间`);
+            return;
+        }
+        const n2 = totalQty - n1;
+
+        if (!confirm(`将 ${part.part_num}（共 ${totalQty} 个）拆分为 ${n1} + ${n2}，确认吗？`)) {
+            return;
+        }
+
+        try {
+            // 1. 更新原零件数量为 N2
+            const updateSuccess = await updatePart(part.id, { quantity: n2 });
+            if (!updateSuccess) {
+                alert('更新原零件数量失败');
+                return;
+            }
+
+            // 2. 创建新零件（数量 N1，其他属性相同，同盒子）
+            const newPartData = {
+                part_num: part.part_num,
+                name: part.name,
+                color_id: part.color_id,
+                is_new: part.is_new,
+                quantity: n1,
+                box_id: part.box_id
+            };
+            const newPart = await createPart(newPartData);
+            if (!newPart) {
+                alert('创建新零件失败（原零件已更新为 N2，请手动处理）');
+                return;
+            }
+
+            // 3. 关闭拆分弹窗
+            overlay.remove();
+
+            // 4. 关闭详情弹窗
+            const detailOverlay = document.querySelector('.part-detail-modal')
+                ? document.querySelector('.part-detail-modal').closest('.modal-overlay')
+                : null;
+            if (detailOverlay) detailOverlay.remove();
+
+            // 5. 刷新父级页面
+            if (selectedBox) {
+                await loadParts(selectedBox.id);
+            }
+            // 同步刷新搜索结果中的卡片（如果有的话）
+            await refreshPartCardsInParents({ ...part, quantity: n2 });
+            if (newPart) await refreshPartCardsInParents(newPart);
+
+            showToast(`拆分成功！原零件 ${n2} 个，新零件 ${n1} 个`, 2000);
+
+        } catch (err) {
+            console.error('拆分失败:', err);
+            alert('拆分失败：' + (err.message || '未知错误'));
+        }
+    }
 }
 
 async function goBackToRepositories() {

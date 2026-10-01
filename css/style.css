@@ -3735,6 +3735,7 @@ body {
 }
 
 .modal-content .pd-close-btn,
+.modal-content .pd-split-btn,
 .modal-content .pd-merge-btn,
 .modal-content .pd-del-btn {
     width: 36px;
@@ -3765,6 +3766,10 @@ body {
 
 .pd-del-btn {
     background: #f44336;
+}
+
+.pd-split-btn {
+    background: #9C27B0;
 }
 
 .pd-title {
