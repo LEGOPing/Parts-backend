@@ -6808,7 +6808,6 @@ async function showMergePartSelector(currentPart) {
 }
 
 // 拆分零件：弹窗输入N1，确认后将当前零件拆分为两个（N1 和 N2=N-N1），放在同一个盒子
-// 6 行布局 + 四输入框联动：W1=N1×dW, W2=N2×dW, N1+N2=N, W1+W2=W
 async function showSplitPartDialog(part) {
     const totalQty = part.quantity;
 
@@ -6824,62 +6823,26 @@ async function showSplitPartDialog(part) {
 
     const sheet = document.createElement('div');
     sheet.className = 'modal-content add-part-modal';
-    sheet.style.width = 'min(440px, 92vw)';
 
     sheet.innerHTML = `
-        <!-- 第 1 行：取消（左）| 标题（中）| 确认（右）-->
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #eee;">
-            <button id="split-cancel-btn" class="btn-cancel" style="min-width:56px; margin:0; padding:6px 12px;">取消</button>
-            <span class="modal-title" style="flex:1; text-align:center; font-size:17px; font-weight:700; color:#333;">拆分零件</span>
-            <button id="split-confirm-btn" style="min-width:56px; padding:6px 12px; border:none; border-radius:6px; background:#27ae60; color:#fff; font-size:14px; cursor:pointer; margin:0;">确认</button>
+        <div class="modal-header">
+            <span class="modal-title">拆分零件</span>
+            <button class="btn-cancel" id="split-cancel-btn">取消</button>
         </div>
-
-        <div style="padding:14px 16px; display:flex; flex-direction:column; gap:10px;">
-            <!-- 第 2 行：当前零件：型号（左）| 数量：N（右）-->
-            <div style="display:flex; align-items:center;">
-                <div style="flex:1; font-size:14px; color:#333;">
-                    <span style="color:#666;">当前零件：</span><span style="font-weight:600;">${part.part_num}</span>
-                </div>
-                <div style="flex:1; text-align:right; font-size:14px; color:#333;">
-                    <span style="color:#666;">数量：</span><span style="font-weight:600; font-size:16px;">${totalQty}</span>
-                </div>
+        <div class="modal-body" style="padding: 16px;">
+            <div style="font-size: 14px; color: #333; margin-bottom: 12px; text-align: center;">
+                当前零件：${part.part_num}（共 ${totalQty} 个）
             </div>
-
-            <!-- 第 3 行：单个重量：dW（左）| 重量：W（右）-->
-            <div style="display:flex; align-items:center;">
-                <div style="flex:1; font-size:14px; color:#333;">
-                    <span style="color:#666;">单个重量：</span><span id="split-dw" style="font-weight:600;">—</span>
-                </div>
-                <div style="flex:1; text-align:right; font-size:14px; color:#333;">
-                    <span style="color:#666;">重量：</span><span id="split-total-w" style="font-weight:600;">—</span>
-                </div>
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">拆分数量 N1：</label>
+                <input type="number" id="split-qty-input" class="form-input" min="1" max="${totalQty - 1}" value="1" placeholder="请输入拆分数量" />
             </div>
-
-            <!-- 第 4 行：四个输入框 -->
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; margin-top:4px;">
-                <input type="number" id="split-n1-input" class="form-input" min="1" max="${totalQty - 1}" step="1" value="1" style="text-align:center; padding:8px 4px; font-size:14px;" />
-                <input type="number" id="split-w1-input" class="form-input" step="0.001" style="text-align:center; padding:8px 4px; font-size:14px;" placeholder="—" />
-                <input type="number" id="split-n2-input" class="form-input" min="1" max="${totalQty - 1}" step="1" value="${totalQty - 1}" style="text-align:center; padding:8px 4px; font-size:14px;" />
-                <input type="number" id="split-w2-input" class="form-input" step="0.001" style="text-align:center; padding:8px 4px; font-size:14px;" placeholder="—" />
+            <div id="split-weight-info" style="font-size: 13px; color: #888; margin-bottom: 12px; text-align: center; min-height: 20px;"></div>
+            <div style="font-size: 13px; color: #555; margin-bottom: 16px; background: #f9f9f9; padding: 10px; border-radius: 6px;">
+                拆分结果：<span id="split-n1" style="font-weight: 600; color: #27ae60;">1</span> + <span id="split-n2" style="font-weight: 600; color: #e74c3c;">${totalQty - 1}</span> = ${totalQty}
             </div>
-
-            <!-- 第 5 行：四个标签 -->
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; font-size:11px; color:#888; text-align:center; margin-top:-2px;">
-                <div>拆分数量 N1</div>
-                <div>W1 (g)</div>
-                <div>拆分数量 N2</div>
-                <div>W2 (g)</div>
-            </div>
-
-            <!-- 第 6 行：拆分结果 -->
-            <div style="font-size:13px; color:#555; background:#f9f9f9; padding:10px; border-radius:6px; text-align:center; margin-top:4px;">
-                拆分结果：
-                <span id="split-summary-n1" style="font-weight:600; color:#27ae60;">1</span>
-                +
-                <span id="split-summary-n2" style="font-weight:600; color:#e74c3c;">${totalQty - 1}</span>
-                =
-                <span style="font-weight:600;">${totalQty}</span>
-                <span id="split-summary-weight" style="margin-left:6px; color:#888;"></span>
+            <div style="display: flex; gap: 12px;">
+                <button id="split-confirm-btn" class="btn-save" style="flex: 1; background-color: #27ae60;">确认拆分</button>
             </div>
         </div>
     `;
@@ -6887,156 +6850,74 @@ async function showSplitPartDialog(part) {
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
-    // —— 抓取 DOM 引用 ——
-    const n1Input = sheet.querySelector('#split-n1-input');
-    const w1Input = sheet.querySelector('#split-w1-input');
-    const n2Input = sheet.querySelector('#split-n2-input');
-    const w2Input = sheet.querySelector('#split-w2-input');
-    const dwEl = sheet.querySelector('#split-dw');
-    const totalWEl = sheet.querySelector('#split-total-w');
-    const sumN1 = sheet.querySelector('#split-summary-n1');
-    const sumN2 = sheet.querySelector('#split-summary-n2');
-    const sumW = sheet.querySelector('#split-summary-weight');
+    const qtyInput = sheet.querySelector('#split-qty-input');
+    const n1El = sheet.querySelector('#split-n1');
+    const n2El = sheet.querySelector('#split-n2');
+    const weightInfo = sheet.querySelector('#split-weight-info');
 
-    // —— 状态 ——
-    let unitWeight = null;   // 单个零件重量 dW
-    const totalWeight = null; // 总重量 W 由 dW * totalQty 推导
-
-    // —— 重量异步查询 ——
+    // 查询零件重量（异步）
+    let unitWeight = null;
     fetchBricklinkPartWeight(part.part_num).then(result => {
         if (result && result.weight != null && result.weight > 0) {
             unitWeight = result.weight;
-            dwEl.textContent = unitWeight.toFixed(3) + ' g';
-            const W = unitWeight * totalQty;
-            totalWEl.textContent = W.toFixed(3) + ' g';
-            // 重量输入框启用并同步一次
-            w1Input.disabled = false;
-            w2Input.disabled = false;
-            recomputeFrom('n1');
-        } else {
-            dwEl.textContent = '暂无';
-            totalWEl.textContent = '暂无';
-            w1Input.disabled = true;
-            w2Input.disabled = true;
+            updateWeightDisplay();
         }
     }).catch(() => {
-        dwEl.textContent = '暂无';
-        totalWEl.textContent = '暂无';
-        w1Input.disabled = true;
-        w2Input.disabled = true;
+        // 忽略重量查询错误
     });
 
-    // —— 联动计算核心 ——
-    // origin: 'n1' | 'n2' | 'w1' | 'w2'
-    function recomputeFrom(origin) {
-        let n1 = parseInt(n1Input.value);
-        let n2 = parseInt(n2Input.value);
-        let w1 = parseFloat(w1Input.value);
-        let w2 = parseFloat(w2Input.value);
-
-        // 1) 根据输入源推导 N1、N2
-        if (origin === 'n1') {
-            if (isNaN(n1) || n1 < 1) n1 = 1;
-            if (n1 > totalQty - 1) n1 = totalQty - 1;
-            n2 = totalQty - n1;
-        } else if (origin === 'n2') {
-            if (isNaN(n2) || n2 < 1) n2 = 1;
-            if (n2 > totalQty - 1) n2 = totalQty - 1;
-            n1 = totalQty - n2;
-        } else if (origin === 'w1') {
-            if (unitWeight == null) return;
-            if (isNaN(w1) || w1 <= 0) { n1 = 1; }
-            else {
-                n1 = Math.round(w1 / unitWeight);
-                if (n1 < 1) n1 = 1;
-                if (n1 > totalQty - 1) n1 = totalQty - 1;
-            }
-            n2 = totalQty - n1;
-        } else if (origin === 'w2') {
-            if (unitWeight == null) return;
-            if (isNaN(w2) || w2 <= 0) { n2 = 1; }
-            else {
-                n2 = Math.round(w2 / unitWeight);
-                if (n2 < 1) n2 = 1;
-                if (n2 > totalQty - 1) n2 = totalQty - 1;
-            }
-            n1 = totalQty - n2;
+    function updateWeightDisplay() {
+        const n1 = parseInt(qtyInput.value);
+        if (!n1 || n1 <= 0) {
+            weightInfo.textContent = '';
+            return;
         }
-
-        // 2) 根据 N1、N2 反推 W1、W2
         if (unitWeight != null) {
-            w1 = +(n1 * unitWeight).toFixed(3);
-            w2 = +(n2 * unitWeight).toFixed(3);
+            const totalW = (unitWeight * totalQty).toFixed(3);
+            const n1W = (unitWeight * n1).toFixed(3);
+            const n2W = (unitWeight * (totalQty - n1)).toFixed(3);
+            weightInfo.innerHTML = `单重 ${unitWeight}g · 总重 ${totalW}g · N1 重 <b style="color:#27ae60;">${n1W}g</b> / N2 重 <b style="color:#e74c3c;">${n2W}g</b>`;
         } else {
-            w1 = NaN;
-            w2 = NaN;
-        }
-
-        // 3) 回写所有输入框（不触发自己监听器）
-        silentSet(n1Input, n1);
-        silentSet(n2Input, n2);
-        if (unitWeight != null) {
-            silentSet(w1Input, w1.toFixed(3));
-            silentSet(w2Input, w2.toFixed(3));
-        }
-
-        // 4) 更新第 6 行摘要
-        sumN1.textContent = n1;
-        sumN2.textContent = n2;
-        if (unitWeight != null) {
-            const W = unitWeight * totalQty;
-            sumW.textContent = `（重量 ${w1.toFixed(3)} + ${w2.toFixed(3)} = ${W.toFixed(3)} g）`;
-        } else {
-            sumW.textContent = '';
+            weightInfo.textContent = '暂无重量数据';
         }
     }
 
-    function silentSet(input, val) {
-        // 标记来源避免循环触发
-        input.dataset.userEdit = '0';
-        input.value = val;
-        requestAnimationFrame(() => { input.dataset.userEdit = '1'; });
+    function validateAndUpdate() {
+        let n1 = parseInt(qtyInput.value);
+        if (isNaN(n1) || n1 < 1) n1 = 1;
+        if (n1 > totalQty - 1) n1 = totalQty - 1;
+        qtyInput.value = n1;
+        n1El.textContent = n1;
+        n2El.textContent = totalQty - n1;
+        updateWeightDisplay();
     }
 
-    function onInput(origin) {
-        // 如果值没变化（silentSet 触发），跳过
-        if (sheet.querySelector(`#split-${origin}-input`).dataset.userEdit === '0') return;
-        recomputeFrom(origin);
-    }
-
-    n1Input.dataset.userEdit = '1';
-    n2Input.dataset.userEdit = '1';
-
-    n1Input.addEventListener('input', () => onInput('n1'));
-    n2Input.addEventListener('input', () => onInput('n2'));
-    w1Input.addEventListener('input', () => onInput('w1'));
-    w2Input.addEventListener('input', () => onInput('w2'));
-
-    // 初始重量输入框先禁用，等重量查询回来再启用
-    w1Input.disabled = true;
-    w2Input.disabled = true;
-
-    n1Input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); doSplit(); }
+    qtyInput.addEventListener('input', validateAndUpdate);
+    qtyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doSplit();
+        }
     });
 
-    sheet.querySelector('#split-cancel-btn').addEventListener('click', () => overlay.remove());
+    sheet.querySelector('#split-cancel-btn').addEventListener('click', () => {
+        overlay.remove();
+    });
+
     sheet.querySelector('#split-confirm-btn').addEventListener('click', doSplit);
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    // 遮罩点击关闭
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
 
     async function doSplit() {
-        const n1 = parseInt(n1Input.value);
-        const n2 = parseInt(n2Input.value);
-
-        if (isNaN(n1) || isNaN(n2) || n1 < 1 || n2 < 1) {
-            alert(`拆分数量必须各 ≥ 1`);
+        const n1 = parseInt(qtyInput.value);
+        if (isNaN(n1) || n1 < 1 || n1 >= totalQty) {
+            alert(`拆分数量必须在 1 到 ${totalQty - 1} 之间`);
             return;
         }
-        if (n1 + n2 !== totalQty) {
-            alert(`N1 + N2 = ${n1 + n2} ≠ 总数 ${totalQty}，请检查`);
-            return;
-        }
+        const n2 = totalQty - n1;
 
         if (!confirm(`将 ${part.part_num}（共 ${totalQty} 个）拆分为 ${n1} + ${n2}，确认吗？`)) {
             return;
@@ -7078,6 +6959,7 @@ async function showSplitPartDialog(part) {
             if (selectedBox) {
                 await loadParts(selectedBox.id);
             }
+            // 同步刷新搜索结果中的卡片（如果有的话）
             await refreshPartCardsInParents({ ...part, quantity: n2 });
             if (newPart) await refreshPartCardsInParents(newPart);
 
