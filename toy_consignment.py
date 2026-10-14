@@ -177,7 +177,7 @@ def take_photos(list_name, seq, model):
     safe_model = sanitize_filename(model) if model else "未知型号"
 
     # 第一次：提示从哪里获取图片
-    choice = dialogs.list_dialog(
+    choice = dialogs.list_alert(
         "添加照片",
         ["📷 拍摄照片（调用相机）", "🖼️ 从相册选择", "📂 两者都用"]
     )
@@ -359,7 +359,7 @@ class MainViewController(ui.View):
 
     def on_choose_list(self, sender=None):
         """创建新清单"""
-        text = dialogs.input_dialog("新建清单", "请输入清单名称：", "例如：2026年10月寄售")
+        text = dialogs.input_alert("新建清单", "请输入清单名称：", "例如：2026年10月寄售")
         if text and text.strip():
             list_name = text.strip()
             # 清理非法字符
@@ -382,7 +382,7 @@ class MainViewController(ui.View):
             return
 
         items = list(folders)
-        selected = dialogs.list_dialog("选择清单", items)
+        selected = dialogs.list_alert("选择清单", items)
         if selected >= 0:
             self.current_list_name = items[selected]
             save_config({"last_list": self.current_list_name})
