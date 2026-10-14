@@ -508,7 +508,7 @@ class MainViewController(ui.View):
 
 
 # ============ 数据输入表单（内嵌盒况）============
-class InputForm(ui.ScrollView):
+class InputForm(ui.View):
     """玩具信息输入表单 — 盒况直接内嵌在页面上"""
 
     @classmethod
@@ -524,9 +524,16 @@ class InputForm(ui.ScrollView):
         self.condition_data = {}
 
         self.background_color = '#f2f2f7'
-        self.content_size = (600, 1400)  # 内容区域大小，滚动用
 
-        y = 20
+        # 外层：主视图（有标题栏）
+        # 内层：ScrollView 容器（装所有表单控件，能滚动）
+        self.scroll = ui.ScrollView()
+        self.scroll.frame = (0, 0, self.width, self.height)
+        self.scroll.scroll_enabled = True
+        self.scroll.content_size = (400, 1400)
+        self.scroll.add_subview(self.scroll)
+
+        y = 20  # 相对 scroll 的 y 坐标
 
         # ===== 第1行：序号 + 拍照按钮 + 保存按钮 =====
         def small_lbl(t):
@@ -537,7 +544,7 @@ class InputForm(ui.ScrollView):
         # 序号 label
         lbl = small_lbl("序号")
         lbl.frame = (20, y, 50, 34)
-        self.add_subview(lbl)
+        self.scroll.add_subview(lbl)
 
         # 序号输入框（比之前短，右边还要放两个按钮）
         self.txt_seq = ui.TextField()
@@ -545,7 +552,7 @@ class InputForm(ui.ScrollView):
         self.txt_seq.border_width = 1; self.txt_seq.border_color = '#ccc'
         self.txt_seq.corner_radius = 6
         self.txt_seq.text = str(initial_seq)
-        self.add_subview(self.txt_seq)
+        self.scroll.add_subview(self.txt_seq)
 
         # 拍照按钮（右边）
         self.btn_photo = ui.Button()
@@ -554,7 +561,7 @@ class InputForm(ui.ScrollView):
         self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 6
         self.btn_photo.frame = (160, y - 2, 75, 34)
         self.btn_photo.action = self.on_take_photos
-        self.add_subview(self.btn_photo)
+        self.scroll.add_subview(self.btn_photo)
 
         # 保存按钮（更右边）
         self.btn_save = ui.Button()
@@ -563,46 +570,46 @@ class InputForm(ui.ScrollView):
         self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 6
         self.btn_save.frame = (238, y - 2, 75, 34)
         self.btn_save.action = self.on_save
-        self.add_subview(self.btn_save)
+        self.scroll.add_subview(self.btn_save)
 
         self.lbl_photo_status = ui.Label()
         self.lbl_photo_status.text = ""
         self.lbl_photo_status.font = ('Helvetica', 11); self.lbl_photo_status.text_alignment = ui.ALIGN_CENTER
         self.lbl_photo_status.text_color = '#666'
         self.lbl_photo_status.frame = (318, y - 2, 50, 34)
-        self.add_subview(self.lbl_photo_status)
+        self.scroll.add_subview(self.lbl_photo_status)
 
         y += 50
 
         # ===== 第2行：型号 =====
         lbl = small_lbl("型号"); lbl.frame = (20, y, 50, 30)
-        self.add_subview(lbl)
+        self.scroll.add_subview(lbl)
         self.txt_model = ui.TextField()
         self.txt_model.frame = (72, y - 2, 280, 34)
         self.txt_model.border_width = 1; self.txt_model.border_color = '#ccc'
         self.txt_model.corner_radius = 6
         self.txt_model.placeholder = "例如：MG Freedom 2.0"
-        self.add_subview(self.txt_model)
+        self.scroll.add_subview(self.txt_model)
         y += 42
 
         # ===== 第3行：数量 + 参考价（同一行）=====
         lbl = small_lbl("数量"); lbl.frame = (20, y, 50, 30)
-        self.add_subview(lbl)
+        self.scroll.add_subview(lbl)
         self.txt_qty = ui.TextField()
         self.txt_qty.frame = (72, y - 2, 70, 34)
         self.txt_qty.border_width = 1; self.txt_qty.border_color = '#ccc'
         self.txt_qty.corner_radius = 6; self.txt_qty.keyboard_type = ui.KEYBOARD_NUMBER_PAD
         self.txt_qty.text = "1"
-        self.add_subview(self.txt_qty)
+        self.scroll.add_subview(self.txt_qty)
 
         lbl = small_lbl("参考价"); lbl.frame = (150, y, 60, 30)
-        self.add_subview(lbl)
+        self.scroll.add_subview(lbl)
         self.txt_price = ui.TextField()
         self.txt_price.frame = (212, y - 2, 140, 34)
         self.txt_price.border_width = 1; self.txt_price.border_color = '#ccc'
         self.txt_price.corner_radius = 6; self.txt_price.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
         self.txt_price.placeholder = "例如：280"
-        self.add_subview(self.txt_price)
+        self.scroll.add_subview(self.txt_price)
         y += 52
 
         # ============================================================
@@ -614,12 +621,12 @@ class InputForm(ui.ScrollView):
             lbl.text = t
             lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
             lbl.frame = (12, y, 360, 22)
-            self.add_subview(lbl)
+            self.scroll.add_subview(lbl)
             # 分隔线
             line = ui.View()
             line.background_color = '#e0e0e0'
             line.frame = (12, y + 22, 360, 0.5)
-            self.add_subview(line)
+            self.scroll.add_subview(line)
             self._section_top = y + 26
             self.current_y = self._section_top
 
@@ -627,12 +634,12 @@ class InputForm(ui.ScrollView):
             """左文字 + 右 Switch"""
             sw = ui.Switch()
             sw.frame = (312, self.current_y - 2, 44, 26)
-            self.add_subview(sw)
+            self.scroll.add_subview(sw)
             lbl = ui.Label()
             lbl.text = label_text
             lbl.font = ('Helvetica', 12)
             lbl.frame = (16, self.current_y, 290, 24)
-            self.add_subview(lbl)
+            self.scroll.add_subview(lbl)
             self.current_y += 28
             return (label_text, sw)
 
@@ -642,12 +649,12 @@ class InputForm(ui.ScrollView):
             lbl.text = label_text
             lbl.font = ('Helvetica', 12)
             lbl.frame = (16, self.current_y, 110, 24)
-            self.add_subview(lbl)
+            self.scroll.add_subview(lbl)
             txt = ui.TextField()
             txt.frame = (130, self.current_y - 2, 230, 28)
             txt.border_width = 1; txt.border_color = '#ddd'
             txt.corner_radius = 4
-            self.add_subview(txt)
+            self.scroll.add_subview(txt)
             self.current_y += 32
             return txt
 
@@ -657,7 +664,7 @@ class InputForm(ui.ScrollView):
         self.seal_seg.segments = SEAL_OPTIONS
         self.seal_seg.selected_index = 0
         self.seal_seg.frame = (16, self.current_y, 340, 36)
-        self.add_subview(self.seal_seg)
+        self.scroll.add_subview(self.seal_seg)
         self.current_y += 44
 
         # ---- 外盒状态（多选）----
@@ -687,7 +694,7 @@ class InputForm(ui.ScrollView):
         self.txt_other.frame = (16, self.current_y, 340, 90)
         self.txt_other.border_width = 1; self.txt_other.border_color = '#ddd'
         self.txt_other.corner_radius = 4
-        self.add_subview(self.txt_other)
+        self.scroll.add_subview(self.txt_other)
         self.current_y += 100
 
         # ---- 返回按钮（底部）----
@@ -697,10 +704,10 @@ class InputForm(ui.ScrollView):
         self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
         self.btn_cancel.frame = (20, y_back, 340, 44)
         self.btn_cancel.action = self.on_cancel
-        self.add_subview(self.btn_cancel)
+        self.scroll.add_subview(self.btn_cancel)
 
         # 设置 ScrollView 内容高度
-        self.content_size = (400, y_back + 70)
+        self.scroll.content_size = (400, y_back + 70)
 
     # ========= 回调方法 =========
     def on_take_photos(self, sender):
@@ -776,6 +783,10 @@ class InputForm(ui.ScrollView):
 
     def on_cancel(self, sender):
         self.close()
+
+    def layout(self):
+        # 让内部 ScrollView 跟随外层 View 大小
+        self.scroll.frame = (0, 0, self.width, self.height)
 
 
 # ============ 清单查看器 ============
