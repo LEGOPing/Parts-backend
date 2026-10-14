@@ -633,7 +633,7 @@ class InputForm(ui.View):
             self.scroll.add_subview(line)
             return y + 30
 
-        def make_checkbox(text, cx, cy, col_w=170):
+        def make_checkbox(text, cx, cy, col_w=85):
             """☐按钮 + 文字 —— 强制单行截断绝对不折行"""
             cb = ui.Button()
             cb.title = "☐"; cb.font = ('Helvetica', 14); cb.tint_color = '#333'
@@ -645,6 +645,8 @@ class InputForm(ui.View):
             lbl = ui.Label()
             lbl.text = text; lbl.font = ('Helvetica', 14); lbl.text_color = '#222'
             lbl.number_of_lines = 1
+            lbl.adjusts_font_size_to_fit = True
+            lbl.minimum_font_size = 10
             lbl.frame = (cx + 28, cy, col_w - 32, 28)
             self.scroll.add_subview(lbl)
             return cb
@@ -663,13 +665,13 @@ class InputForm(ui.View):
         self.box_checks = []
         non_other = [o for o in BOX_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 2
+            col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 175
-            row_y = y + row_idx * 40
+            x_pos = 16 + col * 85
+            row_y = y + row_idx * 36
             cb = make_checkbox(opt, x_pos, row_y)
             self.box_checks.append((opt, cb))
-        y += ((len(non_other) + 1) // 2) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 6
         # "其他" + 输入框 同一行
         cb_other = make_checkbox("其他", 16, y)
         self.box_checks.append(("其他", cb_other))
@@ -685,13 +687,13 @@ class InputForm(ui.View):
         self.item_checks = []
         non_other = [o for o in ITEM_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 2
+            col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 175
-            row_y = y + row_idx * 40
+            x_pos = 16 + col * 85
+            row_y = y + row_idx * 36
             cb = make_checkbox(opt, x_pos, row_y)
             self.item_checks.append((opt, cb))
-        y += ((len(non_other) + 1) // 2) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 6
         cb_other = make_checkbox("其他", 16, y)
         self.item_checks.append(("其他", cb_other))
         self.txt_item_other = ui.TextField()
@@ -706,13 +708,13 @@ class InputForm(ui.View):
         self.acc_checks = []
         non_other = [o for o in ACCESSORY_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 2
+            col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 175
-            row_y = y + row_idx * 40
+            x_pos = 16 + col * 85
+            row_y = y + row_idx * 36
             cb = make_checkbox(opt, x_pos, row_y)
             self.acc_checks.append((opt, cb))
-        y += ((len(non_other) + 1) // 2) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 6
         cb_other = make_checkbox("其他", 16, y)
         self.acc_checks.append(("其他", cb_other))
         self.txt_acc_other = ui.TextField()
