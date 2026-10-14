@@ -714,7 +714,7 @@ class InputForm(ui.View):
         self._form_bottom_y = y
 
         # ---- 返回按钮（底部）----
-        y_back = max(self.current_y + 20, 1150)
+        y_back = max(self._form_bottom_y + 20, 1150)
         self.btn_cancel = ui.Button()
         self.btn_cancel.title = "返回"
         self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
