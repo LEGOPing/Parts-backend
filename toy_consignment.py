@@ -30,22 +30,21 @@ ACCESSORY_OPTIONS = ["齐全", "缺零件", "缺贴纸", "缺说明书", "零件
 
 # ============ 路径工具（全用 Pythonista 兼容写法） ============
 def get_script_dir():
-    """获取脚本当前所在文件夹（Pythonista 里就是脚本放的位置）"""
+    """脚本当前所在文件夹 — Pythonista 里 cwd 就是脚本目录"""
+    cwd = os.getcwd()
+    if cwd and os.path.exists(cwd):
+        print(f"[路径] os.getcwd(): {cwd}")
+        return cwd
     try:
-        # __file__ 在 Pythonista 里能拿到脚本路径
         d = os.path.dirname(os.path.abspath(__file__))
         if d and os.path.exists(d):
+            print(f"[路径] __file__: {d}")
             return d
     except Exception as e:
         print(f"[路径] __file__ 不可用: {e}")
-    try:
-        d = os.path.dirname(os.path.abspath(sys.argv[0]))
-        if d and os.path.exists(d):
-            return d
-    except Exception:
-        pass
-    # 兜底：Documents 目录
-    return os.path.expanduser("~")
+    fallback = os.path.expanduser("~")
+    print(f"[路径] 兜底 Documents: {fallback}")
+    return fallback
 
 
 
@@ -637,15 +636,15 @@ class InputForm(ui.View):
         def make_checkbox(text, cx, cy):
             """在指定坐标创建 ☑/☐ 勾选按钮 + 标签（同一行）"""
             cb = ui.Button()
-            cb.title = "☐"; cb.font = ('Helvetica', 15); cb.tint_color = '#333'
-            cb.frame = (cx, cy - 2, 28, 24)
+            cb.title = "☐"; cb.font = ('Helvetica', 14); cb.tint_color = '#333'
+            cb.frame = (cx, cy - 3, 26, 24)
             def toggle(sender, b=cb):
                 b.title = "☑" if b.title == "☐" else "☐"
             cb.action = toggle
             self.scroll.add_subview(cb)
             lbl = ui.Label()
             lbl.text = text; lbl.font = ('Helvetica', 13)
-            lbl.frame = (cx + 28, cy, 90, 24)
+            lbl.frame = (cx + 26, cy, 64, 24)
             self.scroll.add_subview(lbl)
             return cb
 
@@ -665,7 +664,7 @@ class InputForm(ui.View):
         for i, opt in enumerate(non_other):
             col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 82
+            x_pos = 16 + col * 90
             row_y = y + row_idx * 30
             cb = make_checkbox(opt, x_pos, row_y)
             self.box_checks.append((opt, cb))
@@ -687,7 +686,7 @@ class InputForm(ui.View):
         for i, opt in enumerate(non_other):
             col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 82
+            x_pos = 16 + col * 90
             row_y = y + row_idx * 30
             cb = make_checkbox(opt, x_pos, row_y)
             self.item_checks.append((opt, cb))
@@ -708,7 +707,7 @@ class InputForm(ui.View):
         for i, opt in enumerate(non_other):
             col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 82
+            x_pos = 16 + col * 90
             row_y = y + row_idx * 30
             cb = make_checkbox(opt, x_pos, row_y)
             self.acc_checks.append((opt, cb))
