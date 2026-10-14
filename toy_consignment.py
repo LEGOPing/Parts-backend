@@ -617,85 +617,101 @@ class InputForm(ui.View):
         # ============================================================
 
         def section(t):
+            """标题 + 分隔线，current_y 用累加方式（不再重置！）"""
             lbl = ui.Label()
             lbl.text = t
             lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
-            lbl.frame = (12, y, 360, 22)
+            lbl.frame = (16, y, 340, 22)
             self.scroll.add_subview(lbl)
             # 分隔线
             line = ui.View()
             line.background_color = '#e0e0e0'
-            line.frame = (12, y + 22, 360, 0.5)
+            line.frame = (16, y + 24, 340, 0.5)
             self.scroll.add_subview(line)
-            self._section_top = y + 26
-            self.current_y = self._section_top
+            return y + 30
 
-        def row_switch(label_text):
-            """左文字 + 右 Switch"""
-            sw = ui.Switch()
-            sw.frame = (312, self.current_y - 2, 44, 26)
-            self.scroll.add_subview(sw)
+        def make_checkbox_row(label_text, parent):
+            """左 ☑/☐ 勾选框按钮 + 文字标签 —— 模拟原生 CheckBox"""
+            check_btn = ui.Button()
+            check_btn.title = "☐"
+            check_btn.font = ('Helvetica', 18)
+            check_btn.tint_color = '#333'
+            check_btn.frame = (16, y - 4, 30, 28)
+            # 点击切换 ☑/☐
+            def toggle(sender, b=check_btn):
+                b.title = "☑" if b.title == "☐" else "☐"
+                b.selected = (b.title == "☑")
+            check_btn.action = toggle
+            self.scroll.add_subview(check_btn)
+
             lbl = ui.Label()
             lbl.text = label_text
-            lbl.font = ('Helvetica', 12)
-            lbl.frame = (16, self.current_y, 290, 24)
+            lbl.font = ('Helvetica', 13)
+            lbl.frame = (52, y, 290, 26)
             self.scroll.add_subview(lbl)
-            self.current_y += 28
-            return (label_text, sw)
+            return (label_text, check_btn)
 
         def row_other(label_text):
             """其他选项 — 左文字 + 小输入框"""
             lbl = ui.Label()
             lbl.text = label_text
             lbl.font = ('Helvetica', 12)
-            lbl.frame = (16, self.current_y, 110, 24)
+            lbl.frame = (52, y, 90, 26)
             self.scroll.add_subview(lbl)
             txt = ui.TextField()
-            txt.frame = (130, self.current_y - 2, 230, 28)
+            txt.frame = (148, y - 2, 210, 30)
             txt.border_width = 1; txt.border_color = '#ddd'
             txt.corner_radius = 4
             self.scroll.add_subview(txt)
-            self.current_y += 32
             return txt
 
         # ---- 拆封状态（SegmentedControl 小圆点单选）----
-        section("拆封状态（单选）")
+        y = section("拆封状态（单选）")
         self.seal_seg = ui.SegmentedControl()
         self.seal_seg.segments = SEAL_OPTIONS
         self.seal_seg.selected_index = 0
-        self.seal_seg.frame = (16, self.current_y, 340, 36)
+        self.seal_seg.frame = (16, y, 340, 36)
         self.scroll.add_subview(self.seal_seg)
-        self.current_y += 44
+        y += 44
 
-        # ---- 外盒状态（多选）----
-        section("外盒状态（可多选）")
+        # ---- 外盒状态（多选 ☑）----
+        y = section("外盒状态（可多选，点击☐可勾选）")
         self.box_checks = []
         for opt in BOX_CONDITION_OPTIONS:
-            self.box_checks.append(row_switch(opt))
+            self.box_checks.append(make_checkbox_row(opt, self.scroll))
+            y += 32
         self.txt_box_other = row_other("其他说明:")
+        y += 38
 
-        # ---- 本体状态（多选）----
-        section("本体状态（可多选）")
+        # ---- 本体状态（多选 ☑）----
+        y = section("本体状态（可多选，点击☐可勾选）")
         self.item_checks = []
         for opt in ITEM_CONDITION_OPTIONS:
-            self.item_checks.append(row_switch(opt))
+            self.item_checks.append(make_checkbox_row(opt, self.scroll))
+            y += 32
         self.txt_item_other = row_other("其他说明:")
+        y += 38
 
-        # ---- 配件状态（多选）----
-        section("配件状态（可多选）")
+        # ---- 配件状态（多选 ☑）----
+        y = section("配件状态（可多选，点击☐可勾选）")
         self.acc_checks = []
         for opt in ACCESSORY_OPTIONS:
-            self.acc_checks.append(row_switch(opt))
+            self.acc_checks.append(make_checkbox_row(opt, self.scroll))
+            y += 32
         self.txt_acc_other = row_other("其他说明:")
+        y += 38
 
         # ---- 其他瑕疵 ----
-        section("其他瑕疵或说明")
+        y = section("其他瑕疵或说明")
         self.txt_other = ui.TextView()
-        self.txt_other.frame = (16, self.current_y, 340, 90)
+        self.txt_other.frame = (16, y, 340, 90)
         self.txt_other.border_width = 1; self.txt_other.border_color = '#ddd'
         self.txt_other.corner_radius = 4
         self.scroll.add_subview(self.txt_other)
-        self.current_y += 100
+        y += 100
+
+        # 把最终 y 存起来，供 layout 和 content_size 用
+        self._form_bottom_y = y
 
         # ---- 返回按钮（底部）----
         y_back = max(self.current_y + 20, 1150)
@@ -706,8 +722,9 @@ class InputForm(ui.View):
         self.btn_cancel.action = self.on_cancel
         self.scroll.add_subview(self.btn_cancel)
 
-        # 设置 ScrollView 内容高度
-        self.scroll.content_size = (400, y_back + 70)
+        # 设置 ScrollView 内容高度 — 用实际 y
+        final_y = getattr(self, '_form_bottom_y', y + 40)
+        self.scroll.content_size = (400, final_y + 50)
 
     # ========= 回调方法 =========
     def on_take_photos(self, sender):
@@ -729,16 +746,19 @@ class InputForm(ui.View):
             self.lbl_photo_status.text_color = '#666'
 
     def collect_condition_data(self):
-        """从内嵌控件收集盒况数据"""
+        """从内嵌控件收集盒况数据 —— checkbox 按钮用 title 判断"""
+        def is_checked(btn):
+            return getattr(btn, 'title', '') == '☑' or getattr(btn, 'selected', False)
+
         data = {}
         si = self.seal_seg.selected_index
         if 0 <= si < len(SEAL_OPTIONS):
             data["拆封状态"] = SEAL_OPTIONS[si]
-        data["外盒状态"] = "|".join(o for o, s in self.box_checks if s.value)
+        data["外盒状态"] = "|".join(o for o, b in self.box_checks if is_checked(b))
         data["外盒其他"] = self.txt_box_other.text.strip()
-        data["本体状态"] = "|".join(o for o, s in self.item_checks if s.value)
+        data["本体状态"] = "|".join(o for o, b in self.item_checks if is_checked(b))
         data["本体其他"] = self.txt_item_other.text.strip()
-        data["配件状态"] = "|".join(o for o, s in self.acc_checks if s.value)
+        data["配件状态"] = "|".join(o for o, b in self.acc_checks if is_checked(b))
         data["配件其他"] = self.txt_acc_other.text.strip()
         data["其他瑕疵或说明"] = self.txt_other.text.strip()
         return data
