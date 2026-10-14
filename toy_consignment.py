@@ -331,8 +331,8 @@ class MainViewController(ui.View):
         self.btn_view.action = self.on_view_list
         self.add_subview(self.btn_view)
 
-        self.btn_export = self.make_button("📤 导出 CSV", '#5856d6')
-        self.btn_export.action = self.on_export_csv
+        self.btn_export = self.make_button("📤 导出清单", '#5856d6')
+        self.btn_export.action = self.on_export
         self.add_subview(self.btn_export)
 
         self.btn_show_folder = self.make_button("📂 打开文件夹位置", '#4caf50')
@@ -465,19 +465,90 @@ class MainViewController(ui.View):
             return
         ListViewer.open(self.current_list_name)
 
-    def on_export_csv(self, sender=None):
+    def on_export(self, sender=None):
         if not self.current_list_name:
             dialogs.alert("提示", "请先选择清单")
             return
-        csv_path = get_csv_path(self.current_list_name)
-        if os.path.exists(csv_path):
-            try:
-                import share
-                share.share_file(csv_path)
-            except Exception:
-                dialogs.alert("CSV 文件位置", csv_path)
-        else:
-            dialogs.alert("提示", "清单文件不存在")
+        choice = dialogs.list_dialog("选择导出格式", ["📄 CSV 表格", "📝 Word 文档", "📕 PDF 文档"])
+        if choice is None:
+            return
+        items = read_all_items(self.current_list_name)
+        folder = get_list_folder(self.current_list_name)
+        os.makedirs(folder, exist_ok=True)
+        safe = self.current_list_name.replace("/", "_").replace("\\", "_")
+        try:
+            import share as _share
+        except Exception:
+            _share = None
+        if "CSV" in choice:
+            csv_path = get_csv_path(self.current_list_name)
+            if os.path.exists(csv_path):
+                _share.share_file(csv_path) if _share else dialogs.alert("CSV 位置", csv_path)
+            else:
+                dialogs.alert("提示", "清单文件不存在")
+        elif "Word" in choice:
+            import html as _html_mod
+            table_html = _html_mod.escape(f"""<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:13pt;font-family:SimSun,Helvetica;">
+<tr bgcolor="#e8e8e8"><th align="center">序号</th><th align="center">型号</th><th align="center">数量</th><th align="center">参考价</th><th align="center">盒况备注</th></tr>
+""")
+            for it in items:
+                cond_parts = []
+                if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
+                if it.get("外盒状态"): cond_parts.append("盒:"+it["外盒状态"].split("|")[0])
+                if it.get("本体状态"): cond_parts.append("本:"+it["本体状态"].split("|")[0])
+                cond = " / ".join(cond_parts)
+                row = f"""<tr><td align="center">{_html_mod.escape(str(it.get("序号","")))}</td>
+<td align="center">{_html_mod.escape(str(it.get("型号","")))}</td>
+<td align="center">{_html_mod.escape(str(it.get("数量","")))}</td>
+<td align="right">{_html_mod.escape(str(it.get("参考价","")))}</td>
+<td align="left">{_html_mod.escape(cond)}</td></tr>"""
+                table_html += row
+            table_html += "</table>"
+            doc_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>寄售清单 {safe}</title></head>
+<body style="font-family:SimSun,Helvetica;margin:40pt;">
+<h2 style="text-align:center;">附件：寄售玩具清单</h2>
+<p style="text-align:center;color:#666;font-size:10pt;">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>
+<p style="text-align:center;color:#007aff;font-size:14pt;font-weight:bold;">清单：{_html_mod.escape(self.current_list_name)}</p>
+{table_html}
+</body></html>"""
+            out_path = os.path.join(folder, f"{safe}_清单.doc")
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write(doc_html)
+            _share.share_file(out_path) if _share else dialogs.alert("Word 已导出", out_path)
+        elif "PDF" in choice:
+            import html as _html_mod
+            table_html = '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:11pt;">'
+            table_html += '<tr bgcolor="#f0f0f0"><th align="center" width="8%">序号</th><th align="center" width="32%">型号</th><th align="center" width="8%">数量</th><th align="center" width="12%">参考价</th><th align="center">盒况备注</th></tr>'
+            for it in items:
+                cond_parts = []
+                if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
+                if it.get("外盒状态"): cond_parts.append("盒:"+it["外盒状态"].split("|")[0])
+                if it.get("本体状态"): cond_parts.append("本:"+it["本体状态"].split("|")[0])
+                cond = " / ".join(cond_parts)
+                table_html += f'<tr><td align="center">{_html_mod.escape(str(it.get("序号","")))}</td>'
+                table_html += f'<td align="center">{_html_mod.escape(str(it.get("型号","")))}</td>'
+                table_html += f'<td align="center">{_html_mod.escape(str(it.get("数量","")))}</td>'
+                table_html += f'<td align="right">{_html_mod.escape(str(it.get("参考价","")))}</td>'
+                table_html += f'<td align="left">{_html_mod.escape(cond)}</td></tr>'
+            table_html += "</table>"
+            pdf_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>寄售清单 {safe}</title>
+<style>
+@page {{ margin: 2cm; }}
+body {{ font-family: "PingFang SC", "Helvetica Neue", sans-serif; }}
+h2 {{ text-align: center; margin-bottom: 2pt; }}
+.sub {{ text-align: center; color: #888; font-size: 9pt; margin-bottom: 4pt; }}
+.lname {{ text-align: center; color: #007aff; font-size: 12pt; font-weight: bold; margin-bottom: 10pt; }}
+</style></head><body>
+<h2>附件：寄售玩具清单</h2>
+<p class="sub">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>
+<p class="lname">清单：{_html_mod.escape(self.current_list_name)}</p>
+{table_html}
+<p style="margin-top:30pt;font-size:10pt;">双方签字确认：________________________</p>
+</body></html>"""
+            out_path = os.path.join(folder, f"{safe}_清单.html")
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write(pdf_html)
+            _share.share_file(out_path) if _share else dialogs.alert("PDF 已准备", f"{out_path}\n用 Safari 打开后 → 打印 → 存为 PDF")
 
     def on_show_folder(self, sender=None):
         """显示文件夹位置，并尝试打开"""
@@ -864,24 +935,23 @@ class ListViewer(ui.View):
         super().__init__()
         self.list_name = list_name
         self.background_color = 'white'
+        w = self.width
 
-        # 标题（第一行，16号黑体）
+        # 前 3 行：全宽 frame (x=0)
         self.title_label = ui.Label()
         self.title_label.text = "附件：寄售玩具清单"
         self.title_label.font = ('Helvetica-Bold', 16)
         self.title_label.text_alignment = ui.ALIGN_CENTER
         self.title_label.text_color = 'black'
-        self.title_label.frame = (20, 80, self.width - 40, 24)
+        self.title_label.frame = (0, 80, w, 24)
         self.add_subview(self.title_label)
 
-        # 第二行说明（10号字）
         self.subtitle_label = ui.Label()
         self.subtitle_label.text = "（本清单一式两份，双方各执一份；随附交接照片和视频）"
         self.subtitle_label.font = ('Helvetica', 10)
         self.subtitle_label.text_alignment = ui.ALIGN_CENTER
         self.subtitle_label.text_color = '#666'
-        self.subtitle_label.frame = (20, 108, self.width - 40, 18)
-        self.subtitle_label.number_of_lines = 0
+        self.subtitle_label.frame = (0, 108, w, 18)
         self.add_subview(self.subtitle_label)
 
         self.list_name_label = ui.Label()
@@ -889,49 +959,84 @@ class ListViewer(ui.View):
         self.list_name_label.font = ('Helvetica-Bold', 14)
         self.list_name_label.text_alignment = ui.ALIGN_CENTER
         self.list_name_label.text_color = '#007aff'
-        self.list_name_label.frame = (20, 135, self.width - 40, 22)
+        self.list_name_label.frame = (0, 132, w, 22)
         self.add_subview(self.list_name_label)
 
         self.table_view = ui.TextView()
-        self.table_view.frame = (10, 165, self.width - 20, self.height - 260)
-        self.table_view.font = ('Menlo', 12)
+        self.table_view.frame = (10, 162, w - 20, self.height - 260)
+        self.table_view.font = ('Menlo', 11)
         self.table_view.editable = False
         self.table_view.background_color = '#f9f9f9'
+        self.table_view.text = "加载中..."
         self.add_subview(self.table_view)
 
         self.btn_close = ui.Button()
         self.btn_close.title = "返回"
         self.btn_close.font = ('Helvetica', 15)
         self.btn_close.tint_color = '#007aff'
-        self.btn_close.frame = (20, self.height - 80, self.width - 40, 44)
+        self.btn_close.frame = (20, self.height - 80, w - 40, 44)
         self.btn_close.action = lambda s: self.close()
         self.add_subview(self.btn_close)
 
         self.load_data()
 
+    def _fmt_cell(self, s, width, align='center'):
+        """按显示宽度（中文=2 英文=1）+ 对齐方式格式化"""
+        s = str(s or "")
+        w = 0; out = ""
+        for ch in s:
+            cw = 2 if ord(ch) > 127 else 1
+            if w + cw > width:
+                break
+            out += ch; w += cw
+        pad = width - w
+        if align == 'center':
+            left = pad // 2; right = pad - left
+            return (" " * left) + out + (" " * right)
+        elif align == 'right':
+            return (" " * pad) + out
+        else:
+            return out + (" " * pad)
+
     def load_data(self):
         items = read_all_items(self.list_name)
-        if not items:
-            self.table_view.text = "（暂无记录）"
-            return
-        lines = ["序号  型号                    数量  参考价  盒况备注",
-                 "--------------------------------------------------"]
+        # 列宽（显示宽度）：序号=6 型号=24 数量=6 参考价=10 盒况备注=24
+        W_SEQ, W_MODEL, W_QTY, W_PRICE, W_COND = 6, 24, 6, 10, 24
+        sep = "─" * (W_SEQ + W_MODEL + W_QTY + W_PRICE + W_COND + 4)
+        # 表头：标题全居中
+        header = (
+            self._fmt_cell("序号", W_SEQ, 'center') + "│" +
+            self._fmt_cell("型号", W_MODEL, 'center') + "│" +
+            self._fmt_cell("数量", W_QTY, 'center') + "│" +
+            self._fmt_cell("参考价", W_PRICE, 'center') + "│" +
+            self._fmt_cell("盒况备注", W_COND, 'center')
+        )
+        lines = [sep, header, sep]
         for it in items:
-            seq = it.get("序号", "")
-            model = (it.get("型号", "") or "")[:14]
-            qty = it.get("数量", "")
-            price = it.get("参考价", "")
             cond_parts = []
-            if it.get("拆封状态"):
-                cond_parts.append(it["拆封状态"])
-            if it.get("外盒状态"):
-                cond_parts.append("盒:" + it["外盒状态"].split("|")[0])
-            cond = "/".join(cond_parts)[:16]
-            lines.append(f"{seq:<4}  {model:<20}  {qty:<4}  {price:<8}  {cond}")
-        self.table_view.text = "\n".join(lines)
+            if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
+            if it.get("外盒状态"): cond_parts.append("盒:" + it["外盒状态"].split("|")[0])
+            if it.get("本体状态"): cond_parts.append("本:" + it["本体状态"].split("|")[0])
+            cond = " / ".join(cond_parts)
+            row = (
+                self._fmt_cell(it.get("序号",""), W_SEQ, 'center') + "│" +
+                self._fmt_cell(it.get("型号",""), W_MODEL, 'center') + "│" +
+                self._fmt_cell(it.get("数量",""), W_QTY, 'center') + "│" +
+                self._fmt_cell(it.get("参考价",""), W_PRICE, 'right') + "│" +
+                self._fmt_cell(cond, W_COND, 'left')
+            )
+            lines.append(row)
+        lines.append(sep)
+        if not items:
+            self.table_view.text = sep + "\n" + header + "\n" + sep + "\n（暂无记录）"
+        else:
+            self.table_view.text = "\n".join(lines)
 
     def layout(self):
-        self.table_view.frame = (10, 165, self.width - 20, self.height - 260)
+        self.title_label.frame = (0, 80, self.width, 24)
+        self.subtitle_label.frame = (0, 108, self.width, 18)
+        self.list_name_label.frame = (0, 132, self.width, 22)
+        self.table_view.frame = (10, 162, self.width - 20, self.height - 260)
         self.btn_close.frame = (20, self.height - 80, self.width - 40, 44)
 
 
