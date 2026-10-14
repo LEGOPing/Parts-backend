@@ -231,10 +231,11 @@ def take_photos(list_name, seq, model):
             photo_paths.append(filename)
             angle += 1
 
-            # 询问继续
+            # 询问继续 — dialogs.alert返回按钮索引，0=第一按钮，1=第二按钮
             result = dialogs.alert("拍照", f"已保存: {filename}\n继续添加下一张？",
-                              "继续", "完成", hide_cancel_button=False)
-            if result is not None:
+                              "继续", "完成")
+            # result == 1 表示用户点了"完成"（第二按钮），跳出循环
+            if result == 1:
                 break
 
         except Exception as e:
@@ -253,7 +254,13 @@ class MainViewController(ui.View):
         super().__init__()
         self.current_list_name = None
         self.setup_ui()
-        self.load_initial_list()
+
+    def on_view_appear(self):
+        """视图首次显示后才初始化，避免dialog弹出时主界面还没present"""
+        # 只在第一次显示时执行（present前on_view_appear可能会被多次调）
+        if not getattr(self, '_initialized', False):
+            self._initialized = True
+            ui.delay(0.3, self.load_initial_list)
 
     def setup_ui(self):
         self.background_color = '#f2f2f7'
@@ -625,12 +632,12 @@ class InputForm(ui.View):
         try:
             seq_int = int(seq)
             if check_duplicate_seq(self.list_name, seq_int):
+                # 按钮顺序：0=覆盖, 1=取消。用户点取消才中断
                 result = dialogs.alert(
                     "序号重复", f"序号 {seq} 已存在，\n确定要覆盖原记录吗？",
                     "覆盖", "取消"
                 )
-                # 如果用户选"取消"，返回；选"覆盖"继续
-                if result is not None:
+                if result == 1:  # 用户选"取消"
                     return
         except ValueError:
             pass
