@@ -10,6 +10,7 @@ import os
 import csv
 import json
 import photos
+import webbrowser
 from datetime import datetime
 
 # ============ 配置常量 ============
@@ -516,9 +517,11 @@ class MainViewController(ui.View):
                 f.write(doc_html)
             _share.share_file(out_path) if _share else dialogs.alert("Word 已导出", out_path)
         elif "PDF" in choice:
+            # 用 ui.WebView 渲染 HTML → 调用 print_() → 系统 AirPrint 对话框
+            # 用户选"存为 PDF"即得到真 PDF 文件
             import html as _html_mod
-            table_html = '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:11pt;">'
-            table_html += '<tr bgcolor="#f0f0f0"><th align="center" width="8%">序号</th><th align="center" width="32%">型号</th><th align="center" width="8%">数量</th><th align="center" width="12%">参考价</th><th align="center">盒况备注</th></tr>'
+            table_html = '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:12pt;font-family:PingFang SC,Helvetica,sans-serif;">'
+            table_html += '<tr bgcolor="#f0f0f0"><th align="center" width="8%">序号</th><th align="center" width="28%">型号</th><th align="center" width="8%">数量</th><th align="center" width="12%">参考价</th><th align="center">盒况备注</th></tr>'
             for it in items:
                 cond_parts = []
                 if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
@@ -533,11 +536,11 @@ class MainViewController(ui.View):
             table_html += "</table>"
             pdf_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>寄售清单 {safe}</title>
 <style>
-@page {{ margin: 2cm; }}
+@page {{ margin: 1.5cm; }}
 body {{ font-family: "PingFang SC", "Helvetica Neue", sans-serif; }}
-h2 {{ text-align: center; margin-bottom: 2pt; }}
-.sub {{ text-align: center; color: #888; font-size: 9pt; margin-bottom: 4pt; }}
-.lname {{ text-align: center; color: #007aff; font-size: 12pt; font-weight: bold; margin-bottom: 10pt; }}
+h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
+.sub {{ text-align: center; color: #888; font-size: 9pt; margin: 0 0 6pt 0; }}
+.lname {{ text-align: center; color: #007aff; font-size: 13pt; font-weight: bold; margin: 0 0 12pt 0; }}
 </style></head><body>
 <h2>附件：寄售玩具清单</h2>
 <p class="sub">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>
@@ -545,10 +548,68 @@ h2 {{ text-align: center; margin-bottom: 2pt; }}
 {table_html}
 <p style="margin-top:30pt;font-size:10pt;">双方签字确认：________________________</p>
 </body></html>"""
-            out_path = os.path.join(folder, f"{safe}_清单.html")
-            with open(out_path, 'w', encoding='utf-8') as f:
-                f.write(pdf_html)
-            _share.share_file(out_path) if _share else dialogs.alert("PDF 已准备", f"{out_path}\n用 Safari 打开后 → 打印 → 存为 PDF")
+            # 方案 A：WebView 展示 + 自动弹 AirPrint（可存 PDF）
+            class _PdfSheet(ui.View):
+                def __init__(self, html_str, title):
+                    super().__init__()
+                    self.background_color = 'white'
+                    self.title = title
+                    self.wv = ui.WebView()
+                    self.wv.frame = (0, 44, self.width, self.height - 44)
+                    self.wv.load_html(html_str)
+                    self.wv.delegate = self
+                    self.add_subview(self.wv)
+                    self.btn_close = ui.Button()
+                    self.btn_close.title = "关闭"
+                    self.btn_close.tint_color = '#007aff'
+                    self.btn_close.frame = (10, 6, 80, 32)
+                    self.btn_close.action = lambda s: self.close()
+                    self.add_subview(self.btn_close)
+                    self.btn_print = ui.Button()
+                    self.btn_print.title = "📄 存 PDF"
+                    self.btn_print.tint_color = '#fff'
+                    self.btn_print.background_color = '#007aff'
+                    self.btn_print.frame = (self.width - 120, 4, 110, 36)
+                    self.btn_print.corner_radius = 6
+                    self.btn_print.action = self.on_print
+                    self.add_subview(self.btn_print)
+                def webview_did_finish_load(self, wv):
+                    pass
+                def on_print(self, sender):
+                    """调系统 AirPrint，用户可在对话框里选 '存为 PDF'"""
+                    try:
+                        import objc_util
+                        UIKit = objc_util.UIKit
+                        wv = objc_util.ObjCInstance(self.wv) if hasattr(self.wv, '_objc') else self.wv
+                        # 用 UIPrintInteractionController
+                        pic = UIKit.UIPrintInteractionController.sharedPrintController()
+                        formatter = wv.viewPrintFormatter() if hasattr(wv, 'viewPrintFormatter') else None
+                        if formatter is None:
+                            from objc_util import objc
+                            pic.setPrintFormatter_(wv.viewPrintFormatter())
+                        else:
+                            pic.setPrintFormatter_(formatter)
+                        # present
+                        win = objc_util.UIApplication.sharedApplication().keyWindow()
+                        root = win.rootViewController()
+                        pic.presentFromRect_inView_completionHandler_(
+                            objc_util.CGRect((self.width/2 - 100), 0, 200, 36),
+                            objc_util.ObjCInstance(root.view()),
+                            None
+                        )
+                    except Exception as e1:
+                        # 兜底：Pythonista print_()
+                        try:
+                            self.wv.print_(sender)
+                        except Exception as e2:
+                            dialogs.alert("PDF 导出", 
+                                '请在系统弹窗里选"取消"，然后用 Safari 打开 HTML，分享按钮选"存为 PDF"\n\n错误: ' + str(e1))
+                def layout(self):
+                    self.wv.frame = (0, 44, self.width, self.height - 44)
+                    self.btn_close.frame = (10, 6, 80, 32)
+                    self.btn_print.frame = (self.width - 120, 4, 110, 36)
+            sheet = _PdfSheet(pdf_html, f"清单 {safe}")
+            sheet.present(style='sheet', hide_title_bar=True)
 
     def on_show_folder(self, sender=None):
         """显示文件夹位置，并尝试打开"""
