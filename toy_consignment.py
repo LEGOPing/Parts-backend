@@ -556,7 +556,61 @@ class MainViewController(ui.View):
         parts.append("")
         parts.append(f"── 完整路径 ──")
         parts.append(folder)
-        dialogs.alert("📂 文件夹内容", "\n".join(parts))
+        self._show_folder_popup("📂 文件夹内容", "\n".join(parts))
+
+    def _show_folder_popup(self, title, body):
+        """自定义弹窗: 标题居中, 内容左对齐"""
+        import ui
+        # 遮罩层 (半透明黑)
+        mask = ui.View(frame=(0, 0, ui.get_screen_size().width, ui.get_screen_size().height))
+        mask.background_color = (0, 0, 0, 0.45)
+        mask.flex = 'WH'
+        # 卡片
+        card = ui.View()
+        card.corner_radius = 14
+        card.background_color = (1, 1, 1, 1)
+        # 标题
+        lb = ui.Label()
+        lb.text = title
+        lb.text_color = '#333333'
+        lb.font = ('Helvetica-Bold', 17)
+        lb.alignment = ui.ALIGN_CENTER  # 居中
+        # 内容
+        tv = ui.TextView()
+        tv.text = body
+        tv.editable = False
+        tv.selectable = True
+        tv.text_color = '#222222'
+        tv.font = ('Menlo', 13)
+        tv.alignment = ui.ALIGN_LEFT   # 左对齐
+        tv.background_color = (0, 0, 0, 0)
+        # 关闭按钮
+        close = ui.Button()
+        close.title = "关闭"
+        close.tint_color = '#007aff'
+        close.action = lambda s: mask.close()
+        # 布局
+        card.add_subview(lb)
+        card.add_subview(tv)
+        card.add_subview(close)
+        mask.add_subview(card)
+        def layout():
+            w, h = ui.get_screen_size()
+            # 卡片尺寸
+            cw = min(340, w - 48)
+            ch = min(480, h - 120)
+            cx = (w - cw) / 2
+            cy = (h - ch) / 2
+            card.frame = (cx, cy, cw, ch)
+            # 标题
+            lb.frame = (16, 14, cw - 32, 28)
+            # 内容区
+            tv.frame = (16, 48, cw - 32, ch - 100)
+            # 关闭按钮
+            btn_h = 44
+            close.frame = (16, ch - btn_h - 8, cw - 32, btn_h)
+        mask.present('sheet')
+        layout()
     def _export_rtf(self, folder, safe, items, _share):
         """导出 .rtf 格式（Pages/Word/WPS 全原生支持，零依赖）"""
         R = []
