@@ -594,7 +594,7 @@ class InputForm(ui.View):
         self.txt_model.corner_radius = 6
         self.txt_model.placeholder = "例如：MG Freedom 2.0"
         self.scroll.add_subview(self.txt_model)
-        y += 42
+        y += 36
 
         # ===== 第3行：数量 + 参考价（同一行）=====
         lbl = small_lbl("数量"); lbl.frame = (20, y, 50, 30)
@@ -666,21 +666,21 @@ class InputForm(ui.View):
         non_other = [o for o in BOX_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
             col = i % 4
-            row_idx = i // 2
+            row_idx = i // 4
             x_pos = 16 + col * 85
-            row_y = y + row_idx * 36
+            row_y = y + row_idx * 32
             cb = make_checkbox(opt, x_pos, row_y)
             self.box_checks.append((opt, cb))
-        y += ((len(non_other) + 3) // 4) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 4
         # "其他" + 输入框 同一行
         cb_other = make_checkbox("其他", 16, y)
         self.box_checks.append(("其他", cb_other))
         self.txt_box_other = ui.TextField()
-        self.txt_box_other.frame = (78, y - 3, 278, 28)
+        self.txt_box_other.frame = (101, y - 3, 258, 28)
         self.txt_box_other.border_width = 1; self.txt_box_other.border_color = '#ddd'
         self.txt_box_other.corner_radius = 4
         self.scroll.add_subview(self.txt_box_other)
-        y += 42
+        y += 36
 
         # ---- 本体状态：2列网格 + 其他输入框 ----
         y = section("本体状态（可多选）")
@@ -688,20 +688,20 @@ class InputForm(ui.View):
         non_other = [o for o in ITEM_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
             col = i % 4
-            row_idx = i // 2
+            row_idx = i // 4
             x_pos = 16 + col * 85
-            row_y = y + row_idx * 36
+            row_y = y + row_idx * 32
             cb = make_checkbox(opt, x_pos, row_y)
             self.item_checks.append((opt, cb))
-        y += ((len(non_other) + 3) // 4) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 4
         cb_other = make_checkbox("其他", 16, y)
         self.item_checks.append(("其他", cb_other))
         self.txt_item_other = ui.TextField()
-        self.txt_item_other.frame = (78, y - 3, 278, 28)
+        self.txt_item_other.frame = (101, y - 3, 258, 28)
         self.txt_item_other.border_width = 1; self.txt_item_other.border_color = '#ddd'
         self.txt_item_other.corner_radius = 4
         self.scroll.add_subview(self.txt_item_other)
-        y += 42
+        y += 36
 
         # ---- 配件状态：2列网格 + 其他输入框 ----
         y = section("配件状态（可多选）")
@@ -709,16 +709,16 @@ class InputForm(ui.View):
         non_other = [o for o in ACCESSORY_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
             col = i % 4
-            row_idx = i // 2
+            row_idx = i // 4
             x_pos = 16 + col * 85
-            row_y = y + row_idx * 36
+            row_y = y + row_idx * 32
             cb = make_checkbox(opt, x_pos, row_y)
             self.acc_checks.append((opt, cb))
-        y += ((len(non_other) + 3) // 4) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 4
         cb_other = make_checkbox("其他", 16, y)
         self.acc_checks.append(("其他", cb_other))
         self.txt_acc_other = ui.TextField()
-        self.txt_acc_other.frame = (78, y - 3, 278, 28)
+        self.txt_acc_other.frame = (101, y - 3, 258, 28)
         self.txt_acc_other.border_width = 1; self.txt_acc_other.border_color = '#ddd'
         self.txt_acc_other.corner_radius = 4
         self.scroll.add_subview(self.txt_acc_other)
@@ -817,8 +817,27 @@ class InputForm(ui.View):
             append_item_to_csv(self.list_name, item_data)
             if self.parent_controller:
                 self.parent_controller.update_info()
-            dialogs.alert("成功", f"已保存：\n{seq} - {model}")
-            self.close()
+            # 自动开启下一项：序号+1，清空表单
+            try:
+                nxt = str(int(seq) + 1)
+            except ValueError:
+                nxt = ""
+            self.txt_seq.text = nxt
+            self.txt_model.text = ""
+            self.txt_qty.text = "1"
+            self.txt_price.text = ""
+            self.seal_seg.selected_index = 0
+            for _, cb in self.box_checks:  cb.title = "☐"
+            for _, cb in self.item_checks: cb.title = "☐"
+            for _, cb in self.acc_checks:  cb.title = "☐"
+            self.txt_box_other.text = ""
+            self.txt_item_other.text = ""
+            self.txt_acc_other.text = ""
+            self.txt_other.text = ""
+            self.photo_files = []
+            self.lbl_photo_count.text = "0 张"
+            dialogs.alert("成功", f"已保存：{seq} - {model}\n已开启下一项，序号 {nxt}")
+            self.txt_model.begin_editing()
         except Exception as e:
             import traceback
             traceback.print_exc()
