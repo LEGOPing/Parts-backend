@@ -7,10 +7,8 @@
 import ui
 import dialogs
 import os
-import sys
 import csv
 import json
-import time
 from datetime import datetime
 
 # ============ 配置常量 ============
@@ -229,14 +227,14 @@ def take_photos(list_name, seq, model):
             except Exception as e:
                 print(f"[拍照] 相机不可用: {e}, 尝试相册...")
                 try:
-                    img = photos.pick_image()
+                    img = photos.pick_image(show_albums=True)
                 except Exception as e2:
                     print(f"[拍照] 相册也不可用: {e2}")
 
         elif "相册" in choice:
             # 相册
             try:
-                img = photos.pick_image()
+                img = photos.pick_image(show_albums=True)
             except Exception as e:
                 print(f"[拍照] 相册选择失败: {e}")
 
@@ -273,9 +271,9 @@ def take_photos(list_name, seq, model):
             else:
                 print("[拍照] 文件没生成")
 
-            # 继续？result=1 是第二按钮（完成）
-            result = dialogs.alert("拍照", f"已保存 {filename}\n继续拍？", "继续", "完成")
-            if result == 1:
+            # console.alert 返回: button1=继续(1), button2=完成(2)
+            result = dialogs.alert("拍照", f"已保存 {filename}\n继续拍？", "继续", "完成", hide_cancel_button=True)
+            if result == 2:  # button2 = 完成
                 break
 
         except Exception as e:
@@ -408,11 +406,11 @@ class MainViewController(ui.View):
             self.stats_label.text = ""
 
     def on_choose_or_switch(self, sender=None):
-        """新建 or 切换"""
-        btn = dialogs.alert("清单操作", "选择要做什么？", "新建清单", "切换清单")
-        if btn == 0:
+        """新建 or 切换 — console.alert 返回: button1=1, button2=2"""
+        btn = dialogs.alert("清单操作", "选择要做什么？", "新建清单", "切换清单", hide_cancel_button=True)
+        if btn == 1:
             self.on_new_list()
-        elif btn == 1:
+        elif btn == 2:
             self.on_switch_list()
 
     def on_new_list(self):
@@ -502,7 +500,7 @@ class MainViewController(ui.View):
                f"📂 文件夹内容：\n{content_text}")
         try:
             import share
-            share.share_url(f"file://{folder}")
+            # share.share_file 仅支持文件，不支持文件夹，这里仅提示
         except Exception:
             pass
         dialogs.alert("📁 子文件夹位置", msg)
@@ -683,8 +681,8 @@ class InputForm(ui.View):
         try:
             if check_duplicate_seq(self.list_name, int(seq)):
                 result = dialogs.alert("序号重复", f"序号 {seq} 已存在，\n要覆盖吗？",
-                                     "覆盖", "返回")
-                if result == 1:
+                                     "覆盖", "返回", hide_cancel_button=True)
+                if result == 2:  # button2 = 返回
                     return
         except ValueError:
             pass
