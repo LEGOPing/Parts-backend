@@ -878,28 +878,26 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         _share.share_file(out_path) if _share else dialogs.alert("HTML 已生成 (兜底)", out_path)
 
 # ============ 数据输入表单（内嵌盒况）============
-class InputForm(ui.View):
-    """玩具信息输入表单 — 带前/后货品切换 + 图片缩略图网格"""
-
 def _safe_image_from_file(path):
     """兼容中文路径的图片加载 (PIL → ui.Image)"""
     import PIL.Image as PILImage
     if not path or not os.path.exists(path):
         return None
     try:
-        # 先试原生（英文路径时最快）
         return ui.Image.from_file(path)
     except Exception:
         pass
     try:
-        # 兜底：PIL 打开 → 转 ui.Image
         pil_img = PILImage.open(path)
-        pil_img.load()  # 强制读，防止文件未关闭
+        pil_img.load()
         return ui.Image.from_pil_image(pil_img)
     except Exception as e:
         print(f"[图片加载失败] {path}: {e}")
         return None
 
+
+class InputForm(ui.View):
+    """玩具信息输入表单 — 带前/后货品切换 + 图片缩略图网格"""
     @classmethod
     def open(cls, list_name, seq, parent=None, start_idx=-1):
         form = cls(list_name, seq, parent, start_idx)
