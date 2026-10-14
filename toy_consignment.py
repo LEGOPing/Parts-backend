@@ -5,6 +5,7 @@
 """
 
 import ui
+import dialogs
 import os
 import csv
 import json
@@ -176,7 +177,7 @@ def take_photos(list_name, seq, model):
     safe_model = sanitize_filename(model) if model else "未知型号"
 
     # 第一次：提示从哪里获取图片
-    choice = ui.list_dialog(
+    choice = dialogs.list_dialog(
         "添加照片",
         ["📷 拍摄照片（调用相机）", "🖼️ 从相册选择", "📂 两者都用"]
     )
@@ -224,21 +225,21 @@ def take_photos(list_name, seq, model):
                 if isinstance(img, PILImage.Image):
                     img.save(filepath, quality=92)
                 else:
-                    ui.alert("错误", "无法保存图片对象")
+                    dialogs.alert("错误", "无法保存图片对象")
                     angle -= 1
 
             photo_paths.append(filename)
             angle += 1
 
             # 询问继续
-            result = ui.alert("拍照", f"已保存: {filename}\n继续添加下一张？",
+            result = dialogs.alert("拍照", f"已保存: {filename}\n继续添加下一张？",
                               "继续", "完成", hide_cancel_button=False)
             if result is not None:
                 break
 
         except Exception as e:
             print("保存图片失败:", e)
-            ui.alert("错误", f"保存图片失败: {e}")
+            dialogs.alert("错误", f"保存图片失败: {e}")
             break
 
     return photo_paths
@@ -358,7 +359,7 @@ class MainViewController(ui.View):
 
     def on_choose_list(self, sender=None):
         """创建新清单"""
-        text = ui.input_dialog("新建清单", "请输入清单名称：", "例如：2026年10月寄售")
+        text = dialogs.input_dialog("新建清单", "请输入清单名称：", "例如：2026年10月寄售")
         if text and text.strip():
             list_name = text.strip()
             # 清理非法字符
@@ -368,7 +369,7 @@ class MainViewController(ui.View):
             init_csv(list_name)
             save_config({"last_list": list_name})
             self.update_info()
-            ui.alert("成功", f"已创建清单：{list_name}")
+            dialogs.alert("成功", f"已创建清单：{list_name}")
 
     def on_switch_list(self, sender=None):
         """切换到已有清单"""
@@ -376,12 +377,12 @@ class MainViewController(ui.View):
         folders = [d for d in os.listdir(base)
                    if os.path.isdir(os.path.join(base, d)) and not d.startswith('.')]
         if not folders:
-            ui.alert("提示", "暂无已有清单，请先新建")
+            dialogs.alert("提示", "暂无已有清单，请先新建")
             self.on_choose_list()
             return
 
         items = list(folders)
-        selected = ui.list_dialog("选择清单", items)
+        selected = dialogs.list_dialog("选择清单", items)
         if selected >= 0:
             self.current_list_name = items[selected]
             save_config({"last_list": self.current_list_name})
@@ -390,7 +391,7 @@ class MainViewController(ui.View):
     def on_add_item(self, sender=None):
         """添加玩具信息"""
         if not self.current_list_name:
-            ui.alert("提示", "请先选择或新建清单")
+            dialogs.alert("提示", "请先选择或新建清单")
             return
 
         seq = get_next_sequence(self.current_list_name)
@@ -399,14 +400,14 @@ class MainViewController(ui.View):
     def on_view_list(self, sender=None):
         """查看清单"""
         if not self.current_list_name:
-            ui.alert("提示", "请先选择清单")
+            dialogs.alert("提示", "请先选择清单")
             return
         ListViewer.open(self.current_list_name)
 
     def on_export_csv(self, sender=None):
         """导出CSV"""
         if not self.current_list_name:
-            ui.alert("提示", "请先选择清单")
+            dialogs.alert("提示", "请先选择清单")
             return
         csv_path = get_csv_path(self.current_list_name)
         if os.path.exists(csv_path):
@@ -415,9 +416,9 @@ class MainViewController(ui.View):
                 import share
                 share.share_file(csv_path)
             except Exception:
-                ui.alert("提示", f"CSV文件位置：\n{csv_path}")
+                dialogs.alert("提示", f"CSV文件位置：\n{csv_path}")
         else:
-            ui.alert("提示", "清单文件不存在")
+            dialogs.alert("提示", "清单文件不存在")
 
 
 # ============ 数据输入表单 ============
@@ -567,10 +568,10 @@ class InputForm(ui.View):
         seq = self.txt_seq.text.strip()
         model = self.txt_model.text.strip()
         if not model:
-            ui.alert("提示", "请先填写型号")
+            dialogs.alert("提示", "请先填写型号")
             return
         if not seq:
-            ui.alert("提示", "请填写序号")
+            dialogs.alert("提示", "请填写序号")
             return
 
         photos_list = take_photos(self.list_name, seq, model)
@@ -614,17 +615,17 @@ class InputForm(ui.View):
 
         # 验证必填
         if not seq:
-            ui.alert("提示", "请填写序号")
+            dialogs.alert("提示", "请填写序号")
             return
         if not model:
-            ui.alert("提示", "请填写型号")
+            dialogs.alert("提示", "请填写型号")
             return
 
         # 检查序号重复
         try:
             seq_int = int(seq)
             if check_duplicate_seq(self.list_name, seq_int):
-                result = ui.alert(
+                result = dialogs.alert(
                     "序号重复", f"序号 {seq} 已存在，\n确定要覆盖原记录吗？",
                     "覆盖", "取消"
                 )
@@ -650,12 +651,12 @@ class InputForm(ui.View):
             # 刷新主界面统计
             if self.parent_controller and hasattr(self.parent_controller, 'update_info'):
                 self.parent_controller.update_info()
-            ui.alert("成功", f"已保存：{seq} - {model}")
+            dialogs.alert("成功", f"已保存：{seq} - {model}")
             self.close()
         except Exception as e:
             import traceback
             traceback.print_exc()
-            ui.alert("错误", f"保存失败：{e}")
+            dialogs.alert("错误", f"保存失败：{e}")
 
     def on_cancel(self, sender):
         self.close()
