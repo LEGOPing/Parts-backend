@@ -506,9 +506,10 @@ class MainViewController(ui.View):
         dialogs.alert("📁 子文件夹位置", msg)
 
 
-# ============ 数据输入表单 ============
-class InputForm(ui.View):
-    """玩具信息输入表单"""
+
+# ============ 数据输入表单（内嵌盒况）============
+class InputForm(ui.ScrollView):
+    """玩具信息输入表单 — 盒况直接内嵌在页面上"""
 
     @classmethod
     def open(cls, list_name, seq, parent=None):
@@ -523,107 +524,185 @@ class InputForm(ui.View):
         self.condition_data = {}
 
         self.background_color = '#f2f2f7'
+        self.content_size = (600, 1400)  # 内容区域大小，滚动用
 
-        y = 90
+        y = 20
 
-        def make_lbl(t):
+        # ===== 第1行：序号 + 拍照按钮 + 保存按钮 =====
+        def small_lbl(t):
             l = ui.Label()
             l.text = t; l.font = ('Helvetica', 15); l.text_color = '#333'
             return l
 
-        def make_txt(placeholder, width=200, keyboard=None):
-            t = ui.TextField()
-            t.frame = (120, y - 3, width, 34)
-            t.border_width = 1; t.border_color = '#ccc'; t.corner_radius = 6
-            t.placeholder = placeholder
-            if keyboard: t.keyboard_type = keyboard
-            return t
+        # 序号 label
+        lbl = small_lbl("序号")
+        lbl.frame = (20, y, 50, 34)
+        self.add_subview(lbl)
 
-        # 序号
-        self.lbl_seq = make_lbl("序号"); self.lbl_seq.frame = (20, y, 100, 30)
-        self.add_subview(self.lbl_seq)
-        self.txt_seq = make_txt("序号", 200)
+        # 序号输入框（比之前短，右边还要放两个按钮）
+        self.txt_seq = ui.TextField()
+        self.txt_seq.frame = (72, y - 2, 80, 34)
+        self.txt_seq.border_width = 1; self.txt_seq.border_color = '#ccc'
+        self.txt_seq.corner_radius = 6
         self.txt_seq.text = str(initial_seq)
         self.add_subview(self.txt_seq)
-        y += 40
 
-        # 型号
-        self.lbl_model = make_lbl("型号"); self.lbl_model.frame = (20, y, 100, 30)
-        self.add_subview(self.lbl_model)
-        self.txt_model = make_txt("例如：MG Freedom 2.0", 200)
-        self.add_subview(self.txt_model)
-        y += 40
-
-        # 数量
-        self.lbl_qty = make_lbl("数量"); self.lbl_qty.frame = (20, y, 100, 30)
-        self.add_subview(self.lbl_qty)
-        self.txt_qty = make_txt("数量", 200, ui.KEYBOARD_NUMBER_PAD)
-        self.txt_qty.text = "1"
-        self.add_subview(self.txt_qty)
-        y += 40
-
-        # 参考价
-        self.lbl_price = make_lbl("参考价"); self.lbl_price.frame = (20, y, 100, 30)
-        self.add_subview(self.lbl_price)
-        self.txt_price = make_txt("例如：280", 200, ui.KEYBOARD_DECIMAL_PAD)
-        self.add_subview(self.txt_price)
-        y += 50
-
-        # 拍照按钮
+        # 拍照按钮（右边）
         self.btn_photo = ui.Button()
-        self.btn_photo.title = "📷 拍照（多角度）"
-        self.btn_photo.font = ('Helvetica', 16); self.btn_photo.tint_color = 'white'
-        self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 10
-        self.btn_photo.frame = (20, y, 280, 45)
+        self.btn_photo.title = "📷拍照"
+        self.btn_photo.font = ('Helvetica', 13); self.btn_photo.tint_color = 'white'
+        self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 6
+        self.btn_photo.frame = (160, y - 2, 75, 34)
         self.btn_photo.action = self.on_take_photos
         self.add_subview(self.btn_photo)
-        y += 50
 
-        self.lbl_photo_status = ui.Label()
-        self.lbl_photo_status.text = "未拍照"
-        self.lbl_photo_status.font = ('Helvetica', 12); self.lbl_photo_status.text_alignment = ui.ALIGN_CENTER
-        self.lbl_photo_status.text_color = '#666'
-        self.lbl_photo_status.frame = (20, y, 280, 20)
-        self.add_subview(self.lbl_photo_status)
-        y += 30
-
-        # 盒况按钮
-        self.btn_condition = ui.Button()
-        self.btn_condition.title = "📦 填写盒况信息"
-        self.btn_condition.font = ('Helvetica', 16); self.btn_condition.tint_color = 'white'
-        self.btn_condition.background_color = '#ff9500'; self.btn_condition.corner_radius = 10
-        self.btn_condition.frame = (20, y, 280, 45)
-        self.btn_condition.action = self.on_edit_condition
-        self.add_subview(self.btn_condition)
-        y += 50
-
-        self.lbl_condition_status = ui.Label()
-        self.lbl_condition_status.text = "未填写"
-        self.lbl_condition_status.font = ('Helvetica', 12); self.lbl_condition_status.text_alignment = ui.ALIGN_CENTER
-        self.lbl_condition_status.text_color = '#666'
-        self.lbl_condition_status.frame = (20, y, 280, 30)
-        self.lbl_condition_status.number_of_lines = 0
-        self.add_subview(self.lbl_condition_status)
-        y += 40
-
-        # 保存按钮
+        # 保存按钮（更右边）
         self.btn_save = ui.Button()
-        self.btn_save.title = "💾 保存本项"
-        self.btn_save.font = ('Helvetica-Bold', 17); self.btn_save.tint_color = 'white'
-        self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 10
-        self.btn_save.frame = (20, y, 280, 50)
+        self.btn_save.title = "💾保存"
+        self.btn_save.font = ('Helvetica', 13); self.btn_save.tint_color = 'white'
+        self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 6
+        self.btn_save.frame = (238, y - 2, 75, 34)
         self.btn_save.action = self.on_save
         self.add_subview(self.btn_save)
-        y += 60
 
-        # 返回按钮
+        self.lbl_photo_status = ui.Label()
+        self.lbl_photo_status.text = ""
+        self.lbl_photo_status.font = ('Helvetica', 11); self.lbl_photo_status.text_alignment = ui.ALIGN_CENTER
+        self.lbl_photo_status.text_color = '#666'
+        self.lbl_photo_status.frame = (318, y - 2, 50, 34)
+        self.add_subview(self.lbl_photo_status)
+
+        y += 50
+
+        # ===== 第2行：型号 =====
+        lbl = small_lbl("型号"); lbl.frame = (20, y, 50, 30)
+        self.add_subview(lbl)
+        self.txt_model = ui.TextField()
+        self.txt_model.frame = (72, y - 2, 280, 34)
+        self.txt_model.border_width = 1; self.txt_model.border_color = '#ccc'
+        self.txt_model.corner_radius = 6
+        self.txt_model.placeholder = "例如：MG Freedom 2.0"
+        self.add_subview(self.txt_model)
+        y += 42
+
+        # ===== 第3行：数量 + 参考价（同一行）=====
+        lbl = small_lbl("数量"); lbl.frame = (20, y, 50, 30)
+        self.add_subview(lbl)
+        self.txt_qty = ui.TextField()
+        self.txt_qty.frame = (72, y - 2, 70, 34)
+        self.txt_qty.border_width = 1; self.txt_qty.border_color = '#ccc'
+        self.txt_qty.corner_radius = 6; self.txt_qty.keyboard_type = ui.KEYBOARD_NUMBER_PAD
+        self.txt_qty.text = "1"
+        self.add_subview(self.txt_qty)
+
+        lbl = small_lbl("参考价"); lbl.frame = (150, y, 60, 30)
+        self.add_subview(lbl)
+        self.txt_price = ui.TextField()
+        self.txt_price.frame = (212, y - 2, 140, 34)
+        self.txt_price.border_width = 1; self.txt_price.border_color = '#ccc'
+        self.txt_price.corner_radius = 6; self.txt_price.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
+        self.txt_price.placeholder = "例如：280"
+        self.add_subview(self.txt_price)
+        y += 52
+
+        # ============================================================
+        # 盒况信息 —— 全部内嵌，直接显示在页面上
+        # ============================================================
+
+        def section(t):
+            lbl = ui.Label()
+            lbl.text = t
+            lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
+            lbl.frame = (12, y, 360, 22)
+            self.add_subview(lbl)
+            # 分隔线
+            line = ui.View()
+            line.background_color = '#e0e0e0'
+            line.frame = (12, y + 22, 360, 0.5)
+            self.add_subview(line)
+            self._section_top = y + 26
+            self.current_y = self._section_top
+
+        def row_switch(label_text):
+            """左文字 + 右 Switch"""
+            sw = ui.Switch()
+            sw.frame = (312, self.current_y - 2, 44, 26)
+            self.add_subview(sw)
+            lbl = ui.Label()
+            lbl.text = label_text
+            lbl.font = ('Helvetica', 12)
+            lbl.frame = (16, self.current_y, 290, 24)
+            self.add_subview(lbl)
+            self.current_y += 28
+            return (label_text, sw)
+
+        def row_other(label_text):
+            """其他选项 — 左文字 + 小输入框"""
+            lbl = ui.Label()
+            lbl.text = label_text
+            lbl.font = ('Helvetica', 12)
+            lbl.frame = (16, self.current_y, 110, 24)
+            self.add_subview(lbl)
+            txt = ui.TextField()
+            txt.frame = (130, self.current_y - 2, 230, 28)
+            txt.border_width = 1; txt.border_color = '#ddd'
+            txt.corner_radius = 4
+            self.add_subview(txt)
+            self.current_y += 32
+            return txt
+
+        # ---- 拆封状态（SegmentedControl 小圆点单选）----
+        section("拆封状态（单选）")
+        self.seal_seg = ui.SegmentedControl()
+        self.seal_seg.segments = SEAL_OPTIONS
+        self.seal_seg.selected_index = 0
+        self.seal_seg.frame = (16, self.current_y, 340, 36)
+        self.add_subview(self.seal_seg)
+        self.current_y += 44
+
+        # ---- 外盒状态（多选）----
+        section("外盒状态（可多选）")
+        self.box_checks = []
+        for opt in BOX_CONDITION_OPTIONS:
+            self.box_checks.append(row_switch(opt))
+        self.txt_box_other = row_other("其他说明:")
+
+        # ---- 本体状态（多选）----
+        section("本体状态（可多选）")
+        self.item_checks = []
+        for opt in ITEM_CONDITION_OPTIONS:
+            self.item_checks.append(row_switch(opt))
+        self.txt_item_other = row_other("其他说明:")
+
+        # ---- 配件状态（多选）----
+        section("配件状态（可多选）")
+        self.acc_checks = []
+        for opt in ACCESSORY_OPTIONS:
+            self.acc_checks.append(row_switch(opt))
+        self.txt_acc_other = row_other("其他说明:")
+
+        # ---- 其他瑕疵 ----
+        section("其他瑕疵或说明")
+        self.txt_other = ui.TextView()
+        self.txt_other.frame = (16, self.current_y, 340, 90)
+        self.txt_other.border_width = 1; self.txt_other.border_color = '#ddd'
+        self.txt_other.corner_radius = 4
+        self.add_subview(self.txt_other)
+        self.current_y += 100
+
+        # ---- 返回按钮（底部）----
+        y_back = max(self.current_y + 20, 1150)
         self.btn_cancel = ui.Button()
         self.btn_cancel.title = "返回"
         self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
-        self.btn_cancel.frame = (20, y, 280, 40)
+        self.btn_cancel.frame = (20, y_back, 340, 44)
         self.btn_cancel.action = self.on_cancel
         self.add_subview(self.btn_cancel)
 
+        # 设置 ScrollView 内容高度
+        self.content_size = (400, y_back + 70)
+
+    # ========= 回调方法 =========
     def on_take_photos(self, sender):
         seq = self.txt_seq.text.strip()
         model = self.txt_model.text.strip()
@@ -633,36 +712,29 @@ class InputForm(ui.View):
         if not seq:
             dialogs.alert("提示", "请填写序号")
             return
-
         photos_list = take_photos(self.list_name, seq, model)
         self.photo_files = photos_list
         if photos_list:
-            self.lbl_photo_status.text = f"已拍 {len(photos_list)} 张"
+            self.lbl_photo_status.text = f"{len(photos_list)}张"
             self.lbl_photo_status.text_color = '#34c759'
         else:
-            self.lbl_photo_status.text = "未拍照"
+            self.lbl_photo_status.text = ""
             self.lbl_photo_status.text_color = '#666'
 
-    def on_edit_condition(self, sender):
-        ConditionEditor.open(self.condition_data, self.on_condition_saved)
-
-    def on_condition_saved(self, data):
-        self.condition_data = data
-        parts = []
-        if data.get("拆封状态"):
-            parts.append(f"拆封：{data['拆封状态']}")
-        if data.get("外盒状态"):
-            parts.append(f"外盒：{data['外盒状态']}")
-        if data.get("本体状态"):
-            parts.append(f"本体：{data['本体状态']}")
-        if data.get("配件状态"):
-            parts.append(f"配件：{data['配件状态']}")
-        if parts:
-            self.lbl_condition_status.text = " | ".join(parts)
-            self.lbl_condition_status.text_color = '#34c759'
-        else:
-            self.lbl_condition_status.text = "未填写"
-            self.lbl_condition_status.text_color = '#666'
+    def collect_condition_data(self):
+        """从内嵌控件收集盒况数据"""
+        data = {}
+        si = self.seal_seg.selected_index
+        if 0 <= si < len(SEAL_OPTIONS):
+            data["拆封状态"] = SEAL_OPTIONS[si]
+        data["外盒状态"] = "|".join(o for o, s in self.box_checks if s.value)
+        data["外盒其他"] = self.txt_box_other.text.strip()
+        data["本体状态"] = "|".join(o for o, s in self.item_checks if s.value)
+        data["本体其他"] = self.txt_item_other.text.strip()
+        data["配件状态"] = "|".join(o for o, s in self.acc_checks if s.value)
+        data["配件其他"] = self.txt_acc_other.text.strip()
+        data["其他瑕疵或说明"] = self.txt_other.text.strip()
+        return data
 
     def on_save(self, sender):
         seq = self.txt_seq.text.strip()
@@ -687,13 +759,8 @@ class InputForm(ui.View):
         except ValueError:
             pass
 
-        item_data = {
-            "序号": seq,
-            "型号": model,
-            "数量": qty,
-            "参考价": price,
-        }
-        item_data.update(self.condition_data)
+        item_data = {"序号": seq, "型号": model, "数量": qty, "参考价": price}
+        item_data.update(self.collect_condition_data())
         item_data["照片文件"] = ";".join(self.photo_files)
 
         try:
@@ -708,151 +775,6 @@ class InputForm(ui.View):
             dialogs.alert("保存失败", str(e))
 
     def on_cancel(self, sender):
-        self.close()
-
-
-# ============ 盒况编辑器 ============
-class ConditionEditor(ui.View):
-    """盒况信息编辑界面"""
-
-    @classmethod
-    def open(cls, existing_data, callback):
-        editor = cls(existing_data, callback)
-        editor.present(style='sheet', hide_title_bar=False)
-
-    def __init__(self, existing_data, callback):
-        super().__init__()
-        self.callback = callback
-        self.existing_data = existing_data or {}
-        self.background_color = '#f2f2f7'
-        self.current_y = 80
-
-        def section(t):
-            lbl = ui.Label()
-            lbl.text = t
-            lbl.font = ('Helvetica-Bold', 16); lbl.text_color = '#1a1a1a'
-            lbl.frame = (20, self.current_y, self.width - 40, 28)
-            self.add_subview(lbl)
-            self.current_y += 32
-
-        def field_label(t):
-            l = ui.Label()
-            l.text = t; l.font = ('Helvetica', 14); l.text_color = '#333'
-            return l
-
-        # 拆封（单选）
-        section("拆封状态")
-        self.seal_seg = ui.SegmentedControl()
-        self.seal_seg.segments = SEAL_OPTIONS
-        existing_seal = self.existing_data.get("拆封状态", "")
-        self.seal_seg.selected_index = (SEAL_OPTIONS.index(existing_seal)
-                                        if existing_seal in SEAL_OPTIONS else 0)
-        self.seal_seg.frame = (20, self.current_y, self.width - 40, 40)
-        self.current_y += 50
-        self.add_subview(self.seal_seg)
-
-        # 外盒
-        section("外盒状态（可多选）")
-        self.box_checks = self.add_checkbox_group(BOX_CONDITION_OPTIONS, "外盒状态")
-        self.current_y += len(BOX_CONDITION_OPTIONS) * 30 + 10
-
-        # 外盒其他
-        lbl = field_label("外盒其他说明")
-        lbl.frame = (20, self.current_y, 140, 28)
-        self.add_subview(lbl)
-        self.txt_box_other = ui.TextField()
-        self.txt_box_other.frame = (160, self.current_y - 2, self.width - 180, 32)
-        self.txt_box_other.border_width = 1; self.txt_box_other.border_color = '#ccc'
-        self.txt_box_other.corner_radius = 6
-        self.txt_box_other.text = self.existing_data.get("外盒其他", "")
-        self.add_subview(self.txt_box_other)
-        self.current_y += 40
-
-        # 本体
-        section("本体状态（可多选）")
-        self.item_checks = self.add_checkbox_group(ITEM_CONDITION_OPTIONS, "本体状态")
-        self.current_y += len(ITEM_CONDITION_OPTIONS) * 30 + 10
-
-        # 本体其他
-        lbl = field_label("本体其他说明")
-        lbl.frame = (20, self.current_y, 140, 28)
-        self.add_subview(lbl)
-        self.txt_item_other = ui.TextField()
-        self.txt_item_other.frame = (160, self.current_y - 2, self.width - 180, 32)
-        self.txt_item_other.border_width = 1; self.txt_item_other.border_color = '#ccc'
-        self.txt_item_other.corner_radius = 6
-        self.txt_item_other.text = self.existing_data.get("本体其他", "")
-        self.add_subview(self.txt_item_other)
-        self.current_y += 40
-
-        # 配件
-        section("配件状态（可多选）")
-        self.acc_checks = self.add_checkbox_group(ACCESSORY_OPTIONS, "配件状态")
-        self.current_y += len(ACCESSORY_OPTIONS) * 30 + 10
-
-        # 配件其他
-        lbl = field_label("配件其他说明")
-        lbl.frame = (20, self.current_y, 140, 28)
-        self.add_subview(lbl)
-        self.txt_acc_other = ui.TextField()
-        self.txt_acc_other.frame = (160, self.current_y - 2, self.width - 180, 32)
-        self.txt_acc_other.border_width = 1; self.txt_acc_other.border_color = '#ccc'
-        self.txt_acc_other.corner_radius = 6
-        self.txt_acc_other.text = self.existing_data.get("配件其他", "")
-        self.add_subview(self.txt_acc_other)
-        self.current_y += 40
-
-        # 其他瑕疵
-        section("其他瑕疵或说明")
-        self.txt_other = ui.TextView()
-        self.txt_other.frame = (20, self.current_y, self.width - 40, 100)
-        self.txt_other.border_width = 1; self.txt_other.border_color = '#ccc'
-        self.txt_other.corner_radius = 6
-        self.txt_other.text = self.existing_data.get("其他瑕疵或说明", "")
-        self.add_subview(self.txt_other)
-        self.current_y += 115
-
-        # 保存
-        self.btn_save = ui.Button()
-        self.btn_save.title = "保存盒况信息"
-        self.btn_save.font = ('Helvetica-Bold', 17); self.btn_save.tint_color = 'white'
-        self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 10
-        self.btn_save.frame = (20, self.current_y, self.width - 40, 50)
-        self.btn_save.action = self.on_save
-        self.add_subview(self.btn_save)
-
-        # 滚动（内容多时可用）
-        self.scroll_enabled = True
-
-    def add_checkbox_group(self, options, data_key):
-        existing_str = self.existing_data.get(data_key, "")
-        existing_set = set(x.strip() for x in existing_str.split("|") if x.strip()) if existing_str else set()
-        checks = []
-        for opt in options:
-            sw = ui.Switch()
-            sw.frame = (self.width - 60, self.current_y, 40, 28)
-            sw.value = opt in existing_set
-            self.add_subview(sw)
-            lbl = ui.Label()
-            lbl.text = opt; lbl.font = ('Helvetica', 15)
-            lbl.frame = (20, self.current_y, self.width - 90, 28)
-            self.add_subview(lbl)
-            checks.append((opt, sw))
-            self.current_y += 30
-        return checks
-
-    def on_save(self, sender):
-        data = {}
-        if 0 <= self.seal_seg.selected_index < len(SEAL_OPTIONS):
-            data["拆封状态"] = SEAL_OPTIONS[self.seal_seg.selected_index]
-        data["外盒状态"] = "|".join(o for o, s in self.box_checks if s.value)
-        data["外盒其他"] = self.txt_box_other.text.strip()
-        data["本体状态"] = "|".join(o for o, s in self.item_checks if s.value)
-        data["本体其他"] = self.txt_item_other.text.strip()
-        data["配件状态"] = "|".join(o for o, s in self.acc_checks if s.value)
-        data["配件其他"] = self.txt_acc_other.text.strip()
-        data["其他瑕疵或说明"] = self.txt_other.text.strip()
-        self.callback(data)
         self.close()
 
 
