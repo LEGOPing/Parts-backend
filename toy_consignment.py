@@ -907,141 +907,130 @@ class InputForm(ui.View):
         self.scroll.content_size = (400, 1800)
         self.add_subview(self.scroll)
 
-        y = 20  # 相对 scroll 的 y
+        y = 16  # 相对 scroll 的 y（顶部留白小一点）
 
-        # ===== 第0行: 前 / 保存 / 后 =====
-        self.btn_prev = ui.Button()
-        self.btn_prev.title = "◀ 前一个"
-        self.btn_prev.font = ('Helvetica', 14); self.btn_prev.tint_color = '#007aff'
-        self.btn_prev.frame = (16, y, 100, 36)
-        self.btn_prev.action = self.on_prev_item
-        self.scroll.add_subview(self.btn_prev)
-
-        self.btn_save_top = ui.Button()
-        self.btn_save_top.title = "💾 保存"
-        self.btn_save_top.font = ('Helvetica-Bold', 14); self.btn_save_top.tint_color = 'white'
-        self.btn_save_top.background_color = '#34c759'; self.btn_save_top.corner_radius = 6
-        self.btn_save_top.frame = (140, y - 2, 100, 40)
-        self.btn_save_top.action = self.on_save
-        self.scroll.add_subview(self.btn_save_top)
-
-        self.btn_next = ui.Button()
-        self.btn_next.title = "后一个 ▶"
-        self.btn_next.font = ('Helvetica', 14); self.btn_next.tint_color = '#007aff'
-        self.btn_next.frame = (264, y, 100, 36)
-        self.btn_next.action = self.on_next_item
-        self.scroll.add_subview(self.btn_next)
-
-        # 当前序号标签 (在按钮下面)
-        self.lbl_idx = ui.Label()
-        self.lbl_idx.font = ('Helvetica', 11); self.lbl_idx.text_color = '#888'
-        self.lbl_idx.text_alignment = ui.ALIGN_CENTER
-        self.lbl_idx.frame = (16, y + 38, 340, 18)
-        self.scroll.add_subview(self.lbl_idx)
-
-        y += 62
-
-        # ===== 第1行: 序号 + 拍照按钮 =====
         def small_lbl(t):
             l = ui.Label()
-            l.text = t; l.font = ('Helvetica', 15); l.text_color = '#333'
+            l.text = t; l.font = ('Helvetica', 14); l.text_color = '#333'
             return l
 
-        lbl = small_lbl("序号"); lbl.frame = (20, y, 50, 34)
+        # ============ 第1行: 序号 + 前/后导航（右对齐） ============
+        lbl = small_lbl("序号"); lbl.frame = (20, y, 44, 30)
         self.scroll.add_subview(lbl)
 
         self.txt_seq = ui.TextField()
-        self.txt_seq.frame = (72, y - 2, 80, 34)
+        self.txt_seq.frame = (68, y - 2, 68, 32)
         self.txt_seq.border_width = 1; self.txt_seq.border_color = '#ccc'
-        self.txt_seq.corner_radius = 6
+        self.txt_seq.corner_radius = 5
         self.txt_seq.text = str(initial_seq)
         self.scroll.add_subview(self.txt_seq)
 
-        self.btn_photo = ui.Button()
-        self.btn_photo.title = "📷拍照"
-        self.btn_photo.font = ('Helvetica', 13); self.btn_photo.tint_color = 'white'
-        self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 6
-        self.btn_photo.frame = (160, y - 2, 90, 34)
-        self.btn_photo.action = self.on_take_photos
-        self.scroll.add_subview(self.btn_photo)
+        self.lbl_idx = ui.Label()
+        self.lbl_idx.font = ('Helvetica', 10); self.lbl_idx.text_color = '#888'
+        self.lbl_idx.frame = (138, y + 4, 100, 22)
+        self.scroll.add_subview(self.lbl_idx)
 
-        self.lbl_photo_count = ui.Label()
-        self.lbl_photo_count.font = ('Helvetica', 11); self.lbl_photo_count.text_alignment = ui.ALIGN_CENTER
-        self.lbl_photo_count.text_color = '#666'
-        self.lbl_photo_count.frame = (258, y - 2, 100, 34)
-        self.scroll.add_subview(self.lbl_photo_count)
+        # 导航按钮右对齐
+        self.btn_prev = ui.Button()
+        self.btn_prev.title = "◀ 前"
+        self.btn_prev.font = ('Helvetica', 13); self.btn_prev.tint_color = '#007aff'
+        self.btn_prev.frame = (210, y - 2, 76, 34)
+        self.btn_prev.action = self.on_prev_item
+        self.scroll.add_subview(self.btn_prev)
 
-        y += 50
+        self.btn_next = ui.Button()
+        self.btn_next.title = "后 ▶"
+        self.btn_next.font = ('Helvetica', 13); self.btn_next.tint_color = '#007aff'
+        self.btn_next.frame = (292, y - 2, 76, 34)
+        self.btn_next.action = self.on_next_item
+        self.scroll.add_subview(self.btn_next)
 
-        # ===== 第2行: 型号 =====
-        lbl = small_lbl("型号"); lbl.frame = (20, y, 50, 30)
+        y += 40
+
+        # ============ 第2行: 型号 ============
+        lbl = small_lbl("型号"); lbl.frame = (20, y, 44, 30)
         self.scroll.add_subview(lbl)
         self.txt_model = ui.TextField()
-        self.txt_model.frame = (72, y - 2, 280, 34)
+        self.txt_model.frame = (68, y - 2, 290, 32)
         self.txt_model.border_width = 1; self.txt_model.border_color = '#ccc'
-        self.txt_model.corner_radius = 6
+        self.txt_model.corner_radius = 5
         self.txt_model.placeholder = "例如：MG Freedom 2.0"
         self.scroll.add_subview(self.txt_model)
-        y += 36
+        y += 38
 
-        # ===== 第3行: 数量 + 参考价 =====
-        lbl = small_lbl("数量"); lbl.frame = (20, y, 50, 30)
+        # ============ 第3行: 数量 + 参考价 ============
+        lbl = small_lbl("数量"); lbl.frame = (20, y, 44, 30)
         self.scroll.add_subview(lbl)
         self.txt_qty = ui.TextField()
-        self.txt_qty.frame = (72, y - 2, 70, 34)
+        self.txt_qty.frame = (68, y - 2, 62, 32)
         self.txt_qty.border_width = 1; self.txt_qty.border_color = '#ccc'
-        self.txt_qty.corner_radius = 6; self.txt_qty.keyboard_type = ui.KEYBOARD_NUMBER_PAD
+        self.txt_qty.corner_radius = 5; self.txt_qty.keyboard_type = ui.KEYBOARD_NUMBER_PAD
         self.txt_qty.text = "1"
         self.scroll.add_subview(self.txt_qty)
 
-        lbl = small_lbl("参考价"); lbl.frame = (150, y, 60, 30)
+        lbl = small_lbl("参考价"); lbl.frame = (140, y, 58, 30)
         self.scroll.add_subview(lbl)
         self.txt_price = ui.TextField()
-        self.txt_price.frame = (212, y - 2, 140, 34)
+        self.txt_price.frame = (202, y - 2, 156, 32)
         self.txt_price.border_width = 1; self.txt_price.border_color = '#ccc'
-        self.txt_price.corner_radius = 6; self.txt_price.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
+        self.txt_price.corner_radius = 5; self.txt_price.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
         self.txt_price.placeholder = "例如：280"
         self.scroll.add_subview(self.txt_price)
-        y += 52
+        y += 40
 
         # ============ 盒况 ============
+        def section_with_side(title, side_view=None):
+            """section 标题可带右侧控件（如 SegmentedControl）"""
+            lbl = ui.Label()
+            lbl.text = title
+            lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
+            lbl.frame = (16, y, 200, 20)
+            self.scroll.add_subview(lbl)
+            if side_view:
+                side_view.frame = (216, y - 4, 144, 28)
+                self.scroll.add_subview(side_view)
+            line = ui.View()
+            line.background_color = '#e0e0e0'
+            line.frame = (16, y + 22, 340, 0.5)
+            self.scroll.add_subview(line)
+            return y + 26
+
         def section(t):
             lbl = ui.Label()
             lbl.text = t
             lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
-            lbl.frame = (16, y, 340, 22)
+            lbl.frame = (16, y, 340, 20)
             self.scroll.add_subview(lbl)
             line = ui.View()
             line.background_color = '#e0e0e0'
-            line.frame = (16, y + 24, 340, 0.5)
+            line.frame = (16, y + 22, 340, 0.5)
             self.scroll.add_subview(line)
-            return y + 30
+            return y + 26
 
         def make_checkbox(text, cx, cy, col_w=85):
             cb = ui.Button()
-            cb.title = "☐"; cb.font = ('Helvetica', 14); cb.tint_color = '#333'
-            cb.frame = (cx, cy - 4, 26, 28)
+            cb.title = "☐"; cb.font = ('Helvetica', 13); cb.tint_color = '#333'
+            cb.frame = (cx, cy - 3, 22, 24)
             def toggle(sender, b=cb):
                 b.title = "☑" if b.title == "☐" else "☐"
             cb.action = toggle
             self.scroll.add_subview(cb)
             lbl = ui.Label()
-            lbl.text = text; lbl.font = ('Helvetica', 14); lbl.text_color = '#222'
+            lbl.text = text; lbl.font = ('Helvetica', 13); lbl.text_color = '#222'
             lbl.number_of_lines = 1
             lbl.adjusts_font_size_to_fit = True
             lbl.minimum_font_size = 10
-            lbl.frame = (cx + 28, cy, col_w - 32, 28)
+            lbl.frame = (cx + 24, cy - 2, col_w - 28, 24)
             self.scroll.add_subview(lbl)
             return cb
 
-        # 拆封状态
-        y = section("拆封状态（单选）")
+        # 拆封状态 — SegmentedControl 跟标题同一行！
         self.seal_seg = ui.SegmentedControl()
         self.seal_seg.segments = SEAL_OPTIONS
         self.seal_seg.selected_index = 0
-        self.seal_seg.frame = (16, y, 340, 36)
-        self.scroll.add_subview(self.seal_seg)
-        y += 44
+        y = section_with_side("拆封状态（单选）", self.seal_seg)
+        # SegControl 下面不需要单独一行了，减 y 让 checkbox 紧跟标题行
+        y -= 2  # SegControl 已经放在标题同一行，内容直接从标题下面开始
 
         # 外盒状态
         y = section("外盒状态（可多选）")
@@ -1049,18 +1038,19 @@ class InputForm(ui.View):
         non_other = [o for o in BOX_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
             col = i % 4; row_idx = i // 4
-            x_pos = 16 + col * 85; row_y = y + row_idx * 32
+            x_pos = 16 + col * 85; row_y = y + row_idx * 26
             cb = make_checkbox(opt, x_pos, row_y)
             self.box_checks.append((opt, cb))
-        y += ((len(non_other) + 3) // 4) * 32 + 4
+        rows_box = (len(non_other) + 3) // 4
+        y += rows_box * 26 + 2
         cb_other = make_checkbox("其他", 16, y)
         self.box_checks.append(("其他", cb_other))
         self.txt_box_other = ui.TextField()
-        self.txt_box_other.frame = (101, y - 3, 258, 28)
+        self.txt_box_other.frame = (101, y - 2, 258, 26)
         self.txt_box_other.border_width = 1; self.txt_box_other.border_color = '#ddd'
         self.txt_box_other.corner_radius = 4
         self.scroll.add_subview(self.txt_box_other)
-        y += 36
+        y += 30
 
         # 本体状态
         y = section("本体状态（可多选）")
@@ -1068,18 +1058,19 @@ class InputForm(ui.View):
         non_other = [o for o in ITEM_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
             col = i % 4; row_idx = i // 4
-            x_pos = 16 + col * 85; row_y = y + row_idx * 32
+            x_pos = 16 + col * 85; row_y = y + row_idx * 26
             cb = make_checkbox(opt, x_pos, row_y)
             self.item_checks.append((opt, cb))
-        y += ((len(non_other) + 3) // 4) * 32 + 4
+        rows_item = (len(non_other) + 3) // 4
+        y += rows_item * 26 + 2
         cb_other = make_checkbox("其他", 16, y)
         self.item_checks.append(("其他", cb_other))
         self.txt_item_other = ui.TextField()
-        self.txt_item_other.frame = (101, y - 3, 258, 28)
+        self.txt_item_other.frame = (101, y - 2, 258, 26)
         self.txt_item_other.border_width = 1; self.txt_item_other.border_color = '#ddd'
         self.txt_item_other.corner_radius = 4
         self.scroll.add_subview(self.txt_item_other)
-        y += 36
+        y += 30
 
         # 配件状态
         y = section("配件状态（可多选）")
@@ -1087,43 +1078,70 @@ class InputForm(ui.View):
         non_other = [o for o in ACCESSORY_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
             col = i % 4; row_idx = i // 4
-            x_pos = 16 + col * 85; row_y = y + row_idx * 32
+            x_pos = 16 + col * 85; row_y = y + row_idx * 26
             cb = make_checkbox(opt, x_pos, row_y)
             self.acc_checks.append((opt, cb))
-        y += ((len(non_other) + 3) // 4) * 32 + 4
+        rows_acc = (len(non_other) + 3) // 4
+        y += rows_acc * 26 + 2
         cb_other = make_checkbox("其他", 16, y)
         self.acc_checks.append(("其他", cb_other))
         self.txt_acc_other = ui.TextField()
-        self.txt_acc_other.frame = (101, y - 3, 258, 28)
+        self.txt_acc_other.frame = (101, y - 2, 258, 26)
         self.txt_acc_other.border_width = 1; self.txt_acc_other.border_color = '#ddd'
         self.txt_acc_other.corner_radius = 4
         self.scroll.add_subview(self.txt_acc_other)
-        y += 42
+        y += 30
 
-        # 其他瑕疵
+        # 其他瑕疵（压缩高度 + 底部右对齐放拍照/保存按钮）
         y = section("其他瑕疵或说明")
         self.txt_other = ui.TextView()
-        self.txt_other.frame = (16, y, 340, 90)
+        self.txt_other.frame = (16, y, 340, 50)
         self.txt_other.border_width = 1; self.txt_other.border_color = '#ddd'
         self.txt_other.corner_radius = 4
         self.scroll.add_subview(self.txt_other)
-        y += 100
+        y += 56
+
+        # 拍照 + 保存按钮 — 在"其他瑕疵"下方右对齐
+        self.btn_photo = ui.Button()
+        self.btn_photo.title = "📷拍照"
+        self.btn_photo.font = ('Helvetica', 14); self.btn_photo.tint_color = 'white'
+        self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 6
+        self.btn_photo.frame = (192, y, 72, 34)
+        self.btn_photo.action = self.on_take_photos
+        self.scroll.add_subview(self.btn_photo)
+
+        self.lbl_photo_count = ui.Label()
+        self.lbl_photo_count.font = ('Helvetica', 11)
+        self.lbl_photo_count.text_color = '#34c759'
+        self.lbl_photo_count.frame = (120, y, 68, 34)
+        self.lbl_photo_count.text_alignment = ui.ALIGN_RIGHT
+        self.scroll.add_subview(self.lbl_photo_count)
+
+        self.btn_save_top = ui.Button()
+        self.btn_save_top.title = "💾 保存"
+        self.btn_save_top.font = ('Helvetica-Bold', 14); self.btn_save_top.tint_color = 'white'
+        self.btn_save_top.background_color = '#34c759'; self.btn_save_top.corner_radius = 6
+        self.btn_save_top.frame = (272, y, 84, 34)
+        self.btn_save_top.action = self.on_save
+        self.scroll.add_subview(self.btn_save_top)
+
+        y += 40
 
         # ============ 图片缩略图区 ============
         y = section("📷 图片（点击缩略图看大图）")
         self.thumb_container = ui.View()
-        self.thumb_container.frame = (16, y, 340, 300)  # 高度动态调整
+        self.thumb_container.frame = (16, y, 340, 100)  # 初始占位，渲染时动态调整
         self.scroll.add_subview(self.thumb_container)
-        y += 300
+        y += 100
 
         # 返回按钮
         self.btn_cancel = ui.Button()
         self.btn_cancel.title = "返回"
-        self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
-        self.btn_cancel.frame = (20, y + 10, 340, 44)
+        self.btn_cancel.font = ('Helvetica', 14); self.btn_cancel.tint_color = '#007aff'
+        self.btn_cancel.frame = (20, y + 6, 340, 40)
         self.btn_cancel.action = self.on_cancel
         self.scroll.add_subview(self.btn_cancel)
-        y += 70
+        y += 54
 
         self._form_bottom_y = y
         self.scroll.content_size = (400, y + 20)
@@ -1133,7 +1151,7 @@ class InputForm(ui.View):
             self._load_item(start_idx)
         else:
             self.current_idx = -1  # 新建模式
-            self.lbl_idx.text = f"共 {len(self.items)} 项 · 新建"
+            self.lbl_idx.text = f"新建 共{len(self.items)}"
             self._render_thumbs()  # 空的缩略图区
 
     # ========= 缩略图渲染 =========
@@ -1288,7 +1306,7 @@ class InputForm(ui.View):
         self.lbl_photo_count.text_color = '#34c759' if self.photo_files else '#666'
 
         # 标签
-        self.lbl_idx.text = f"第 {idx+1}/{len(self.items)} 项 · 序号 {item.get('序号','?')}"
+        self.lbl_idx.text = f"{idx+1}/{len(self.items)} · 序{item.get('序号','')}"
 
         self._render_thumbs()
         self._update_nav_buttons()
@@ -1310,7 +1328,7 @@ class InputForm(ui.View):
         self.txt_other.text = ""
         self.photo_files = []
         self.lbl_photo_count.text = ""
-        self.lbl_idx.text = f"共 {len(self.items)} 项 · 新建"
+        self.lbl_idx.text = f"新建 共{len(self.items)}"
         self._render_thumbs()
         self._update_nav_buttons()
 
