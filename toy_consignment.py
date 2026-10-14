@@ -9,6 +9,7 @@ import dialogs
 import os
 import csv
 import json
+import photos
 from datetime import datetime
 
 # ============ 配置常量 ============
@@ -835,9 +836,9 @@ class InputForm(ui.View):
             self.txt_acc_other.text = ""
             self.txt_other.text = ""
             self.photo_files = []
-            self.lbl_photo_count.text = "0 张"
-            dialogs.alert("成功", f"已保存：{seq} - {model}\n已开启下一项，序号 {nxt}")
+            self.lbl_photo_status.text = ""
             self.txt_model.begin_editing()
+            dialogs.alert("成功", f"已保存：{seq} - {model}\n已开启下一项，序号 {nxt}")
         except Exception as e:
             import traceback
             traceback.print_exc()
