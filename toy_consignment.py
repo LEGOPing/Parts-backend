@@ -612,17 +612,24 @@ class MainViewController(ui.View):
                                     topMargin=18*mm, bottomMargin=18*mm)
             styles = getSampleStyleSheet()
             fam = 'CN' if cn_font else 'Helvetica'
-            title_style = ParagraphStyle('title', parent=styles['Normal'],
+            # 关键：ParagraphStyle 必须显式关掉 bold/italic
+            # 因为中文字体没有 CN-Bold 变体，reportlab 找不到就崩
+            # 我们用 fontSize 大小来区分层级（标题 20pt vs 正文 10pt）
+            title_style = ParagraphStyle('title',
                                           fontName=fam, fontSize=20, leading=26,
-                                          alignment=1)
-            sub_style = ParagraphStyle('sub', parent=styles['Normal'],
+                                          fontBold=False, fontItalic=False,
+                                          alignment=1, textColor=colors.black)
+            sub_style = ParagraphStyle('sub',
                                         fontName=fam, fontSize=10, leading=14,
+                                        fontBold=False, fontItalic=False,
                                         alignment=1, textColor=colors.grey)
-            lnm_style = ParagraphStyle('lnm', parent=styles['Normal'],
+            lnm_style = ParagraphStyle('lnm',
                                         fontName=fam, fontSize=14, leading=18,
+                                        fontBold=False, fontItalic=False,
                                         alignment=1, textColor=colors.HexColor('#007aff'))
-            body_style = ParagraphStyle('body', parent=styles['Normal'],
-                                         fontName=fam, fontSize=10, leading=14)
+            body_style = ParagraphStyle('body',
+                                         fontName=fam, fontSize=10, leading=14,
+                                         fontBold=False, fontItalic=False)
             story = []
             story.append(Paragraph('附件：寄售玩具清单', title_style))
             story.append(Spacer(1, 4))
