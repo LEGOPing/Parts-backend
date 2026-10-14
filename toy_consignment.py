@@ -192,12 +192,58 @@ def append_item_to_csv(list_name, item_data):
         with open(csv_path, 'a', encoding='utf-8') as f:
             writer = csv.writer(f, lineterminator='\n')
             writer.writerow(row)
+            writer.writerow(row)
         print("[保存] ✅ 成功")
     except Exception as e:
         print(f"[保存] ❌ 失败: {e}")
         import traceback
         traceback.print_exc()
         raise
+
+
+CSV_HEADERS = [
+    "序号", "型号", "数量", "参考价",
+    "拆封状态", "外盒状态", "外盒其他",
+    "本体状态", "本体其他",
+    "配件状态", "配件其他",
+    "其他瑕疵或说明", "照片文件", "录入时间"
+]
+
+
+def update_item_in_csv(list_name, seq, item_data):
+    """按序号更新 CSV 中已有的行"""
+    csv_path = init_csv(list_name)
+    rows = []
+    found = False
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                if str(row.get("序号", "")) == str(seq):
+                    # 更新这一行
+                    new_row = {h: str(item_data.get(h, row.get(h, ""))) for h in CSV_HEADERS}
+                    if not new_row.get("录入时间"):
+                        new_row["录入时间"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    rows.append(new_row)
+                    found = True
+                else:
+                    rows.append(row)
+            except Exception as e:
+                print(f"[更新] 跳过一行: {e}")
+                rows.append(row)
+    if not found:
+        return False
+    # 重写 CSV
+    tmp_path = csv_path + '.tmp'
+    with open(tmp_path, 'w', encoding='utf-8', newline='') as f:
+        f.write('\ufeff')  # BOM
+        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='')
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
+    os.replace(tmp_path, csv_path)
+    print(f"[更新] ✅ 序号 {seq} 已更新")
+    return True
 
 
 def sanitize_filename(name):
@@ -833,44 +879,77 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
 # ============ 数据输入表单（内嵌盒况）============
 class InputForm(ui.View):
-    """玩具信息输入表单 — 盒况直接内嵌在页面上"""
+    """玩具信息输入表单 — 带前/后货品切换 + 图片缩略图网格"""
 
     @classmethod
-    def open(cls, list_name, seq, parent=None):
-        form = cls(list_name, seq, parent)
+    def open(cls, list_name, seq, parent=None, start_idx=-1):
+        form = cls(list_name, seq, parent, start_idx)
         form.present(style='sheet', hide_title_bar=False)
 
-    def __init__(self, list_name, initial_seq, parent=None):
+    def __init__(self, list_name, initial_seq, parent=None, start_idx=-1):
         super().__init__()
         self.list_name = list_name
         self.parent_controller = parent
-        self.photo_files = []
-        self.condition_data = {}
+        self.photo_files = []       # 当前货品的图片文件名列表
+        self.items = []             # CSV 所有行
+        self.current_idx = start_idx  # 当前编辑的是第几个
+        self._thumb_views = []      # 缩略图按钮列表
 
         self.background_color = '#f2f2f7'
 
-        # 外层：主视图（有标题栏）
-        # 内层：ScrollView 容器（装所有表单控件，能滚动）
+        # 加载所有货品
+        self.items = read_all_items(list_name)
+
+        # 外层 ScrollView
         self.scroll = ui.ScrollView()
         self.scroll.frame = (0, 0, self.width, self.height)
         self.scroll.scroll_enabled = True
-        self.scroll.content_size = (400, 1400)
+        self.scroll.content_size = (400, 1800)
         self.add_subview(self.scroll)
 
-        y = 20  # 相对 scroll 的 y 坐标
+        y = 20  # 相对 scroll 的 y
 
-        # ===== 第1行：序号 + 拍照按钮 + 保存按钮 =====
+        # ===== 第0行: 前 / 保存 / 后 =====
+        self.btn_prev = ui.Button()
+        self.btn_prev.title = "◀ 前一个"
+        self.btn_prev.font = ('Helvetica', 14); self.btn_prev.tint_color = '#007aff'
+        self.btn_prev.frame = (16, y, 100, 36)
+        self.btn_prev.action = self.on_prev_item
+        self.scroll.add_subview(self.btn_prev)
+
+        self.btn_save_top = ui.Button()
+        self.btn_save_top.title = "💾 保存"
+        self.btn_save_top.font = ('Helvetica-Bold', 14); self.btn_save_top.tint_color = 'white'
+        self.btn_save_top.background_color = '#34c759'; self.btn_save_top.corner_radius = 6
+        self.btn_save_top.frame = (140, y - 2, 100, 40)
+        self.btn_save_top.action = self.on_save
+        self.scroll.add_subview(self.btn_save_top)
+
+        self.btn_next = ui.Button()
+        self.btn_next.title = "后一个 ▶"
+        self.btn_next.font = ('Helvetica', 14); self.btn_next.tint_color = '#007aff'
+        self.btn_next.frame = (264, y, 100, 36)
+        self.btn_next.action = self.on_next_item
+        self.scroll.add_subview(self.btn_next)
+
+        # 当前序号标签 (在按钮下面)
+        self.lbl_idx = ui.Label()
+        self.lbl_idx.font = ('Helvetica', 11); self.lbl_idx.text_color = '#888'
+        self.lbl_idx.text_alignment = ui.ALIGN_CENTER
+        self.lbl_idx.frame = (16, y + 38, 340, 18)
+        self.scroll.add_subview(self.lbl_idx)
+
+        y += 62
+
+        # ===== 第1行: 序号 + 拍照按钮 =====
         def small_lbl(t):
             l = ui.Label()
             l.text = t; l.font = ('Helvetica', 15); l.text_color = '#333'
             return l
 
-        # 序号 label
-        lbl = small_lbl("序号")
-        lbl.frame = (20, y, 50, 34)
+        lbl = small_lbl("序号"); lbl.frame = (20, y, 50, 34)
         self.scroll.add_subview(lbl)
 
-        # 序号输入框（比之前短，右边还要放两个按钮）
         self.txt_seq = ui.TextField()
         self.txt_seq.frame = (72, y - 2, 80, 34)
         self.txt_seq.border_width = 1; self.txt_seq.border_color = '#ccc'
@@ -878,34 +957,23 @@ class InputForm(ui.View):
         self.txt_seq.text = str(initial_seq)
         self.scroll.add_subview(self.txt_seq)
 
-        # 拍照按钮（右边）
         self.btn_photo = ui.Button()
         self.btn_photo.title = "📷拍照"
         self.btn_photo.font = ('Helvetica', 13); self.btn_photo.tint_color = 'white'
         self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 6
-        self.btn_photo.frame = (160, y - 2, 75, 34)
+        self.btn_photo.frame = (160, y - 2, 90, 34)
         self.btn_photo.action = self.on_take_photos
         self.scroll.add_subview(self.btn_photo)
 
-        # 保存按钮（更右边）
-        self.btn_save = ui.Button()
-        self.btn_save.title = "💾保存"
-        self.btn_save.font = ('Helvetica', 13); self.btn_save.tint_color = 'white'
-        self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 6
-        self.btn_save.frame = (238, y - 2, 75, 34)
-        self.btn_save.action = self.on_save
-        self.scroll.add_subview(self.btn_save)
-
-        self.lbl_photo_status = ui.Label()
-        self.lbl_photo_status.text = ""
-        self.lbl_photo_status.font = ('Helvetica', 11); self.lbl_photo_status.text_alignment = ui.ALIGN_CENTER
-        self.lbl_photo_status.text_color = '#666'
-        self.lbl_photo_status.frame = (318, y - 2, 50, 34)
-        self.scroll.add_subview(self.lbl_photo_status)
+        self.lbl_photo_count = ui.Label()
+        self.lbl_photo_count.font = ('Helvetica', 11); self.lbl_photo_count.text_alignment = ui.ALIGN_CENTER
+        self.lbl_photo_count.text_color = '#666'
+        self.lbl_photo_count.frame = (258, y - 2, 100, 34)
+        self.scroll.add_subview(self.lbl_photo_count)
 
         y += 50
 
-        # ===== 第2行：型号 =====
+        # ===== 第2行: 型号 =====
         lbl = small_lbl("型号"); lbl.frame = (20, y, 50, 30)
         self.scroll.add_subview(lbl)
         self.txt_model = ui.TextField()
@@ -916,7 +984,7 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.txt_model)
         y += 36
 
-        # ===== 第3行：数量 + 参考价（同一行）=====
+        # ===== 第3行: 数量 + 参考价 =====
         lbl = small_lbl("数量"); lbl.frame = (20, y, 50, 30)
         self.scroll.add_subview(lbl)
         self.txt_qty = ui.TextField()
@@ -936,12 +1004,8 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.txt_price)
         y += 52
 
-        # ============================================================
-        # 盒况信息 —— 全部内嵌，直接显示在页面上
-        # ============================================================
-
+        # ============ 盒况 ============
         def section(t):
-            """标题 + 分隔线"""
             lbl = ui.Label()
             lbl.text = t
             lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
@@ -954,7 +1018,6 @@ class InputForm(ui.View):
             return y + 30
 
         def make_checkbox(text, cx, cy, col_w=85):
-            """☐按钮 + 文字 —— 强制单行截断绝对不折行"""
             cb = ui.Button()
             cb.title = "☐"; cb.font = ('Helvetica', 14); cb.tint_color = '#333'
             cb.frame = (cx, cy - 4, 26, 28)
@@ -971,7 +1034,7 @@ class InputForm(ui.View):
             self.scroll.add_subview(lbl)
             return cb
 
-        # ---- 拆封状态（SegmentedControl 小圆点单选）----
+        # 拆封状态
         y = section("拆封状态（单选）")
         self.seal_seg = ui.SegmentedControl()
         self.seal_seg.segments = SEAL_OPTIONS
@@ -980,19 +1043,16 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.seal_seg)
         y += 44
 
-        # ---- 外盒状态：2列网格 + 其他输入框 ----
+        # 外盒状态
         y = section("外盒状态（可多选）")
         self.box_checks = []
         non_other = [o for o in BOX_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 4
-            row_idx = i // 4
-            x_pos = 16 + col * 85
-            row_y = y + row_idx * 32
+            col = i % 4; row_idx = i // 4
+            x_pos = 16 + col * 85; row_y = y + row_idx * 32
             cb = make_checkbox(opt, x_pos, row_y)
             self.box_checks.append((opt, cb))
         y += ((len(non_other) + 3) // 4) * 32 + 4
-        # "其他" + 输入框 同一行
         cb_other = make_checkbox("其他", 16, y)
         self.box_checks.append(("其他", cb_other))
         self.txt_box_other = ui.TextField()
@@ -1002,15 +1062,13 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.txt_box_other)
         y += 36
 
-        # ---- 本体状态：2列网格 + 其他输入框 ----
+        # 本体状态
         y = section("本体状态（可多选）")
         self.item_checks = []
         non_other = [o for o in ITEM_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 4
-            row_idx = i // 4
-            x_pos = 16 + col * 85
-            row_y = y + row_idx * 32
+            col = i % 4; row_idx = i // 4
+            x_pos = 16 + col * 85; row_y = y + row_idx * 32
             cb = make_checkbox(opt, x_pos, row_y)
             self.item_checks.append((opt, cb))
         y += ((len(non_other) + 3) // 4) * 32 + 4
@@ -1023,15 +1081,13 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.txt_item_other)
         y += 36
 
-        # ---- 配件状态：2列网格 + 其他输入框 ----
+        # 配件状态
         y = section("配件状态（可多选）")
         self.acc_checks = []
         non_other = [o for o in ACCESSORY_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 4
-            row_idx = i // 4
-            x_pos = 16 + col * 85
-            row_y = y + row_idx * 32
+            col = i % 4; row_idx = i // 4
+            x_pos = 16 + col * 85; row_y = y + row_idx * 32
             cb = make_checkbox(opt, x_pos, row_y)
             self.acc_checks.append((opt, cb))
         y += ((len(non_other) + 3) // 4) * 32 + 4
@@ -1044,7 +1100,7 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.txt_acc_other)
         y += 42
 
-        # ---- 其他瑕疵 ----
+        # 其他瑕疵
         y = section("其他瑕疵或说明")
         self.txt_other = ui.TextView()
         self.txt_other.frame = (16, y, 340, 90)
@@ -1053,23 +1109,250 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.txt_other)
         y += 100
 
-        # 把最终 y 存起来，供 layout 和 content_size 用
-        self._form_bottom_y = y
+        # ============ 图片缩略图区 ============
+        y = section("📷 图片（点击缩略图看大图）")
+        self.thumb_container = ui.View()
+        self.thumb_container.frame = (16, y, 340, 300)  # 高度动态调整
+        self.scroll.add_subview(self.thumb_container)
+        y += 300
 
-        # ---- 返回按钮（底部）----
-        y_back = max(self._form_bottom_y + 20, 1150)
+        # 返回按钮
         self.btn_cancel = ui.Button()
         self.btn_cancel.title = "返回"
         self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
-        self.btn_cancel.frame = (20, y_back, 340, 44)
+        self.btn_cancel.frame = (20, y + 10, 340, 44)
         self.btn_cancel.action = self.on_cancel
         self.scroll.add_subview(self.btn_cancel)
+        y += 70
 
-        # 设置 ScrollView 内容高度 — 用实际 y
-        final_y = getattr(self, '_form_bottom_y', y + 40)
-        self.scroll.content_size = (400, final_y + 50)
+        self._form_bottom_y = y
+        self.scroll.content_size = (400, y + 20)
 
-    # ========= 回调方法 =========
+        # === 初始化: 加载 start_idx 对应的货品，或新建 ===
+        if start_idx >= 0 and start_idx < len(self.items):
+            self._load_item(start_idx)
+        else:
+            self.current_idx = -1  # 新建模式
+            self.lbl_idx.text = f"共 {len(self.items)} 项 · 新建"
+            self._render_thumbs()  # 空的缩略图区
+
+    # ========= 缩略图渲染 =========
+    def _get_photo_folder(self):
+        """图片所在文件夹"""
+        return get_list_folder(self.list_name)
+
+    def _render_thumbs(self):
+        """渲染图片缩略图网格 — 4列正方形"""
+        # 清除旧的
+        for v in list(self._thumb_container.subviews):
+            self._thumb_container.remove_subview(v)
+        self._thumb_views = []
+
+        photo_dir = self._get_photo_folder()
+        n = len(self.photo_files)
+        thumb_size = 78       # 正方形缩略图大小
+        gap = 8
+        cols = 4
+        rows = max((n + cols - 1) // cols, 1)
+        container_h = rows * thumb_size + (rows - 1) * gap
+        self.thumb_container.height = max(container_h, thumb_size)
+
+        if n == 0:
+            # 空状态
+            empty_lbl = ui.Label()
+            empty_lbl.text = "（还没有照片，点击 📷拍照 添加）"
+            empty_lbl.font = ('Helvetica', 12)
+            empty_lbl.text_color = '#aaa'
+            empty_lbl.alignment = ui.ALIGN_CENTER
+            empty_lbl.frame = (0, 0, 340, thumb_size)
+            self.thumb_container.add_subview(empty_lbl)
+            return
+
+        for idx, fname in enumerate(self.photo_files):
+            col = idx % cols
+            row = idx // cols
+            x = col * (thumb_size + gap)
+            y = row * (thumb_size + gap)
+            fp = os.path.join(photo_dir, fname)
+
+            btn = ui.Button()
+            btn.frame = (x, y, thumb_size, thumb_size)
+            btn.corner_radius = 6
+            btn.border_width = 1
+            btn.border_color = '#ddd'
+            btn.background_color = '#f5f5f5'
+            # 加载图片
+            if os.path.exists(fp):
+                try:
+                    btn.image = ui.Image.from_file(fp)
+                except Exception as e:
+                    print(f"[缩略图] 加载失败 {fp}: {e}")
+                    btn.title = "🖼"
+                    btn.font = ('Helvetica', 30)
+                    btn.tint_color = '#ccc'
+            else:
+                btn.title = "❓"
+                btn.font = ('Helvetica', 24)
+                btn.tint_color = '#999'
+            # 闭包绑定参数
+            def make_handler(path=fp, name=fname, i=idx):
+                def handler(sender):
+                    self._show_large_image(path, name)
+                return handler
+            btn.action = make_handler()
+            self.thumb_container.add_subview(btn)
+            self._thumb_views.append(btn)
+
+    def _show_large_image(self, img_path, fname):
+        """全屏弹窗显示大图"""
+        mask = ui.View(frame=(0, 0, ui.get_screen_size().width, ui.get_screen_size().height))
+        mask.background_color = (0, 0, 0, 0.9)
+        mask.flex = 'WH'
+
+        # 图片
+        img_view = ui.ImageView()
+        if os.path.exists(img_path):
+            try:
+                img_view.image = ui.Image.from_file(img_path)
+            except Exception:
+                img_view.image = None
+        img_view.content_mode = ui.CONTENT_SCALE_ASPECT_FIT
+        img_view.flex = 'WH'
+        mask.add_subview(img_view)
+
+        # 文件名 label (顶部)
+        lbl = ui.Label()
+        lbl.text = fname
+        lbl.text_color = '#fff'
+        lbl.font = ('Helvetica', 12)
+        lbl.alignment = ui.ALIGN_CENTER
+        lbl.flex = 'TB'
+        lbl.height = 30
+        mask.add_subview(lbl)
+
+        # 关闭按钮
+        close = ui.Button()
+        close.title = "✕ 关闭"
+        close.tint_color = '#fff'
+        close.font = ('Helvetica', 14)
+        close.action = lambda s: mask.close()
+        close.flex = 'TB'
+        close.height = 50
+        mask.add_subview(close)
+
+        mask.present('sheet')
+
+    # ========= 加载已有货品 =========
+    def _load_item(self, idx):
+        """从 CSV 加载第 idx 行到表单"""
+        if idx < 0 or idx >= len(self.items):
+            return
+        self.current_idx = idx
+        item = self.items[idx]
+
+        self.txt_seq.text = item.get("序号", "")
+        self.txt_model.text = item.get("型号", "")
+        self.txt_qty.text = item.get("数量", "1") or "1"
+        self.txt_price.text = item.get("参考价", "")
+
+        # 拆封单选
+        seal = item.get("拆封状态", "")
+        if seal in SEAL_OPTIONS:
+            self.seal_seg.selected_index = SEAL_OPTIONS.index(seal)
+        else:
+            self.seal_seg.selected_index = 0
+
+        # 外盒多选
+        box = set(item.get("外盒状态", "").split("|"))
+        for opt, cb in self.box_checks:
+            cb.title = "☑" if opt in box else "☐"
+        self.txt_box_other.text = item.get("外盒其他", "")
+
+        # 本体多选
+        itm = set(item.get("本体状态", "").split("|"))
+        for opt, cb in self.item_checks:
+            cb.title = "☑" if opt in itm else "☐"
+        self.txt_item_other.text = item.get("本体其他", "")
+
+        # 配件多选
+        acc = set(item.get("配件状态", "").split("|"))
+        for opt, cb in self.acc_checks:
+            cb.title = "☑" if opt in acc else "☐"
+        self.txt_acc_other.text = item.get("配件其他", "")
+
+        self.txt_other.text = item.get("其他瑕疵或说明", "")
+
+        # 图片
+        self.photo_files = [f for f in item.get("照片文件", "").split(";") if f]
+        self.lbl_photo_count.text = f"{len(self.photo_files)}张" if self.photo_files else ""
+        self.lbl_photo_count.text_color = '#34c759' if self.photo_files else '#666'
+
+        # 标签
+        self.lbl_idx.text = f"第 {idx+1}/{len(self.items)} 项 · 序号 {item.get('序号','?')}"
+
+        self._render_thumbs()
+        self._update_nav_buttons()
+
+    def _clear_form(self):
+        """清空表单（新建用）"""
+        self.current_idx = -1
+        self.txt_seq.text = ""
+        self.txt_model.text = ""
+        self.txt_qty.text = "1"
+        self.txt_price.text = ""
+        self.seal_seg.selected_index = 0
+        for _, cb in self.box_checks: cb.title = "☐"
+        for _, cb in self.item_checks: cb.title = "☐"
+        for _, cb in self.acc_checks: cb.title = "☐"
+        self.txt_box_other.text = ""
+        self.txt_item_other.text = ""
+        self.txt_acc_other.text = ""
+        self.txt_other.text = ""
+        self.photo_files = []
+        self.lbl_photo_count.text = ""
+        self.lbl_idx.text = f"共 {len(self.items)} 项 · 新建"
+        self._render_thumbs()
+        self._update_nav_buttons()
+
+    def _update_nav_buttons(self):
+        """根据 current_idx 禁用前/后按钮"""
+        total = len(self.items)
+        editing = self.current_idx >= 0
+        self.btn_prev.enabled = editing and self.current_idx > 0
+        self.btn_next.enabled = editing and self.current_idx < total - 1
+
+    # ========= 导航 =========
+    def on_prev_item(self, sender=None):
+        if self.current_idx > 0:
+            self._save_current_to_fields()  # 先把表单数据记回 items
+            self._load_item(self.current_idx - 1)
+        else:
+            dialogs.alert("提示", "已经是第一项了")
+
+    def on_next_item(self, sender=None):
+        if self.current_idx < len(self.items) - 1:
+            self._save_current_to_fields()
+            self._load_item(self.current_idx + 1)
+        else:
+            dialogs.alert("提示", "已经是最后一项了")
+
+    def _save_current_to_fields(self):
+        """切换货品前，把当前表单内容先同步回 items 数组"""
+        if self.current_idx < 0:
+            return
+        items_data = self.collect_condition_data()
+        seq = self.txt_seq.text.strip()
+        model = self.txt_model.text.strip()
+        if not seq or not model:
+            return  # 不完整的表单不同步
+        items_data["序号"] = seq
+        items_data["型号"] = model
+        items_data["数量"] = self.txt_qty.text.strip() or "1"
+        items_data["参考价"] = self.txt_price.text.strip()
+        items_data["照片文件"] = ";".join(self.photo_files)
+        self.items[self.current_idx] = items_data
+
+    # ========= 拍照 =========
     def on_take_photos(self, sender):
         seq = self.txt_seq.text.strip()
         model = self.txt_model.text.strip()
@@ -1079,20 +1362,20 @@ class InputForm(ui.View):
         if not seq:
             dialogs.alert("提示", "请填写序号")
             return
-        photos_list = take_photos(self.list_name, seq, model)
-        self.photo_files = photos_list
-        if photos_list:
-            self.lbl_photo_status.text = f"{len(photos_list)}张"
-            self.lbl_photo_status.text_color = '#34c759'
-        else:
-            self.lbl_photo_status.text = ""
-            self.lbl_photo_status.text_color = '#666'
+        new_photos = take_photos(self.list_name, seq, model)
+        if new_photos:
+            # 追加到现有列表（不要覆盖）
+            existing = set(self.photo_files)
+            for f in new_photos:
+                if f not in existing:
+                    self.photo_files.append(f)
+            self.lbl_photo_count.text = f"{len(self.photo_files)}张"
+            self.lbl_photo_count.text_color = '#34c759'
+            self._render_thumbs()
 
     def collect_condition_data(self):
-        """从内嵌控件收集盒况数据 —— checkbox 按钮用 title 判断"""
         def is_checked(btn):
             return getattr(btn, 'title', '') == '☑' or getattr(btn, 'selected', False)
-
         data = {}
         si = self.seal_seg.selected_index
         if 0 <= si < len(SEAL_OPTIONS):
@@ -1106,7 +1389,8 @@ class InputForm(ui.View):
         data["其他瑕疵或说明"] = self.txt_other.text.strip()
         return data
 
-    def on_save(self, sender):
+    # ========= 保存 =========
+    def on_save(self, sender=None):
         seq = self.txt_seq.text.strip()
         model = self.txt_model.text.strip()
         qty = self.txt_qty.text.strip() or "1"
@@ -1119,59 +1403,87 @@ class InputForm(ui.View):
             dialogs.alert("提示", "请填写型号")
             return
 
-        # 重复检查
-        try:
-            if check_duplicate_seq(self.list_name, int(seq)):
-                result = dialogs.alert("序号重复", f"序号 {seq} 已存在，\n要覆盖吗？",
-                                     "覆盖", "返回", hide_cancel_button=True)
-                if result == 2:  # button2 = 返回
-                    return
-        except ValueError:
-            pass
-
         item_data = {"序号": seq, "型号": model, "数量": qty, "参考价": price}
         item_data.update(self.collect_condition_data())
         item_data["照片文件"] = ";".join(self.photo_files)
 
-        try:
-            append_item_to_csv(self.list_name, item_data)
-            if self.parent_controller:
-                self.parent_controller.update_info()
-            # 自动开启下一项：序号+1，清空表单
+        editing = self.current_idx >= 0
+        if editing:
+            # 编辑模式 — 更新 CSV 已有行
+            ok = update_item_in_csv(self.list_name, seq, item_data)
+            if not ok:
+                # 没找到 → 提示可能序号改了
+                try:
+                    if check_duplicate_seq(self.list_name, int(seq)):
+                        dialogs.alert("序号冲突", f"序号 {seq} 已存在但不是当前项")
+                        return
+                except ValueError:
+                    pass
+                # 序号可能改了 → 尝试删除旧行后追加新行
+                self._delete_item_from_csv(seq)
+                append_item_to_csv(self.list_name, item_data)
+                editing = False
+        else:
+            # 新建模式
             try:
-                nxt = str(int(seq) + 1)
+                if check_duplicate_seq(self.list_name, int(seq)):
+                    result = dialogs.alert("序号重复", f"序号 {seq} 已存在，要覆盖吗？",
+                                         "覆盖", "返回", hide_cancel_button=True)
+                    if result == 2:
+                        return
+                    update_item_in_csv(self.list_name, seq, item_data)
+                    editing = True
+                else:
+                    append_item_to_csv(self.list_name, item_data)
             except ValueError:
-                nxt = ""
-            self.txt_seq.text = nxt
-            self.txt_model.text = ""
-            self.txt_qty.text = "1"
-            self.txt_price.text = ""
-            self.seal_seg.selected_index = 0
-            for _, cb in self.box_checks:  cb.title = "☐"
-            for _, cb in self.item_checks: cb.title = "☐"
-            for _, cb in self.acc_checks:  cb.title = "☐"
-            self.txt_box_other.text = ""
-            self.txt_item_other.text = ""
-            self.txt_acc_other.text = ""
-            self.txt_other.text = ""
-            self.photo_files = []
-            self.lbl_photo_status.text = ""
-            self.txt_model.begin_editing()
-            dialogs.alert("成功", f"已保存：{seq} - {model}\n已开启下一项，序号 {nxt}")
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            dialogs.alert("保存失败", str(e))
+                append_item_to_csv(self.list_name, item_data)
+
+        # 重新加载 items
+        self.items = read_all_items(self.list_name)
+
+        # 跳转到刚保存的那项
+        new_idx = -1
+        for i, it in enumerate(self.items):
+            if str(it.get("序号", "")) == seq:
+                new_idx = i
+                break
+
+        if new_idx >= 0:
+            self._load_item(new_idx)
+            self.current_idx = new_idx
+            dialogs.alert("已保存", f"✅ 已保存：{seq} - {model}")
+        else:
+            # 找不到？可能异常
+            dialogs.alert("已保存", f"✅ 已保存：{seq} - {model}")
+
+        if self.parent_controller:
+            self.parent_controller.update_info()
+
+    def _delete_item_from_csv(self, seq):
+        """从 CSV 删掉序号为 seq 的行"""
+        csv_path = get_csv_path(self.list_name)
+        rows = []
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if str(row.get("序号", "")) != str(seq):
+                    rows.append(row)
+        tmp_path = csv_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8', newline='') as f:
+            f.write('\ufeff')
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator=chr(10))
+            writer.writeheader()
+            for r in rows:
+                writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
+        os.replace(tmp_path, csv_path)
 
     def on_cancel(self, sender):
         self.close()
 
     def layout(self):
-        # 让内部 ScrollView 跟随外层 View 大小
         self.scroll.frame = (0, 0, self.width, self.height)
 
 
-# ============ 清单查看器 ============
 class ListViewer(ui.View):
 
     @classmethod
