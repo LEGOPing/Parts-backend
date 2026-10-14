@@ -223,10 +223,9 @@ def take_photos(list_name, seq, model):
         img = None
 
         if "相机" in choice:
-            # 相机
+            # 相机 — Pythonista 正确 API：photos.capture_image()
             try:
-                import camera
-                img = camera.capture_photo()
+                img = photos.capture_image()
             except Exception as e:
                 print(f"[拍照] 相机不可用: {e}, 尝试相册...")
                 try:
@@ -333,6 +332,10 @@ class MainViewController(ui.View):
         self.btn_export.action = self.on_export_csv
         self.add_subview(self.btn_export)
 
+        self.btn_show_folder = self.make_button("📂 打开文件夹位置", '#4caf50')
+        self.btn_show_folder.action = self.on_show_folder
+        self.add_subview(self.btn_show_folder)
+
         self.stats_label = ui.Label()
         self.stats_label.text = ""
         self.stats_label.font = ('Helvetica', 12)
@@ -361,7 +364,8 @@ class MainViewController(ui.View):
         self.btn_add.frame = (x, 220, btn_w, 50)
         self.btn_view.frame = (x, 285, btn_w, 50)
         self.btn_export.frame = (x, 350, btn_w, 50)
-        self.stats_label.frame = (20, 415, w - 40, 120)
+        self.btn_show_folder.frame = (x, 415, btn_w, 50)
+        self.stats_label.frame = (20, 480, w - 40, 140)
 
     def on_view_appear(self):
         """主视图显示后再让 dialog 弹出，避免界面卡住"""
@@ -388,12 +392,17 @@ class MainViewController(ui.View):
             csv_path = get_csv_path(self.current_list_name)
             items = read_all_items(self.current_list_name)
             self.list_name_label.text = f"当前清单：{self.current_list_name}"
+            # 显示详细状态和路径
+            base = os.path.expanduser("~")
+            folder_short = folder.replace(base, "~")
             self.stats_label.text = (
-                f"共 {len(items)} 项\n\n"
-                f"文件夹: {folder}\n"
-                f"清单文件: {csv_path}"
+                f"📂 共 {len(items)} 项\n"
+                f"📄 {folder_short}/寄售清单.csv\n"
+                f"📸 {folder_short}/\n\n"
+                f"完整路径: {folder}"
             )
             print(f"[主界面] 当前清单: {self.current_list_name}, 项目数: {len(items)}")
+            print(f"[主界面] 子文件夹: {folder}, 存在: {os.path.exists(folder)}")
         else:
             self.list_name_label.text = "点击下方按钮新建或打开清单"
             self.stats_label.text = ""
@@ -423,7 +432,8 @@ class MainViewController(ui.View):
 
             save_config({"last_list": list_name})
             self.update_info()
-            dialogs.alert("成功", f"已创建清单：\n{list_name}")
+            folder = get_list_folder(list_name)
+            dialogs.alert("成功", f"已创建清单：\n{list_name}\n\n📁 {folder}")
 
     def on_switch_list(self):
         base = get_base_folder()
@@ -465,6 +475,37 @@ class MainViewController(ui.View):
                 dialogs.alert("CSV 文件位置", csv_path)
         else:
             dialogs.alert("提示", "清单文件不存在")
+
+    def on_show_folder(self, sender=None):
+        """显示文件夹位置，并尝试打开"""
+        if not self.current_list_name:
+            dialogs.alert("提示", "请先选择清单")
+            return
+        folder = get_list_folder(self.current_list_name)
+        csv_path = get_csv_path(self.current_list_name)
+        base = os.path.expanduser("~")
+        print(f"[打开文件夹] {folder}")
+        print(f"[打开文件夹] 存在: {os.path.exists(folder)}")
+        # 列出文件夹里的内容
+        contents = []
+        try:
+            for f in sorted(os.listdir(folder)):
+                fp = os.path.join(folder, f)
+                size = os.path.getsize(fp)
+                contents.append(f"{f}  ({size} bytes)")
+        except Exception as e:
+            contents.append(f"读取失败: {e}")
+        content_text = "\n".join(contents) if contents else "(文件夹是空的)"
+        # 对话框显示
+        msg = (f"📁 子文件夹已存在：\n{folder}\n\n"
+               f"📄 CSV文件：{'存在 ✅' if os.path.exists(csv_path) else '不存在 ❌'}\n\n"
+               f"📂 文件夹内容：\n{content_text}")
+        try:
+            import share
+            share.share_url(f"file://{folder}")
+        except Exception:
+            pass
+        dialogs.alert("📁 子文件夹位置", msg)
 
 
 # ============ 数据输入表单 ============
@@ -577,9 +618,9 @@ class InputForm(ui.View):
         self.add_subview(self.btn_save)
         y += 60
 
-        # 取消按钮
+        # 返回按钮
         self.btn_cancel = ui.Button()
-        self.btn_cancel.title = "取消"
+        self.btn_cancel.title = "返回"
         self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
         self.btn_cancel.frame = (20, y, 280, 40)
         self.btn_cancel.action = self.on_cancel
@@ -642,7 +683,7 @@ class InputForm(ui.View):
         try:
             if check_duplicate_seq(self.list_name, int(seq)):
                 result = dialogs.alert("序号重复", f"序号 {seq} 已存在，\n要覆盖吗？",
-                                     "覆盖", "取消")
+                                     "覆盖", "返回")
                 if result == 1:
                     return
         except ValueError:
@@ -865,7 +906,7 @@ class ListViewer(ui.View):
         self.add_subview(self.table_view)
 
         self.btn_close = ui.Button()
-        self.btn_close.title = "关闭"
+        self.btn_close.title = "返回"
         self.btn_close.font = ('Helvetica', 15)
         self.btn_close.tint_color = '#007aff'
         self.btn_close.frame = (20, self.height - 80, self.width - 40, 44)
