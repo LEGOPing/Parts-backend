@@ -12,7 +12,6 @@ import json
 from datetime import datetime
 
 # ============ 配置常量 ============
-BASE_FOLDER_NAME = "清单"
 CSV_FILENAME = "寄售清单.csv"
 CONFIG_FILENAME = ".app_config.json"
 
@@ -49,29 +48,16 @@ def get_script_dir():
     return os.path.expanduser("~")
 
 
-def get_base_folder():
-    """脚本所在文件夹/清单子目录"""
-    script_dir = get_script_dir()
-    base_path = os.path.join(script_dir, BASE_FOLDER_NAME)
-    try:
-        os.makedirs(base_path, exist_ok=True)
-    except Exception as e:
-        print(f"创建根目录失败: {base_path}, 错误: {e}")
-    print(f"[路径] 脚本目录: {script_dir}")
-    print(f"[路径] 清单根目录: {base_path}")
-    return base_path
-
 
 def get_list_folder(list_name):
-    """获取/创建指定清单的子文件夹"""
-    base = get_base_folder()
-    folder_path = os.path.join(base, list_name)
+    """脚本目录/清单名/ — CSV 和照片在同一位置"""
+    script_dir = get_script_dir()
+    folder_path = os.path.join(script_dir, list_name)
     try:
         os.makedirs(folder_path, exist_ok=True)
-        print(f"[路径] 清单文件夹: {folder_path}")
-        print(f"[路径] 存在: {os.path.exists(folder_path)}")
+        print(f"[路径] 脚本: {script_dir}")
+        print(f"[路径] 清单: {folder_path}")
     except Exception as e:
-        print(f"创建清单文件夹失败: {folder_path}, 错误: {e}")
         dialogs.alert("错误", f"无法创建文件夹：\n{folder_path}\n\n原因：{e}")
     return folder_path
 
@@ -395,7 +381,7 @@ class MainViewController(ui.View):
         last_list = cfg.get("last_list")
         if last_list:
             # 验证文件夹确实存在
-            list_folder = os.path.join(get_base_folder(), last_list)
+            list_folder = os.path.join(get_script_dir(), last_list)
             if os.path.exists(list_folder):
                 self.current_list_name = last_list
                 self.update_info()
@@ -453,7 +439,7 @@ class MainViewController(ui.View):
             dialogs.alert("成功", f"已创建清单：\n{list_name}\n\n📁 {folder}")
 
     def on_switch_list(self):
-        base = get_base_folder()
+        base = get_script_dir()
         folders = [d for d in os.listdir(base)
                    if os.path.isdir(os.path.join(base, d)) and not d.startswith('.')]
         if not folders:
@@ -677,13 +663,13 @@ class InputForm(ui.View):
         self.box_checks = []
         non_other = [o for o in BOX_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 2
+            col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 165
-            row_y = y + row_idx * 32
+            x_pos = 16 + col * 82
+            row_y = y + row_idx * 30
             cb = make_checkbox(opt, x_pos, row_y)
             self.box_checks.append((opt, cb))
-        y += ((len(non_other) + 1) // 2) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 6
         # "其他" + 输入框 同一行
         cb_other = make_checkbox("其他", 16, y)
         self.box_checks.append(("其他", cb_other))
@@ -699,13 +685,13 @@ class InputForm(ui.View):
         self.item_checks = []
         non_other = [o for o in ITEM_CONDITION_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 2
+            col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 165
-            row_y = y + row_idx * 32
+            x_pos = 16 + col * 82
+            row_y = y + row_idx * 30
             cb = make_checkbox(opt, x_pos, row_y)
             self.item_checks.append((opt, cb))
-        y += ((len(non_other) + 1) // 2) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 6
         cb_other = make_checkbox("其他", 16, y)
         self.item_checks.append(("其他", cb_other))
         self.txt_item_other = ui.TextField()
@@ -720,13 +706,13 @@ class InputForm(ui.View):
         self.acc_checks = []
         non_other = [o for o in ACCESSORY_OPTIONS if o != "其他"]
         for i, opt in enumerate(non_other):
-            col = i % 2
+            col = i % 4
             row_idx = i // 2
-            x_pos = 16 + col * 165
-            row_y = y + row_idx * 32
+            x_pos = 16 + col * 82
+            row_y = y + row_idx * 30
             cb = make_checkbox(opt, x_pos, row_y)
             self.acc_checks.append((opt, cb))
-        y += ((len(non_other) + 1) // 2) * 32 + 6
+        y += ((len(non_other) + 3) // 4) * 32 + 6
         cb_other = make_checkbox("其他", 16, y)
         self.acc_checks.append(("其他", cb_other))
         self.txt_acc_other = ui.TextField()
