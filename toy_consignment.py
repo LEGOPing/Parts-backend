@@ -30,16 +30,35 @@ ACCESSORY_OPTIONS = ["齐全", "缺零件", "缺贴纸", "缺说明书", "零件
 
 
 # ============ 路径工具（全用 Pythonista 兼容写法） ============
+def get_script_dir():
+    """获取脚本当前所在文件夹（Pythonista 里就是脚本放的位置）"""
+    try:
+        # __file__ 在 Pythonista 里能拿到脚本路径
+        d = os.path.dirname(os.path.abspath(__file__))
+        if d and os.path.exists(d):
+            return d
+    except Exception as e:
+        print(f"[路径] __file__ 不可用: {e}")
+    try:
+        d = os.path.dirname(os.path.abspath(sys.argv[0]))
+        if d and os.path.exists(d):
+            return d
+    except Exception:
+        pass
+    # 兜底：Documents 目录
+    return os.path.expanduser("~")
+
+
 def get_base_folder():
-    """获取/创建清单根目录（绝对路径，确保 Pythonista 能访问）"""
-    # Pythonista 下 os.path.expanduser("~") 指向 Documents 目录
-    home = os.path.expanduser("~")
-    base_path = os.path.join(home, BASE_FOLDER_NAME)
+    """脚本所在文件夹/清单子目录"""
+    script_dir = get_script_dir()
+    base_path = os.path.join(script_dir, BASE_FOLDER_NAME)
     try:
         os.makedirs(base_path, exist_ok=True)
     except Exception as e:
         print(f"创建根目录失败: {base_path}, 错误: {e}")
-    print(f"[路径] 根目录: {base_path}")
+    print(f"[路径] 脚本目录: {script_dir}")
+    print(f"[路径] 清单根目录: {base_path}")
     return base_path
 
 
@@ -617,53 +636,32 @@ class InputForm(ui.View):
         # ============================================================
 
         def section(t):
-            """标题 + 分隔线，current_y 用累加方式（不再重置！）"""
+            """标题 + 分隔线"""
             lbl = ui.Label()
             lbl.text = t
             lbl.font = ('Helvetica-Bold', 13); lbl.text_color = '#1a1a1a'
             lbl.frame = (16, y, 340, 22)
             self.scroll.add_subview(lbl)
-            # 分隔线
             line = ui.View()
             line.background_color = '#e0e0e0'
             line.frame = (16, y + 24, 340, 0.5)
             self.scroll.add_subview(line)
             return y + 30
 
-        def make_checkbox_row(label_text, parent):
-            """左 ☑/☐ 勾选框按钮 + 文字标签 —— 模拟原生 CheckBox"""
-            check_btn = ui.Button()
-            check_btn.title = "☐"
-            check_btn.font = ('Helvetica', 18)
-            check_btn.tint_color = '#333'
-            check_btn.frame = (16, y - 4, 30, 28)
-            # 点击切换 ☑/☐
-            def toggle(sender, b=check_btn):
+        def make_checkbox(text, cx, cy):
+            """在指定坐标创建 ☑/☐ 勾选按钮 + 标签（同一行）"""
+            cb = ui.Button()
+            cb.title = "☐"; cb.font = ('Helvetica', 15); cb.tint_color = '#333'
+            cb.frame = (cx, cy - 2, 28, 24)
+            def toggle(sender, b=cb):
                 b.title = "☑" if b.title == "☐" else "☐"
-                b.selected = (b.title == "☑")
-            check_btn.action = toggle
-            self.scroll.add_subview(check_btn)
-
+            cb.action = toggle
+            self.scroll.add_subview(cb)
             lbl = ui.Label()
-            lbl.text = label_text
-            lbl.font = ('Helvetica', 13)
-            lbl.frame = (52, y, 290, 26)
+            lbl.text = text; lbl.font = ('Helvetica', 13)
+            lbl.frame = (cx + 28, cy, 90, 24)
             self.scroll.add_subview(lbl)
-            return (label_text, check_btn)
-
-        def row_other(label_text):
-            """其他选项 — 左文字 + 小输入框"""
-            lbl = ui.Label()
-            lbl.text = label_text
-            lbl.font = ('Helvetica', 12)
-            lbl.frame = (52, y, 90, 26)
-            self.scroll.add_subview(lbl)
-            txt = ui.TextField()
-            txt.frame = (148, y - 2, 210, 30)
-            txt.border_width = 1; txt.border_color = '#ddd'
-            txt.corner_radius = 4
-            self.scroll.add_subview(txt)
-            return txt
+            return cb
 
         # ---- 拆封状态（SegmentedControl 小圆点单选）----
         y = section("拆封状态（单选）")
@@ -674,32 +672,69 @@ class InputForm(ui.View):
         self.scroll.add_subview(self.seal_seg)
         y += 44
 
-        # ---- 外盒状态（多选 ☑）----
-        y = section("外盒状态（可多选，点击☐可勾选）")
+        # ---- 外盒状态：2列网格 + 其他输入框 ----
+        y = section("外盒状态（可多选）")
         self.box_checks = []
-        for opt in BOX_CONDITION_OPTIONS:
-            self.box_checks.append(make_checkbox_row(opt, self.scroll))
-            y += 32
-        self.txt_box_other = row_other("其他说明:")
-        y += 38
+        non_other = [o for o in BOX_CONDITION_OPTIONS if o != "其他"]
+        for i, opt in enumerate(non_other):
+            col = i % 2
+            row_idx = i // 2
+            x_pos = 16 + col * 165
+            row_y = y + row_idx * 32
+            cb = make_checkbox(opt, x_pos, row_y)
+            self.box_checks.append((opt, cb))
+        y += ((len(non_other) + 1) // 2) * 32 + 6
+        # "其他" + 输入框 同一行
+        cb_other = make_checkbox("其他", 16, y)
+        self.box_checks.append(("其他", cb_other))
+        self.txt_box_other = ui.TextField()
+        self.txt_box_other.frame = (78, y - 3, 278, 28)
+        self.txt_box_other.border_width = 1; self.txt_box_other.border_color = '#ddd'
+        self.txt_box_other.corner_radius = 4
+        self.scroll.add_subview(self.txt_box_other)
+        y += 36
 
-        # ---- 本体状态（多选 ☑）----
-        y = section("本体状态（可多选，点击☐可勾选）")
+        # ---- 本体状态：2列网格 + 其他输入框 ----
+        y = section("本体状态（可多选）")
         self.item_checks = []
-        for opt in ITEM_CONDITION_OPTIONS:
-            self.item_checks.append(make_checkbox_row(opt, self.scroll))
-            y += 32
-        self.txt_item_other = row_other("其他说明:")
-        y += 38
+        non_other = [o for o in ITEM_CONDITION_OPTIONS if o != "其他"]
+        for i, opt in enumerate(non_other):
+            col = i % 2
+            row_idx = i // 2
+            x_pos = 16 + col * 165
+            row_y = y + row_idx * 32
+            cb = make_checkbox(opt, x_pos, row_y)
+            self.item_checks.append((opt, cb))
+        y += ((len(non_other) + 1) // 2) * 32 + 6
+        cb_other = make_checkbox("其他", 16, y)
+        self.item_checks.append(("其他", cb_other))
+        self.txt_item_other = ui.TextField()
+        self.txt_item_other.frame = (78, y - 3, 278, 28)
+        self.txt_item_other.border_width = 1; self.txt_item_other.border_color = '#ddd'
+        self.txt_item_other.corner_radius = 4
+        self.scroll.add_subview(self.txt_item_other)
+        y += 36
 
-        # ---- 配件状态（多选 ☑）----
-        y = section("配件状态（可多选，点击☐可勾选）")
+        # ---- 配件状态：2列网格 + 其他输入框 ----
+        y = section("配件状态（可多选）")
         self.acc_checks = []
-        for opt in ACCESSORY_OPTIONS:
-            self.acc_checks.append(make_checkbox_row(opt, self.scroll))
-            y += 32
-        self.txt_acc_other = row_other("其他说明:")
-        y += 38
+        non_other = [o for o in ACCESSORY_OPTIONS if o != "其他"]
+        for i, opt in enumerate(non_other):
+            col = i % 2
+            row_idx = i // 2
+            x_pos = 16 + col * 165
+            row_y = y + row_idx * 32
+            cb = make_checkbox(opt, x_pos, row_y)
+            self.acc_checks.append((opt, cb))
+        y += ((len(non_other) + 1) // 2) * 32 + 6
+        cb_other = make_checkbox("其他", 16, y)
+        self.acc_checks.append(("其他", cb_other))
+        self.txt_acc_other = ui.TextField()
+        self.txt_acc_other.frame = (78, y - 3, 278, 28)
+        self.txt_acc_other.border_width = 1; self.txt_acc_other.border_color = '#ddd'
+        self.txt_acc_other.corner_radius = 4
+        self.scroll.add_subview(self.txt_acc_other)
+        y += 36
 
         # ---- 其他瑕疵 ----
         y = section("其他瑕疵或说明")
