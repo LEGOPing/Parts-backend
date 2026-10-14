@@ -545,14 +545,12 @@ class MainViewController(ui.View):
             if it.get("拆封状态"): cp.append(it["拆封状态"])
             if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
             if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
-            cond = " / ".join(cp)
-            # RTF 表格单元格默认不自动换行，用 \line 强制换行
-            cond_rtf = cond.replace(" / ", "\\line ")
+            cond = " ".join(cp)
             R.append('\\ql ' + str(it.get("序号","")) + '\\cell')
             R.append('\\ql ' + str(it.get("型号","")) + '\\cell')
             R.append('\\ql ' + str(it.get("数量","")) + '\\cell')
             R.append('\\qr ' + str(it.get("参考价","")) + '\\cell')
-            R.append('\\ql ' + cond_rtf + '\\cell')
+            R.append('\\ql ' + cond + '\\cell')
             R.append(r'\row')
         R.append(r'\pard\sa480\fs20 双方签字确认：________________________\par')
         R.append(r'}')
@@ -665,9 +663,9 @@ class MainViewController(ui.View):
                 if it.get("拆封状态"): cp.append(it["拆封状态"])
                 if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
                 if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
-                cond = " / ".join(cp)
+                cond = " ".join(cp)
                 # 盒况用 Paragraph 包起来 + <br/> 让 reportlab 自动换行
-                cond_wrapped = Paragraph(cond.replace(" / ", "<br/>"), wrap_style)
+                cond_wrapped = Paragraph(cond, wrap_style)
                 data.append([str(it.get("序号","")), str(it.get("型号","")),
                              str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
             # 列宽: A4 可用 174mm (210 - 2*18mm margin)
@@ -715,7 +713,7 @@ class MainViewController(ui.View):
             if it.get("拆封状态"): cp.append(it["拆封状态"])
             if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
             if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
-            cond = " / ".join(cp)
+            cond = " ".join(cp)
             th += f'<tr><td align="center">{_hm.escape(str(it.get("序号","")))}</td>'
             th += f'<td align="center">{_hm.escape(str(it.get("型号","")))}</td>'
             th += f'<td align="center">{_hm.escape(str(it.get("数量","")))}</td>'
@@ -1175,7 +1173,7 @@ class ListViewer(ui.View):
             if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
             if it.get("外盒状态"): cond_parts.append("盒:" + it["外盒状态"].replace("|", "、"))
             if it.get("本体状态"): cond_parts.append("本:" + it["本体状态"].replace("|", "、"))
-            cond = " / ".join(cond_parts)
+            cond = " ".join(cond_parts)
             row = (
                 self._fmt_cell(it.get("序号",""), W_SEQ, 'center') + "│" +
                 self._fmt_cell(it.get("型号",""), W_MODEL, 'center') + "│" +
