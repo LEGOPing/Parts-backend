@@ -533,7 +533,7 @@ class MainViewController(ui.View):
         R.append('\\pard\\qc\\fs26\\cf18 清单：' + self.current_list_name + '\\par')
         R.append(r'\par')
         R.append(r'\trowd\trgaph108')
-        R.append(r'\cellx400\cellx1800\cellx2100\cellx2700\cellx4500')
+        R.append(r'\cellx800\cellx3300\cellx4100\cellx5500\cellx9800')
         R.append(r'\ql\b 序号\cell')
         R.append(r'\ql\b 型号\cell')
         R.append(r'\ql\b 数量\cell')
@@ -543,14 +543,16 @@ class MainViewController(ui.View):
         for it in items:
             cp = []
             if it.get("拆封状态"): cp.append(it["拆封状态"])
-            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
-            if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
+            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
+            if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
             cond = " / ".join(cp)
+            # RTF 表格单元格默认不自动换行，用 \line 强制换行
+            cond_rtf = cond.replace(" / ", "\\line ")
             R.append('\\ql ' + str(it.get("序号","")) + '\\cell')
             R.append('\\ql ' + str(it.get("型号","")) + '\\cell')
             R.append('\\ql ' + str(it.get("数量","")) + '\\cell')
             R.append('\\qr ' + str(it.get("参考价","")) + '\\cell')
-            R.append('\\ql ' + cond + '\\cell')
+            R.append('\\ql ' + cond_rtf + '\\cell')
             R.append(r'\row')
         R.append(r'\pard\sa480\fs20 双方签字确认：________________________\par')
         R.append(r'}')
@@ -653,17 +655,24 @@ class MainViewController(ui.View):
             story.append(Spacer(1, 2))
             story.append(Paragraph('清单：' + self.current_list_name, lnm_style))
             story.append(Spacer(1, 10))
+            # 盒况自动换行用的 style
+            wrap_style = ParagraphStyle('wrap',
+                                         fontName=fam, fontSize=10, leading=13)
             hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
             data = [hd]
             for it in items:
                 cp = []
                 if it.get("拆封状态"): cp.append(it["拆封状态"])
-                if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
-                if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
+                if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
+                if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
                 cond = " / ".join(cp)
+                # 盒况用 Paragraph 包起来 + <br/> 让 reportlab 自动换行
+                cond_wrapped = Paragraph(cond.replace(" / ", "<br/>"), wrap_style)
                 data.append([str(it.get("序号","")), str(it.get("型号","")),
-                             str(it.get("数量","")), str(it.get("参考价","")), cond])
-            col_widths = [18*mm, 68*mm, 18*mm, 30*mm, 40*mm]
+                             str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
+            # 列宽: A4 可用 174mm (210 - 2*18mm margin)
+            # 序号 14 + 型号 44 + 数量 14 + 参考价 24 + 盒况备注 78 = 174 ✓
+            col_widths = [14*mm, 44*mm, 14*mm, 24*mm, 78*mm]
             t = Table(data, colWidths=col_widths, repeatRows=1)
             t.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,-1), fam),
@@ -704,8 +713,8 @@ class MainViewController(ui.View):
         for it in items:
             cp = []
             if it.get("拆封状态"): cp.append(it["拆封状态"])
-            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
-            if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
+            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
+            if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
             cond = " / ".join(cp)
             th += f'<tr><td align="center">{_hm.escape(str(it.get("序号","")))}</td>'
             th += f'<td align="center">{_hm.escape(str(it.get("型号","")))}</td>'
@@ -1164,8 +1173,8 @@ class ListViewer(ui.View):
         for it in items:
             cond_parts = []
             if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
-            if it.get("外盒状态"): cond_parts.append("盒:" + it["外盒状态"].split("|")[0])
-            if it.get("本体状态"): cond_parts.append("本:" + it["本体状态"].split("|")[0])
+            if it.get("外盒状态"): cond_parts.append("盒:" + it["外盒状态"].replace("|", "、"))
+            if it.get("本体状态"): cond_parts.append("本:" + it["本体状态"].replace("|", "、"))
             cond = " / ".join(cond_parts)
             row = (
                 self._fmt_cell(it.get("序号",""), W_SEQ, 'center') + "│" +
