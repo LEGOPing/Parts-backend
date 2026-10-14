@@ -881,6 +881,25 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 class InputForm(ui.View):
     """玩具信息输入表单 — 带前/后货品切换 + 图片缩略图网格"""
 
+def _safe_image_from_file(path):
+    """兼容中文路径的图片加载 (PIL → ui.Image)"""
+    import PIL.Image as PILImage
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        # 先试原生（英文路径时最快）
+        return ui.Image.from_file(path)
+    except Exception:
+        pass
+    try:
+        # 兜底：PIL 打开 → 转 ui.Image
+        pil_img = PILImage.open(path)
+        pil_img.load()  # 强制读，防止文件未关闭
+        return ui.Image.from_pil_image(pil_img)
+    except Exception as e:
+        print(f"[图片加载失败] {path}: {e}")
+        return None
+
     @classmethod
     def open(cls, list_name, seq, parent=None, start_idx=-1):
         form = cls(list_name, seq, parent, start_idx)
@@ -1168,6 +1187,9 @@ class InputForm(ui.View):
 
         photo_dir = self._get_photo_folder()
         n = len(self.photo_files)
+        print(f"[缩略图] photo_dir={photo_dir}")
+        print(f"[缩略图] photo_files={self.photo_files}")
+
         thumb_size = 78       # 正方形缩略图大小
         gap = 8
         cols = 4
@@ -1176,7 +1198,6 @@ class InputForm(ui.View):
         self.thumb_container.height = max(container_h, thumb_size)
 
         if n == 0:
-            # 空状态
             empty_lbl = ui.Label()
             empty_lbl.text = "（还没有照片，点击 📷拍照 添加）"
             empty_lbl.font = ('Helvetica', 12)
@@ -1187,11 +1208,17 @@ class InputForm(ui.View):
             return
 
         for idx, fname in enumerate(self.photo_files):
+            # 路径处理：如果 fname 已经是绝对路径，直接用；否则拼 photo_dir
+            if os.path.isabs(fname):
+                fp = fname
+            else:
+                fp = os.path.join(photo_dir, fname)
+            print(f"[缩略图] #{idx} fname={fname!r} → fp={fp!r} exists={os.path.exists(fp)}")
+
             col = idx % cols
             row = idx // cols
             x = col * (thumb_size + gap)
             y = row * (thumb_size + gap)
-            fp = os.path.join(photo_dir, fname)
 
             btn = ui.Button()
             btn.frame = (x, y, thumb_size, thumb_size)
@@ -1199,20 +1226,19 @@ class InputForm(ui.View):
             btn.border_width = 1
             btn.border_color = '#ddd'
             btn.background_color = '#f5f5f5'
-            # 加载图片
-            if os.path.exists(fp):
-                try:
-                    btn.image = ui.Image.from_file(fp)
-                except Exception as e:
-                    print(f"[缩略图] 加载失败 {fp}: {e}")
-                    btn.title = "🖼"
-                    btn.font = ('Helvetica', 30)
-                    btn.tint_color = '#ccc'
+
+            # 加载图片 (用兼容中文路径的 helper)
+            img = _safe_image_from_file(fp)
+            if img:
+                btn.image = img
             else:
-                btn.title = "❓"
+                if os.path.exists(fp):
+                    btn.title = "🖼"  # 文件存在但无法解码
+                else:
+                    btn.title = "❓"  # 文件不存在
                 btn.font = ('Helvetica', 24)
                 btn.tint_color = '#999'
-            # 闭包绑定参数
+
             def make_handler(path=fp, name=fname, i=idx):
                 def handler(sender):
                     self._show_large_image(path, name)
@@ -1227,13 +1253,10 @@ class InputForm(ui.View):
         mask.background_color = (0, 0, 0, 0.9)
         mask.flex = 'WH'
 
-        # 图片
+        # 图片 (同样用兼容中文路径的 helper)
         img_view = ui.ImageView()
-        if os.path.exists(img_path):
-            try:
-                img_view.image = ui.Image.from_file(img_path)
-            except Exception:
-                img_view.image = None
+        img_view.image = _safe_image_from_file(img_path)
+        print(f"[大图] path={img_path!r} exists={os.path.exists(img_path)} loaded={img_view.image is not None}")
         img_view.content_mode = ui.CONTENT_SCALE_ASPECT_FIT
         img_view.flex = 'WH'
         mask.add_subview(img_view)
