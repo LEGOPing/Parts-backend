@@ -622,7 +622,7 @@ class MainViewController(ui.View):
         R.append('\\pard\\qc\\fs26\\cf18 清单：' + self.current_list_name + '\\par')
         R.append(r'\par')
         R.append(r'\trowd\trgaph108')
-        R.append(r'\cellx800\cellx1135\cellx1590\cellx2835\cellx9860')
+        R.append(r'\cellx850\cellx2211\cellx3062\cellx4414\cellx9866')
         R.append(r'\ql\b 序号\cell')
         R.append(r'\ql\b 型号\cell')
         R.append(r'\ql\b 数量\cell')
@@ -758,8 +758,8 @@ class MainViewController(ui.View):
                 data.append([str(it.get("序号","")), str(it.get("型号","")),
                              str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
             # 列宽: A4 可用 174mm (210 - 2*18mm margin)
-            # 序号 14 + 型号 44 + 数量 14 + 参考价 24 + 盒况备注 78 = 174 ✓
-            col_widths = [14*mm, 20*mm, 14*mm, 22*mm, 104*mm]
+            # 序号 15 + 型号 24 + 数量 15 + 参考价 24 + 盒况备注 96 = 174 ✓
+            col_widths = [15*mm, 24*mm, 15*mm, 24*mm, 96*mm]
             t = Table(data, colWidths=col_widths, repeatRows=1)
             t.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,-1), fam),
@@ -772,8 +772,11 @@ class MainViewController(ui.View):
                 ('ALIGN', (4,1), (4,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
-                ('TOPPADDING', (0,0), (-1,-1), 3),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+                # padding 加大: 默认 3pt 太挤 → 数字贴边框像重叠
+                ('TOPPADDING', (0,0), (-1,-1), 6),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+                ('LEFTPADDING', (0,0), (-1,-1), 8),
+                ('RIGHTPADDING', (0,0), (-1,-1), 8),
             ]))
             story.append(t)
             story.append(Spacer(1, 20))
