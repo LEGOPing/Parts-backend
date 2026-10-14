@@ -560,71 +560,95 @@ class MainViewController(ui.View):
         _share.share_file(out_path) if _share else dialogs.alert("Word 已导出 (.rtf)", out_path)
 
     def _export_pdf(self, folder, safe, items, _share):
-        """PDF: 优先 fpdf2 直生成，兜底 WebView → AirPrint"""
         generated = False
         try:
-            from fpdf import FPDF
-            pdf = FPDF()
-            pdf.add_page()
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units import mm
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
             fc = ['/System/Library/Fonts/PingFang.ttc',
                   '/System/Library/Fonts/STHeiti Light.ttc',
                   '/System/Library/Fonts/Hiragino Sans GB.ttc',
                   '/Library/Fonts/Songti.ttc']
-            cn = None
+            cn_font = None
             for fp in fc:
                 if os.path.exists(fp):
-                    cn = fp; break
-            fam = "CN" if cn else "Helvetica"
-            if cn:
-                pdf.add_font("CN", "", cn, uni=True)
-            pdf.set_font(fam, size=18)
-            pdf.cell(0, 14, "附件：寄售玩具清单", new_x="LMARGIN", new_y="NEXT", align='C')
-            pdf.set_font(fam, size=9); pdf.set_text_color(128,128,128)
-            pdf.cell(0, 7, "(本清单一式两份，双方各执一份；随附交接照片和视频)",
-                     new_x="LMARGIN", new_y="NEXT", align='C')
-            pdf.set_font(fam, size=12); pdf.set_text_color(0,122,255)
-            pdf.cell(0, 9, "清单：" + self.current_list_name,
-                     new_x="LMARGIN", new_y="NEXT", align='C')
-            pdf.set_text_color(0,0,0); pdf.ln(3)
-            cw = [15, 60, 15, 25, 75]
+                    try:
+                        pdfmetrics.registerFont(TTFont('CN', fp))
+                        cn_font = fp; break
+                    except Exception:
+                        pass
+            out_path = os.path.join(folder, safe + '_清单.pdf')
+            doc = SimpleDocTemplate(out_path, pagesize=A4,
+                                    leftMargin=18*mm, rightMargin=18*mm,
+                                    topMargin=18*mm, bottomMargin=18*mm)
+            styles = getSampleStyleSheet()
+            fam = 'CN' if cn_font else 'Helvetica'
+            title_style = ParagraphStyle('title', parent=styles['Normal'],
+                                          fontName=fam, fontSize=20, leading=26,
+                                          alignment=1)
+            sub_style = ParagraphStyle('sub', parent=styles['Normal'],
+                                        fontName=fam, fontSize=10, leading=14,
+                                        alignment=1, textColor=colors.grey)
+            lnm_style = ParagraphStyle('lnm', parent=styles['Normal'],
+                                        fontName=fam, fontSize=14, leading=18,
+                                        alignment=1, textColor=colors.HexColor('#007aff'))
+            body_style = ParagraphStyle('body', parent=styles['Normal'],
+                                         fontName=fam, fontSize=10, leading=14)
+            story = []
+            story.append(Paragraph('附件：寄售玩具清单', title_style))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph('（本清单一式两份，双方各执一份；随附交接照片和视频）', sub_style))
+            story.append(Spacer(1, 2))
+            story.append(Paragraph('清单：' + self.current_list_name, lnm_style))
+            story.append(Spacer(1, 10))
             hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
-            al = ["C", "C", "C", "R", "L"]
-            pdf.set_font(fam, size=9)
-            pdf.set_fill_color(240,240,240); pdf.set_draw_color(128,128,128)
-            for i, h in enumerate(hd):
-                pdf.cell(cw[i], 8, h, border=1, align='C', fill=True)
-            pdf.ln()
+            data = [hd]
             for it in items:
                 cp = []
                 if it.get("拆封状态"): cp.append(it["拆封状态"])
                 if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
                 if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
                 cond = " / ".join(cp)
-                row = [str(it.get("序号","")), str(it.get("型号","")),
-                       str(it.get("数量","")), str(it.get("参考价","")), cond]
-                for i, cell in enumerate(row):
-                    pdf.cell(cw[i], 8, cell[:25], border=1, align=al[i])
-                pdf.ln()
-            pdf.ln(10)
-            pdf.cell(0, 7, "双方签字确认：________________________",
-                     new_x="LMARGIN", new_y="NEXT")
-            out_path = os.path.join(folder, safe + '_清单.pdf')
-            pdf.output(out_path)
+                data.append([str(it.get("序号","")), str(it.get("型号","")),
+                             str(it.get("数量","")), str(it.get("参考价","")), cond])
+            col_widths = [18*mm, 68*mm, 18*mm, 30*mm, 40*mm]
+            t = Table(data, colWidths=col_widths, repeatRows=1)
+            t.setStyle(TableStyle([
+                ('FONTNAME', (0,0), (-1,-1), fam),
+                ('FONTSIZE', (0,0), (-1,-1), 10),
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+                ('ALIGN', (0,0), (-1,0), 'CENTER'),
+                ('ALIGN', (0,1), (2,-1), 'CENTER'),
+                ('ALIGN', (3,1), (3,-1), 'RIGHT'),
+                ('ALIGN', (4,1), (4,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
+                ('TOPPADDING', (0,0), (-1,-1), 3),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 20))
+            story.append(Paragraph('双方签字确认：________________________', body_style))
+            doc.build(story)
             generated = True
             _share.share_file(out_path) if _share else dialogs.alert("PDF 已生成", out_path)
         except ImportError:
             dialogs.alert("提示",
-                "要直接生成真 PDF，请在 Pythonista 终端运行:\\n"
-                "    pip install fpdf2\\n\\n"
-                "当前用系统 AirPrint 兜底...")
+                "reportlab 未找到，请在 Pythonista 包管理里搜索 reportlab\\n"
+                "或用 Stash 终端 pip install reportlab")
         except Exception as e:
             import traceback; traceback.print_exc()
-            print(f"[fpdf2] 失败: {e}")
+            print(f"[reportlab] 失败: {e}")
+            dialogs.alert("PDF 生成失败 (reportlab)", str(e))
         if not generated:
             self._export_pdf_via_webview(folder, safe, items, _share)
 
     def _export_pdf_via_webview(self, folder, safe, items, _share):
-        """兜底：生成 HTML → AirPrint"""
         import html as _hm
         th = '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:12pt;font-family:PingFang SC,Helvetica,sans-serif;">'
         th += '<tr bgcolor="#f0f0f0"><th align="center">序号</th><th align="center">型号</th>'
@@ -658,10 +682,7 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         out_path = os.path.join(folder, safe + '_清单.html')
         with open(out_path, 'w', encoding='utf-8') as f:
             f.write(html_doc)
-        _share.share_file(out_path) if _share else dialogs.alert("HTML 已生成", out_path)
-
-
-
+        _share.share_file(out_path) if _share else dialogs.alert("HTML 已生成 (兜底)", out_path)
 
 # ============ 数据输入表单（内嵌盒况）============
 class InputForm(ui.View):
