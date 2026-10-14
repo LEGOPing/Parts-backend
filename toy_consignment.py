@@ -212,17 +212,17 @@ def take_photos(list_name, seq, model):
     safe_model = sanitize_filename(model) if model else "未知型号"
 
     # 第一次提示来源
-    choice = dialogs.list_alert(
+    choice = dialogs.list_dialog(
         "添加照片",
         ["📷 调用相机拍照", "🖼️ 从相册选图"]
     )
-    if choice < 0:
+    if choice is None:
         return photo_paths
 
     while True:
         img = None
 
-        if choice == 0:
+        if "相机" in choice:
             # 相机
             try:
                 import camera
@@ -234,7 +234,7 @@ def take_photos(list_name, seq, model):
                 except Exception as e2:
                     print(f"[拍照] 相册也不可用: {e2}")
 
-        elif choice == 1:
+        elif "相册" in choice:
             # 相册
             try:
                 img = photos.pick_image()
@@ -433,9 +433,9 @@ class MainViewController(ui.View):
             dialogs.alert("提示", "暂无已有清单，先新建一个吧")
             self.on_new_list()
             return
-        selected = dialogs.list_alert("选择清单", folders)
-        if 0 <= selected < len(folders):
-            self.current_list_name = folders[selected]
+        selected = dialogs.list_dialog("选择清单", folders)
+        if selected is not None:
+            self.current_list_name = selected
             save_config({"last_list": self.current_list_name})
             self.update_info()
 
