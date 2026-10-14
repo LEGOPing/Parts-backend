@@ -569,18 +569,43 @@ class MainViewController(ui.View):
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.pdfbase import pdfmetrics
             from reportlab.pdfbase.ttfonts import TTFont
-            fc = ['/System/Library/Fonts/PingFang.ttc',
-                  '/System/Library/Fonts/STHeiti Light.ttc',
-                  '/System/Library/Fonts/Hiragino Sans GB.ttc',
-                  '/Library/Fonts/Songti.ttc']
-            cn_font = None
-            for fp in fc:
-                if os.path.exists(fp):
-                    try:
-                        pdfmetrics.registerFont(TTFont('CN', fp))
-                        cn_font = fp; break
-                    except Exception:
-                        pass
+            # ===== 关键：注册中文字体 =====
+            # .ttc 是 TrueType Collection（多个字体打包），必须加 subfontIndex
+            def _try_ttc(name, path, idx=0):
+                try:
+                    pdfmetrics.registerFont(TTFont(name, path, subfontIndex=idx))
+                    print(f"[PDF] 字体: {name} <- {path} (idx={idx})")
+                    return True
+                except Exception as e:
+                    print(f"[PDF] 字体注册失败 {path}: {e}")
+                    return False
+            # 候选列表：(注册名, 路径, subfontIndex)
+            font_candidates = [
+                ('CN', '/System/Library/Fonts/PingFang.ttc', 0),        # 苹方 Regular
+                ('CN', '/System/Library/Fonts/PingFang.ttc', 4),        # 苹方 Medium（有些版本 index=4）
+                ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),   # 华文黑体
+                ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),# 冬青黑体
+                ('CN', '/Library/Fonts/Songti.ttc', 0),                 # 宋体
+            ]
+            cn_font = False
+            for _n, _p, _i in font_candidates:
+                if os.path.exists(_p):
+                    cn_font = _try_ttc(_n, _p, _i)
+                    if cn_font: break
+            # 兜底：reportlab 内置 CID 字体（始终可用，STSong-Light）
+            if not cn_font:
+                try:
+                    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+                    pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+                    cn_font = True
+                    fam = 'STSong-Light'
+                    print("[PDF] 兜底 CID: STSong-Light")
+                except Exception as e:
+                    print(f"[PDF] CID 也失败: {e}")
+                    fam = 'Helvetica'
+            else:
+                fam = 'CN'
+            print(f"[PDF] 最终字体: {fam}, cn_font={cn_font}")
             out_path = os.path.join(folder, safe + '_清单.pdf')
             doc = SimpleDocTemplate(out_path, pagesize=A4,
                                     leftMargin=18*mm, rightMargin=18*mm,
