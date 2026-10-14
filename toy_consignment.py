@@ -531,7 +531,7 @@ class InputForm(ui.View):
         self.scroll.frame = (0, 0, self.width, self.height)
         self.scroll.scroll_enabled = True
         self.scroll.content_size = (400, 1400)
-        self.scroll.add_subview(self.scroll)
+        self.add_subview(self.scroll)
 
         y = 20  # 相对 scroll 的 y 坐标
 
