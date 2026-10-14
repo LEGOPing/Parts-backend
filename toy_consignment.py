@@ -492,36 +492,71 @@ class MainViewController(ui.View):
         elif "PDF" in choice:
             self._export_pdf(folder, safe, items, _share)
 
+    @staticmethod
+    def _fmt_size(n):
+        """字节数 → 人类可读"""
+        if n < 1024: return f"{n} B"
+        if n < 1024*1024: return f"{n/1024:.1f} KB"
+        return f"{n/1024/1024:.1f} MB"
+
     def on_show_folder(self, sender=None):
-        """显示文件夹位置，并尝试打开"""
+        """显示文件夹位置（精简版）"""
         if not self.current_list_name:
             dialogs.alert("提示", "请先选择清单")
             return
         folder = get_list_folder(self.current_list_name)
         csv_path = get_csv_path(self.current_list_name)
-        base = os.path.expanduser("~")
-        print(f"[打开文件夹] {folder}")
-        print(f"[打开文件夹] 存在: {os.path.exists(folder)}")
-        # 列出文件夹里的内容
-        contents = []
+        list_name = self.current_list_name  # e.g. "例如：2026年10月寄售"
+        # 路径缩短: /private/var/...  →  ~/Documents/玩具寄售/例如：2026年10月寄售
+        short_folder = folder.replace(os.path.expanduser("~"), "~")
+        # 如果路径里还有"玩具寄售/"前缀再简化
+        # 分组: 导出文件 vs 图片
+        exports = []   # CSV, RTF, PDF, HTML
+        images = []    # jpg, png, heic
+        other = []
         try:
-            for f in sorted(os.listdir(folder)):
-                fp = os.path.join(folder, f)
-                size = os.path.getsize(fp)
-                contents.append(f"{f}  ({size} bytes)")
+            for fname in sorted(os.listdir(folder)):
+                fp = os.path.join(folder, fname)
+                size = self._fmt_size(os.path.getsize(fp))
+                ext = os.path.splitext(fname)[1].lower()
+                # 去掉冗余前缀 (文件名 = 清单名_类型.ext)
+                display = fname
+                prefix = list_name + "_"
+                if display.startswith(prefix):
+                    display = display[len(prefix):]
+                if ext in ('.csv', '.rtf', '.pdf', '.html', '.htm', '.doc', '.docx'):
+                    exports.append(f"  {display}  ({size})")
+                elif ext in ('.jpg', '.jpeg', '.png', '.heic', '.gif'):
+                    images.append(f"  {display}  ({size})")
+                else:
+                    other.append(f"  {display}  ({size})")
         except Exception as e:
-            contents.append(f"读取失败: {e}")
-        content_text = "\n".join(contents) if contents else "(文件夹是空的)"
-        # 对话框显示
-        msg = (f"📁 子文件夹已存在：\n{folder}\n\n"
-               f"📄 CSV文件：{'存在 ✅' if os.path.exists(csv_path) else '不存在 ❌'}\n\n"
-               f"📂 文件夹内容：\n{content_text}")
-        try:
-            import share
-            # share.share_file 仅支持文件，不支持文件夹，这里仅提示
-        except Exception:
-            pass
-        dialogs.alert("📁 子文件夹位置", msg)
+            dialogs.alert("错误", f"读取文件夹失败: {e}")
+            return
+        parts = []
+        parts.append(f"📁 {short_folder}")
+        parts.append(f"")
+        parts.append(f"📄 CSV 清单：{'✅' if os.path.exists(csv_path) else '❌'}")
+        if exports:
+            parts.append(f"")
+            parts.append(f"📊 导出文件 ({len(exports)}):")
+            parts.extend(exports)
+        if images:
+            parts.append(f"")
+            parts.append(f"📷 交接照片 ({len(images)}):")
+            parts.extend(images)
+        if other:
+            parts.append(f"")
+            parts.append(f"📦 其他 ({len(other)}):")
+            parts.extend(other)
+        if not exports and not images and not other:
+            parts.append(f"")
+            parts.append("(文件夹是空的)")
+        # 加完整路径方便定位（折叠在下方）
+        parts.append("")
+        parts.append(f"── 完整路径 ──")
+        parts.append(folder)
+        dialogs.alert("📂 文件夹内容", "\n".join(parts))
     def _export_rtf(self, folder, safe, items, _share):
         """导出 .rtf 格式（Pages/Word/WPS 全原生支持，零依赖）"""
         R = []
