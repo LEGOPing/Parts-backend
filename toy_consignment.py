@@ -571,65 +571,81 @@ class MainViewController(ui.View):
             from reportlab.pdfbase.ttfonts import TTFont
             # ===== 关键：注册中文字体 =====
             # .ttc 是 TrueType Collection（多个字体打包），必须加 subfontIndex
+            cn_font = False
+            fam = 'Helvetica'
+            registered_name = None
+            def _try_ttf(name, path):
+                try:
+                    pdfmetrics.registerFont(TTFont(name, path))
+                    return True
+                except Exception: return False
             def _try_ttc(name, path, idx=0):
                 try:
                     pdfmetrics.registerFont(TTFont(name, path, subfontIndex=idx))
-                    print(f"[PDF] 字体: {name} <- {path} (idx={idx})")
                     return True
-                except Exception as e:
-                    print(f"[PDF] 字体注册失败 {path}: {e}")
-                    return False
+                except Exception: return False
             # 候选列表：(注册名, 路径, subfontIndex)
             font_candidates = [
-                ('CN', '/System/Library/Fonts/PingFang.ttc', 0),        # 苹方 Regular
-                ('CN', '/System/Library/Fonts/PingFang.ttc', 4),        # 苹方 Medium（有些版本 index=4）
-                ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),   # 华文黑体
-                ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),# 冬青黑体
-                ('CN', '/Library/Fonts/Songti.ttc', 0),                 # 宋体
+                ('CN', '/System/Library/Fonts/PingFang.ttc', 0),
+                ('CN', '/System/Library/Fonts/PingFang.ttc', 4),
+                ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),
+                ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),
+                ('CN', '/Library/Fonts/Songti.ttc', 0),
             ]
-            cn_font = False
             for _n, _p, _i in font_candidates:
                 if os.path.exists(_p):
-                    cn_font = _try_ttc(_n, _p, _i)
-                    if cn_font: break
-            # 兜底：reportlab 内置 CID 字体（始终可用，STSong-Light）
+                    if _try_ttc(_n, _p, _i):
+                        cn_font = True
+                        fam = _n
+                        registered_name = _n
+                        print(f"[PDF] 字体注册成功: {_n} <- {_p} (idx={_i})")
+                        break
+            # 兜底：reportlab 内置 CID 字体（STSong-Light）
             if not cn_font:
                 try:
                     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
                     pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
                     cn_font = True
                     fam = 'STSong-Light'
-                    print("[PDF] 兜底 CID: STSong-Light")
+                    registered_name = fam
+                    print("[PDF] 兜底 CID 字体: STSong-Light")
                 except Exception as e:
                     print(f"[PDF] CID 也失败: {e}")
                     fam = 'Helvetica'
-            else:
-                fam = 'CN'
-            print(f"[PDF] 最终字体: {fam}, cn_font={cn_font}")
+            # ====== 关键中的关键：注册字体家族 ======
+            # reportlab 的 Paragraph/Table 内部会问："CN 的 bold/italic 变体在哪？"
+            # 中文字体通常只有 normal，我们把 bold/italic 全部映射到 normal
+            if registered_name and registered_name != 'Helvetica':
+                try:
+                    from reportlab.pdfbase.pdfmetrics import registerFontFamily
+                    registerFontFamily(
+                        registered_name,
+                        normal=registered_name,
+                        bold=registered_name,
+                        italic=registered_name,
+                        boldItalic=registered_name,
+                    )
+                    print(f"[PDF] 字体家族映射: {registered_name} bold/italic → normal")
+                except Exception as e:
+                    print(f"[PDF] 字体家族映射失败: {e}")
+            print(f"[PDF] 最终字体: {fam}")
             out_path = os.path.join(folder, safe + '_清单.pdf')
             doc = SimpleDocTemplate(out_path, pagesize=A4,
                                     leftMargin=18*mm, rightMargin=18*mm,
                                     topMargin=18*mm, bottomMargin=18*mm)
             styles = getSampleStyleSheet()
-            fam = 'CN' if cn_font else 'Helvetica'
-            # 关键：ParagraphStyle 必须显式关掉 bold/italic
-            # 因为中文字体没有 CN-Bold 变体，reportlab 找不到就崩
-            # 我们用 fontSize 大小来区分层级（标题 20pt vs 正文 10pt）
+            # fam 已经在字体注册环节正确设置好了
             title_style = ParagraphStyle('title',
                                           fontName=fam, fontSize=20, leading=26,
-                                          fontBold=False, fontItalic=False,
                                           alignment=1, textColor=colors.black)
             sub_style = ParagraphStyle('sub',
                                         fontName=fam, fontSize=10, leading=14,
-                                        fontBold=False, fontItalic=False,
                                         alignment=1, textColor=colors.grey)
             lnm_style = ParagraphStyle('lnm',
                                         fontName=fam, fontSize=14, leading=18,
-                                        fontBold=False, fontItalic=False,
                                         alignment=1, textColor=colors.HexColor('#007aff'))
             body_style = ParagraphStyle('body',
-                                         fontName=fam, fontSize=10, leading=14,
-                                         fontBold=False, fontItalic=False)
+                                         fontName=fam, fontSize=10, leading=14)
             story = []
             story.append(Paragraph('附件：寄售玩具清单', title_style))
             story.append(Spacer(1, 4))
