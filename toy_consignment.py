@@ -1144,8 +1144,8 @@ class InputForm(ui.View):
     def _render_thumbs(self):
         """渲染图片缩略图网格 — 4列正方形"""
         # 清除旧的
-        for v in list(self._thumb_container.subviews):
-            self._thumb_container.remove_subview(v)
+        for v in list(self.thumb_container.subviews):
+            self.thumb_container.remove_subview(v)
         self._thumb_views = []
 
         photo_dir = self._get_photo_folder()
