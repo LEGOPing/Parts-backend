@@ -533,7 +533,7 @@ class MainViewController(ui.View):
         R.append('\\pard\\qc\\fs26\\cf18 清单：' + self.current_list_name + '\\par')
         R.append(r'\par')
         R.append(r'\trowd\trgaph108')
-        R.append(r'\cellx800\cellx3300\cellx4100\cellx5500\cellx9800')
+        R.append(r'\cellx800\cellx1135\cellx1590\cellx2835\cellx9860')
         R.append(r'\ql\b 序号\cell')
         R.append(r'\ql\b 型号\cell')
         R.append(r'\ql\b 数量\cell')
@@ -670,7 +670,7 @@ class MainViewController(ui.View):
                              str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
             # 列宽: A4 可用 174mm (210 - 2*18mm margin)
             # 序号 14 + 型号 44 + 数量 14 + 参考价 24 + 盒况备注 78 = 174 ✓
-            col_widths = [14*mm, 44*mm, 14*mm, 24*mm, 78*mm]
+            col_widths = [14*mm, 20*mm, 14*mm, 22*mm, 104*mm]
             t = Table(data, colWidths=col_widths, repeatRows=1)
             t.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,-1), fam),
