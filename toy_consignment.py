@@ -470,7 +470,7 @@ class MainViewController(ui.View):
         if not self.current_list_name:
             dialogs.alert("提示", "请先选择清单")
             return
-        choice = dialogs.list_dialog("选择导出格式", ["📄 CSV 表格", "📝 Word 文档", "📕 PDF 文档"])
+        choice = dialogs.list_dialog("选择导出格式", ["📄 CSV 表格", "📝 Word 文档 (.rtf)", "📕 PDF 文档"])
         if choice is None:
             return
         items = read_all_items(self.current_list_name)
@@ -488,128 +488,9 @@ class MainViewController(ui.View):
             else:
                 dialogs.alert("提示", "清单文件不存在")
         elif "Word" in choice:
-            import html as _html_mod
-            table_html = _html_mod.escape(f"""<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:13pt;font-family:SimSun,Helvetica;">
-<tr bgcolor="#e8e8e8"><th align="center">序号</th><th align="center">型号</th><th align="center">数量</th><th align="center">参考价</th><th align="center">盒况备注</th></tr>
-""")
-            for it in items:
-                cond_parts = []
-                if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
-                if it.get("外盒状态"): cond_parts.append("盒:"+it["外盒状态"].split("|")[0])
-                if it.get("本体状态"): cond_parts.append("本:"+it["本体状态"].split("|")[0])
-                cond = " / ".join(cond_parts)
-                row = f"""<tr><td align="center">{_html_mod.escape(str(it.get("序号","")))}</td>
-<td align="center">{_html_mod.escape(str(it.get("型号","")))}</td>
-<td align="center">{_html_mod.escape(str(it.get("数量","")))}</td>
-<td align="right">{_html_mod.escape(str(it.get("参考价","")))}</td>
-<td align="left">{_html_mod.escape(cond)}</td></tr>"""
-                table_html += row
-            table_html += "</table>"
-            doc_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>寄售清单 {safe}</title></head>
-<body style="font-family:SimSun,Helvetica;margin:40pt;">
-<h2 style="text-align:center;">附件：寄售玩具清单</h2>
-<p style="text-align:center;color:#666;font-size:10pt;">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>
-<p style="text-align:center;color:#007aff;font-size:14pt;font-weight:bold;">清单：{_html_mod.escape(self.current_list_name)}</p>
-{table_html}
-</body></html>"""
-            out_path = os.path.join(folder, f"{safe}_清单.doc")
-            with open(out_path, 'w', encoding='utf-8') as f:
-                f.write(doc_html)
-            _share.share_file(out_path) if _share else dialogs.alert("Word 已导出", out_path)
+            self._export_rtf(folder, safe, items, _share)
         elif "PDF" in choice:
-            # 用 ui.WebView 渲染 HTML → 调用 print_() → 系统 AirPrint 对话框
-            # 用户选"存为 PDF"即得到真 PDF 文件
-            import html as _html_mod
-            table_html = '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:12pt;font-family:PingFang SC,Helvetica,sans-serif;">'
-            table_html += '<tr bgcolor="#f0f0f0"><th align="center" width="8%">序号</th><th align="center" width="28%">型号</th><th align="center" width="8%">数量</th><th align="center" width="12%">参考价</th><th align="center">盒况备注</th></tr>'
-            for it in items:
-                cond_parts = []
-                if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
-                if it.get("外盒状态"): cond_parts.append("盒:"+it["外盒状态"].split("|")[0])
-                if it.get("本体状态"): cond_parts.append("本:"+it["本体状态"].split("|")[0])
-                cond = " / ".join(cond_parts)
-                table_html += f'<tr><td align="center">{_html_mod.escape(str(it.get("序号","")))}</td>'
-                table_html += f'<td align="center">{_html_mod.escape(str(it.get("型号","")))}</td>'
-                table_html += f'<td align="center">{_html_mod.escape(str(it.get("数量","")))}</td>'
-                table_html += f'<td align="right">{_html_mod.escape(str(it.get("参考价","")))}</td>'
-                table_html += f'<td align="left">{_html_mod.escape(cond)}</td></tr>'
-            table_html += "</table>"
-            pdf_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>寄售清单 {safe}</title>
-<style>
-@page {{ margin: 1.5cm; }}
-body {{ font-family: "PingFang SC", "Helvetica Neue", sans-serif; }}
-h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
-.sub {{ text-align: center; color: #888; font-size: 9pt; margin: 0 0 6pt 0; }}
-.lname {{ text-align: center; color: #007aff; font-size: 13pt; font-weight: bold; margin: 0 0 12pt 0; }}
-</style></head><body>
-<h2>附件：寄售玩具清单</h2>
-<p class="sub">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>
-<p class="lname">清单：{_html_mod.escape(self.current_list_name)}</p>
-{table_html}
-<p style="margin-top:30pt;font-size:10pt;">双方签字确认：________________________</p>
-</body></html>"""
-            # 方案 A：WebView 展示 + 自动弹 AirPrint（可存 PDF）
-            class _PdfSheet(ui.View):
-                def __init__(self, html_str, title):
-                    super().__init__()
-                    self.background_color = 'white'
-                    self.title = title
-                    self.wv = ui.WebView()
-                    self.wv.frame = (0, 44, self.width, self.height - 44)
-                    self.wv.load_html(html_str)
-                    self.wv.delegate = self
-                    self.add_subview(self.wv)
-                    self.btn_close = ui.Button()
-                    self.btn_close.title = "关闭"
-                    self.btn_close.tint_color = '#007aff'
-                    self.btn_close.frame = (10, 6, 80, 32)
-                    self.btn_close.action = lambda s: self.close()
-                    self.add_subview(self.btn_close)
-                    self.btn_print = ui.Button()
-                    self.btn_print.title = "📄 存 PDF"
-                    self.btn_print.tint_color = '#fff'
-                    self.btn_print.background_color = '#007aff'
-                    self.btn_print.frame = (self.width - 120, 4, 110, 36)
-                    self.btn_print.corner_radius = 6
-                    self.btn_print.action = self.on_print
-                    self.add_subview(self.btn_print)
-                def webview_did_finish_load(self, wv):
-                    pass
-                def on_print(self, sender):
-                    """调系统 AirPrint，用户可在对话框里选 '存为 PDF'"""
-                    try:
-                        import objc_util
-                        UIKit = objc_util.UIKit
-                        wv = objc_util.ObjCInstance(self.wv) if hasattr(self.wv, '_objc') else self.wv
-                        # 用 UIPrintInteractionController
-                        pic = UIKit.UIPrintInteractionController.sharedPrintController()
-                        formatter = wv.viewPrintFormatter() if hasattr(wv, 'viewPrintFormatter') else None
-                        if formatter is None:
-                            from objc_util import objc
-                            pic.setPrintFormatter_(wv.viewPrintFormatter())
-                        else:
-                            pic.setPrintFormatter_(formatter)
-                        # present
-                        win = objc_util.UIApplication.sharedApplication().keyWindow()
-                        root = win.rootViewController()
-                        pic.presentFromRect_inView_completionHandler_(
-                            objc_util.CGRect((self.width/2 - 100), 0, 200, 36),
-                            objc_util.ObjCInstance(root.view()),
-                            None
-                        )
-                    except Exception as e1:
-                        # 兜底：Pythonista print_()
-                        try:
-                            self.wv.print_(sender)
-                        except Exception as e2:
-                            dialogs.alert("PDF 导出", 
-                                '请在系统弹窗里选"取消"，然后用 Safari 打开 HTML，分享按钮选"存为 PDF"\n\n错误: ' + str(e1))
-                def layout(self):
-                    self.wv.frame = (0, 44, self.width, self.height - 44)
-                    self.btn_close.frame = (10, 6, 80, 32)
-                    self.btn_print.frame = (self.width - 120, 4, 110, 36)
-            sheet = _PdfSheet(pdf_html, f"清单 {safe}")
-            sheet.present(style='sheet', hide_title_bar=True)
+            self._export_pdf(folder, safe, items, _share)
 
     def on_show_folder(self, sender=None):
         """显示文件夹位置，并尝试打开"""
@@ -641,6 +522,144 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         except Exception:
             pass
         dialogs.alert("📁 子文件夹位置", msg)
+    def _export_rtf(self, folder, safe, items, _share):
+        """导出 .rtf 格式（Pages/Word/WPS 全原生支持，零依赖）"""
+        R = []
+        R.append(r'{\rtf1\ansi\ansicpg936\deff0')
+        R.append(r'{\fonttbl{\f0\fnil\fcharset134 SimSun;}}')
+        R.append(r'\viewkind4\uc1')
+        R.append(r'\pard\qc\fs32 附件：寄售玩具清单\par')
+        R.append(r'\pard\qc\fs20\cf80（本清单一式两份，双方各执一份；随附交接照片和视频）\par')
+        R.append('\\pard\\qc\\fs26\\cf18 清单：' + self.current_list_name + '\\par')
+        R.append(r'\par')
+        R.append(r'\trowd\trgaph108')
+        R.append(r'\cellx400\cellx1800\cellx2100\cellx2700\cellx4500')
+        R.append(r'\ql\b 序号\cell')
+        R.append(r'\ql\b 型号\cell')
+        R.append(r'\ql\b 数量\cell')
+        R.append(r'\qr\b 参考价\cell')
+        R.append(r'\ql\b 盒况备注\cell')
+        R.append(r'\row')
+        for it in items:
+            cp = []
+            if it.get("拆封状态"): cp.append(it["拆封状态"])
+            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
+            if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
+            cond = " / ".join(cp)
+            R.append('\\ql ' + str(it.get("序号","")) + '\\cell')
+            R.append('\\ql ' + str(it.get("型号","")) + '\\cell')
+            R.append('\\ql ' + str(it.get("数量","")) + '\\cell')
+            R.append('\\qr ' + str(it.get("参考价","")) + '\\cell')
+            R.append('\\ql ' + cond + '\\cell')
+            R.append(r'\row')
+        R.append(r'\pard\sa480\fs20 双方签字确认：________________________\par')
+        R.append(r'}')
+        out_path = os.path.join(folder, safe + '_清单.rtf')
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(''.join(R))
+        _share.share_file(out_path) if _share else dialogs.alert("Word 已导出 (.rtf)", out_path)
+
+    def _export_pdf(self, folder, safe, items, _share):
+        """PDF: 优先 fpdf2 直生成，兜底 WebView → AirPrint"""
+        generated = False
+        try:
+            from fpdf import FPDF
+            pdf = FPDF()
+            pdf.add_page()
+            fc = ['/System/Library/Fonts/PingFang.ttc',
+                  '/System/Library/Fonts/STHeiti Light.ttc',
+                  '/System/Library/Fonts/Hiragino Sans GB.ttc',
+                  '/Library/Fonts/Songti.ttc']
+            cn = None
+            for fp in fc:
+                if os.path.exists(fp):
+                    cn = fp; break
+            fam = "CN" if cn else "Helvetica"
+            if cn:
+                pdf.add_font("CN", "", cn, uni=True)
+            pdf.set_font(fam, size=18)
+            pdf.cell(0, 14, "附件：寄售玩具清单", new_x="LMARGIN", new_y="NEXT", align='C')
+            pdf.set_font(fam, size=9); pdf.set_text_color(128,128,128)
+            pdf.cell(0, 7, "(本清单一式两份，双方各执一份；随附交接照片和视频)",
+                     new_x="LMARGIN", new_y="NEXT", align='C')
+            pdf.set_font(fam, size=12); pdf.set_text_color(0,122,255)
+            pdf.cell(0, 9, "清单：" + self.current_list_name,
+                     new_x="LMARGIN", new_y="NEXT", align='C')
+            pdf.set_text_color(0,0,0); pdf.ln(3)
+            cw = [15, 60, 15, 25, 75]
+            hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
+            al = ["C", "C", "C", "R", "L"]
+            pdf.set_font(fam, size=9)
+            pdf.set_fill_color(240,240,240); pdf.set_draw_color(128,128,128)
+            for i, h in enumerate(hd):
+                pdf.cell(cw[i], 8, h, border=1, align='C', fill=True)
+            pdf.ln()
+            for it in items:
+                cp = []
+                if it.get("拆封状态"): cp.append(it["拆封状态"])
+                if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
+                if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
+                cond = " / ".join(cp)
+                row = [str(it.get("序号","")), str(it.get("型号","")),
+                       str(it.get("数量","")), str(it.get("参考价","")), cond]
+                for i, cell in enumerate(row):
+                    pdf.cell(cw[i], 8, cell[:25], border=1, align=al[i])
+                pdf.ln()
+            pdf.ln(10)
+            pdf.cell(0, 7, "双方签字确认：________________________",
+                     new_x="LMARGIN", new_y="NEXT")
+            out_path = os.path.join(folder, safe + '_清单.pdf')
+            pdf.output(out_path)
+            generated = True
+            _share.share_file(out_path) if _share else dialogs.alert("PDF 已生成", out_path)
+        except ImportError:
+            dialogs.alert("提示",
+                "要直接生成真 PDF，请在 Pythonista 终端运行:\\n"
+                "    pip install fpdf2\\n\\n"
+                "当前用系统 AirPrint 兜底...")
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[fpdf2] 失败: {e}")
+        if not generated:
+            self._export_pdf_via_webview(folder, safe, items, _share)
+
+    def _export_pdf_via_webview(self, folder, safe, items, _share):
+        """兜底：生成 HTML → AirPrint"""
+        import html as _hm
+        th = '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:12pt;font-family:PingFang SC,Helvetica,sans-serif;">'
+        th += '<tr bgcolor="#f0f0f0"><th align="center">序号</th><th align="center">型号</th>'
+        th += '<th align="center">数量</th><th align="center">参考价</th><th align="center">盒况备注</th></tr>'
+        for it in items:
+            cp = []
+            if it.get("拆封状态"): cp.append(it["拆封状态"])
+            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].split("|")[0])
+            if it.get("本体状态"): cp.append("本:"+it["本体状态"].split("|")[0])
+            cond = " / ".join(cp)
+            th += f'<tr><td align="center">{_hm.escape(str(it.get("序号","")))}</td>'
+            th += f'<td align="center">{_hm.escape(str(it.get("型号","")))}</td>'
+            th += f'<td align="center">{_hm.escape(str(it.get("数量","")))}</td>'
+            th += f'<td align="right">{_hm.escape(str(it.get("参考价","")))}</td>'
+            th += f'<td align="left">{_hm.escape(cond)}</td></tr>'
+        th += "</table>"
+        html_doc = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+@page {{ margin: 1.5cm; }}
+body {{ font-family: "PingFang SC", "Helvetica Neue", sans-serif; }}
+h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
+.sub {{ text-align: center; color: #888; font-size: 9pt; margin: 0 0 6pt 0; }}
+.lnm {{ text-align: center; color: #007aff; font-size: 13pt; font-weight: bold; margin: 0 0 12pt 0; }}
+</style></head><body>
+<h2>附件：寄售玩具清单</h2>
+<p class="sub">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>
+<p class="lnm">清单：{_hm.escape(self.current_list_name)}</p>
+{th}
+<p style="margin-top:30pt;font-size:10pt;">双方签字确认：________________________</p>
+</body></html>"""
+        out_path = os.path.join(folder, safe + '_清单.html')
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(html_doc)
+        _share.share_file(out_path) if _share else dialogs.alert("HTML 已生成", out_path)
+
 
 
 
