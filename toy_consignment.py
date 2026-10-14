@@ -7,9 +7,9 @@
 import ui
 import dialogs
 import os
+import sys
 import csv
 import json
-import photos
 import time
 from datetime import datetime
 
@@ -31,12 +31,17 @@ ITEM_CONDITION_OPTIONS = ["完好", "松动", "污渍", "霉点", "裂痕", "褪
 ACCESSORY_OPTIONS = ["齐全", "缺零件", "缺贴纸", "缺说明书", "零件袋破损", "其他"]
 
 
-# ============ 文件系统工具 ============
+# ============ 路径工具（全用 Pythonista 兼容写法） ============
 def get_base_folder():
-    """获取清单根目录"""
-    base_path = os.path.join(os.path.expanduser("~"), BASE_FOLDER_NAME)
-    if not os.path.exists(base_path):
-        os.makedirs(base_path)
+    """获取/创建清单根目录（绝对路径，确保 Pythonista 能访问）"""
+    # Pythonista 下 os.path.expanduser("~") 指向 Documents 目录
+    home = os.path.expanduser("~")
+    base_path = os.path.join(home, BASE_FOLDER_NAME)
+    try:
+        os.makedirs(base_path, exist_ok=True)
+    except Exception as e:
+        print(f"创建根目录失败: {base_path}, 错误: {e}")
+    print(f"[路径] 根目录: {base_path}")
     return base_path
 
 
@@ -44,13 +49,18 @@ def get_list_folder(list_name):
     """获取/创建指定清单的子文件夹"""
     base = get_base_folder()
     folder_path = os.path.join(base, list_name)
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+    try:
+        os.makedirs(folder_path, exist_ok=True)
+        print(f"[路径] 清单文件夹: {folder_path}")
+        print(f"[路径] 存在: {os.path.exists(folder_path)}")
+    except Exception as e:
+        print(f"创建清单文件夹失败: {folder_path}, 错误: {e}")
+        dialogs.alert("错误", f"无法创建文件夹：\n{folder_path}\n\n原因：{e}")
     return folder_path
 
 
 def get_csv_path(list_name):
-    """获取CSV文件完整路径"""
+    """获取 CSV 文件完整路径"""
     return os.path.join(get_list_folder(list_name), CSV_FILENAME)
 
 
@@ -59,56 +69,74 @@ def get_config_path():
     return os.path.join(os.path.expanduser("~"), CONFIG_FILENAME)
 
 
+# ============ 配置读写 ============
 def save_config(config):
-    """保存应用配置"""
     try:
-        with open(get_config_path(), 'w', encoding='utf-8') as f:
+        path = get_config_path()
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
+        print(f"[配置] 已保存: {path}")
     except Exception as e:
-        print("保存配置失败:", e)
+        print(f"保存配置失败: {e}")
 
 
 def load_config():
-    """加载应用配置"""
     try:
-        cfg_path = get_config_path()
-        if os.path.exists(cfg_path):
-            with open(cfg_path, 'r', encoding='utf-8') as f:
+        path = get_config_path()
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
-        print("加载配置失败:", e)
+        print(f"加载配置失败: {e}")
     return {}
 
 
+# ============ CSV 读写（简化写法，确保 Pythonista 兼容） ============
 def init_csv(list_name):
-    """初始化CSV文件（如果不存在）"""
+    """初始化 CSV 文件（带 BOM，Excel 能直接打开）"""
     csv_path = get_csv_path(list_name)
+    print(f"[CSV] 初始化检查: {csv_path}")
     if not os.path.exists(csv_path):
-        headers = ["序号", "型号", "数量", "参考价",
-                   "拆封状态", "外盒状态", "外盒其他",
-                   "本体状态", "本体其他",
-                   "配件状态", "配件其他",
-                   "其他瑕疵或说明", "照片文件", "录入时间"]
-        with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
+        print(f"[CSV] 文件不存在，创建...")
+        headers = [
+            "序号", "型号", "数量", "参考价",
+            "拆封状态", "外盒状态", "外盒其他",
+            "本体状态", "本体其他",
+            "配件状态", "配件其他",
+            "其他瑕疵或说明", "照片文件", "录入时间"
+        ]
+        try:
+            f = open(csv_path, 'wb')
+            # 写 BOM
+            f.write('\ufeff'.encode('utf-8'))
+            f.close()
+            # 写表头
+            f = open(csv_path, 'a', encoding='utf-8')
             writer = csv.writer(f)
             writer.writerow(headers)
+            f.close()
+            print(f"[CSV] 初始化成功")
+        except Exception as e:
+            print(f"[CSV] 初始化失败: {e}")
+            dialogs.alert("CSV 初始化失败", str(e))
     return csv_path
 
 
 def read_all_items(list_name):
-    """读取清单中所有项目"""
     csv_path = get_csv_path(list_name)
     items = []
     if os.path.exists(csv_path):
-        with open(csv_path, 'r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                items.append(row)
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    items.append(row)
+        except Exception as e:
+            print(f"读取 CSV 失败: {e}")
     return items
 
 
 def get_next_sequence(list_name):
-    """获取下一个可用序号"""
     items = read_all_items(list_name)
     if not items:
         return 1
@@ -124,87 +152,94 @@ def get_next_sequence(list_name):
 
 
 def check_duplicate_seq(list_name, seq_num):
-    """检查序号是否重复"""
     items = read_all_items(list_name)
-    seq_str = str(seq_num)
     for item in items:
-        if str(item.get("序号", "")) == seq_str:
-            return True
+        try:
+            if int(item.get("序号", 0)) == int(seq_num):
+                return True
+        except (ValueError, TypeError):
+            pass
     return False
 
 
 def append_item_to_csv(list_name, item_data):
-    """追加一条记录到CSV"""
+    """追加一条记录到 CSV（简单 open-write 方式，避免 Pythonista newline 兼容问题）"""
     csv_path = init_csv(list_name)
-    with open(csv_path, 'a', newline='', encoding='utf-8-sig') as f:
-        writer = csv.writer(f)
+    print(f"[保存] 追加到: {csv_path}")
+    print(f"[保存] 数据: {item_data}")
+    try:
         row = [
-            item_data.get("序号", ""),
-            item_data.get("型号", ""),
-            item_data.get("数量", ""),
-            item_data.get("参考价", ""),
-            item_data.get("拆封状态", ""),
-            item_data.get("外盒状态", ""),
-            item_data.get("外盒其他", ""),
-            item_data.get("本体状态", ""),
-            item_data.get("本体其他", ""),
-            item_data.get("配件状态", ""),
-            item_data.get("配件其他", ""),
-            item_data.get("其他瑕疵或说明", ""),
-            item_data.get("照片文件", ""),
-            item_data.get("录入时间", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            str(item_data.get("序号", "")),
+            str(item_data.get("型号", "")),
+            str(item_data.get("数量", "")),
+            str(item_data.get("参考价", "")),
+            str(item_data.get("拆封状态", "")),
+            str(item_data.get("外盒状态", "")),
+            str(item_data.get("外盒其他", "")),
+            str(item_data.get("本体状态", "")),
+            str(item_data.get("本体其他", "")),
+            str(item_data.get("配件状态", "")),
+            str(item_data.get("配件其他", "")),
+            str(item_data.get("其他瑕疵或说明", "")),
+            str(item_data.get("照片文件", "")),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ]
-        writer.writerow(row)
+        # 用 open + csv.writer 方式
+        with open(csv_path, 'a', encoding='utf-8') as f:
+            writer = csv.writer(f, lineterminator='\n')
+            writer.writerow(row)
+        print("[保存] ✅ 成功")
+    except Exception as e:
+        print(f"[保存] ❌ 失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 def sanitize_filename(name):
-    """清理文件名中的非法字符"""
-    invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
-    for ch in invalid_chars:
+    invalid = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+    for ch in invalid:
         name = name.replace(ch, '_')
     return name.strip()
 
 
-# ============ 拍照功能 ============
+# ============ 拍照功能（简化版，确保 Pythonista 兼容） ============
 def take_photos(list_name, seq, model):
-    """
-    多角度拍照，文件名格式：序号-型号-N.jpg
-    返回保存的照片路径列表
-    """
+    """多角度拍照，文件名：序号-型号-N.jpg"""
     folder = get_list_folder(list_name)
     photo_paths = []
     angle = 1
     safe_model = sanitize_filename(model) if model else "未知型号"
 
-    # 第一次：提示从哪里获取图片
+    # 第一次提示来源
     choice = dialogs.list_alert(
         "添加照片",
-        ["📷 拍摄照片（调用相机）", "🖼️ 从相册选择", "📂 两者都用"]
+        ["📷 调用相机拍照", "🖼️ 从相册选图"]
     )
     if choice < 0:
         return photo_paths
 
-    use_camera = choice in (0, 2)
-    use_album = choice in (1, 2)
-
     while True:
         img = None
 
-        if use_camera and angle <= 1:
-            # 先用相机
+        if choice == 0:
+            # 相机
             try:
                 import camera
                 img = camera.capture_photo()
             except Exception as e:
-                print("相机调用失败:", e)
-                use_camera = False
+                print(f"[拍照] 相机不可用: {e}, 尝试相册...")
+                try:
+                    img = photos.pick_image()
+                except Exception as e2:
+                    print(f"[拍照] 相册也不可用: {e2}")
 
-        if img is None and use_album:
-            # 或从相册选
+        elif choice == 1:
+            # 相册
             try:
                 img = photos.pick_image()
             except Exception as e:
-                print("相册选择失败:", e)
+                print(f"[拍照] 相册选择失败: {e}")
 
         if img is None:
             if photo_paths:
@@ -212,35 +247,43 @@ def take_photos(list_name, seq, model):
             else:
                 return photo_paths
 
-        # 保存图片
+        # 保存图片（用 PIL Image 标准方式）
         filename = f"{seq}-{safe_model}-{angle}.jpg"
         filepath = os.path.join(folder, filename)
+        print(f"[拍照] 保存: {filepath}")
+
         try:
-            # 使用PIL Image的save
+            # Pythonista photos / camera 返回的都是 PIL Image
+            # 但不能用 quality 关键字（Pythonista PIL 版本老）
             if hasattr(img, 'save'):
-                img.save(filepath, quality=92)
+                # 先转 RGB（处理可能带 alpha 的 RGBA）
+                try:
+                    rgb_img = img.convert('RGB')
+                    rgb_img.save(filepath, 'JPEG')
+                except Exception:
+                    # 兜底直接保存
+                    img.save(filepath)
             else:
-                # 尝试转换
-                from PIL import Image as PILImage
-                if isinstance(img, PILImage.Image):
-                    img.save(filepath, quality=92)
-                else:
-                    dialogs.alert("错误", "无法保存图片对象")
-                    angle -= 1
+                dialogs.alert("错误", "无法保存图片对象")
+                angle -= 1
 
-            photo_paths.append(filename)
-            angle += 1
+            if os.path.exists(filepath):
+                print(f"[拍照] ✅ 已保存 {os.path.getsize(filepath)} 字节")
+                photo_paths.append(filename)
+                angle += 1
+            else:
+                print("[拍照] 文件没生成")
 
-            # 询问继续 — dialogs.alert返回按钮索引，0=第一按钮，1=第二按钮
-            result = dialogs.alert("拍照", f"已保存: {filename}\n继续添加下一张？",
-                              "继续", "完成")
-            # result == 1 表示用户点了"完成"（第二按钮），跳出循环
+            # 继续？result=1 是第二按钮（完成）
+            result = dialogs.alert("拍照", f"已保存 {filename}\n继续拍？", "继续", "完成")
             if result == 1:
                 break
 
         except Exception as e:
-            print("保存图片失败:", e)
-            dialogs.alert("错误", f"保存图片失败: {e}")
+            print(f"[拍照] 保存异常: {e}")
+            import traceback
+            traceback.print_exc()
+            dialogs.alert("保存图片失败", str(e))
             break
 
     return photo_paths
@@ -253,19 +296,12 @@ class MainViewController(ui.View):
     def __init__(self):
         super().__init__()
         self.current_list_name = None
+        self._app_ready = False
         self.setup_ui()
-
-    def on_view_appear(self):
-        """视图首次显示后才初始化，避免dialog弹出时主界面还没present"""
-        # 只在第一次显示时执行（present前on_view_appear可能会被多次调）
-        if not getattr(self, '_initialized', False):
-            self._initialized = True
-            ui.delay(0.3, self.load_initial_list)
 
     def setup_ui(self):
         self.background_color = '#f2f2f7'
 
-        # 标题
         self.title_label = ui.Label()
         self.title_label.text = "玩具寄售清单"
         self.title_label.font = ('Helvetica-Bold', 22)
@@ -273,45 +309,36 @@ class MainViewController(ui.View):
         self.title_label.text_color = '#1a1a1a'
         self.add_subview(self.title_label)
 
-        # 当前清单显示
         self.list_name_label = ui.Label()
-        self.list_name_label.text = "未选择清单"
+        self.list_name_label.text = "点击下方按钮新建或打开清单"
         self.list_name_label.font = ('Helvetica', 14)
         self.list_name_label.text_alignment = ui.ALIGN_CENTER
         self.list_name_label.text_color = '#666'
+        self.list_name_label.number_of_lines = 0
         self.add_subview(self.list_name_label)
 
-        # 按钮：新建/选择清单
-        self.btn_list_name = self.make_button("📋 新建或选择清单", '#007aff')
-        self.btn_list_name.action = self.on_choose_list
+        self.btn_list_name = self.make_button("📋 新建清单 / 切换清单", '#007aff')
+        self.btn_list_name.action = self.on_choose_or_switch
         self.add_subview(self.btn_list_name)
 
-        # 按钮：添加玩具
         self.btn_add = self.make_button("➕ 添加玩具信息", '#34c759')
         self.btn_add.action = self.on_add_item
         self.add_subview(self.btn_add)
 
-        # 按钮：查看清单
         self.btn_view = self.make_button("📄 查看当前清单", '#ff9500')
         self.btn_view.action = self.on_view_list
         self.add_subview(self.btn_view)
 
-        # 按钮：导出CSV
-        self.btn_export = self.make_button("📤 导出CSV", '#5856d6')
+        self.btn_export = self.make_button("📤 导出 CSV", '#5856d6')
         self.btn_export.action = self.on_export_csv
         self.add_subview(self.btn_export)
 
-        # 按钮：切换清单
-        self.btn_switch = self.make_button("🔄 切换清单", '#007aff')
-        self.btn_switch.action = self.on_switch_list
-        self.add_subview(self.btn_switch)
-
-        # 项目统计
         self.stats_label = ui.Label()
         self.stats_label.text = ""
         self.stats_label.font = ('Helvetica', 12)
         self.stats_label.text_alignment = ui.ALIGN_CENTER
         self.stats_label.text_color = '#888'
+        self.stats_label.number_of_lines = 0
         self.add_subview(self.stats_label)
 
     def make_button(self, title, color):
@@ -327,103 +354,115 @@ class MainViewController(ui.View):
     def layout(self):
         w = self.width
         self.title_label.frame = (20, 60, w - 40, 40)
-        self.list_name_label.frame = (20, 105, w - 40, 24)
-
+        self.list_name_label.frame = (20, 105, w - 40, 40)
         btn_w = min(w - 40, 320)
         x = (w - btn_w) / 2
+        self.btn_list_name.frame = (x, 155, btn_w, 50)
+        self.btn_add.frame = (x, 220, btn_w, 50)
+        self.btn_view.frame = (x, 285, btn_w, 50)
+        self.btn_export.frame = (x, 350, btn_w, 50)
+        self.stats_label.frame = (20, 415, w - 40, 120)
 
-        self.btn_list_name.frame = (x, 150, btn_w, 50)
-        self.btn_add.frame = (x, 215, btn_w, 50)
-        self.btn_view.frame = (x, 280, btn_w, 50)
-        self.btn_export.frame = (x, 345, btn_w, 50)
-        self.btn_switch.frame = (x, 410, btn_w, 50)
-
-        self.stats_label.frame = (20, 480, w - 40, 60)
+    def on_view_appear(self):
+        """主视图显示后再让 dialog 弹出，避免界面卡住"""
+        if not self._app_ready:
+            self._app_ready = True
+            ui.delay(0.2, self.load_initial_list)
 
     def load_initial_list(self):
-        """启动时加载上次的清单"""
         cfg = load_config()
         last_list = cfg.get("last_list")
         if last_list:
+            # 验证文件夹确实存在
             list_folder = os.path.join(get_base_folder(), last_list)
             if os.path.exists(list_folder):
                 self.current_list_name = last_list
                 self.update_info()
                 return
-        # 没有历史记录，提示创建
-        self.on_choose_list()
+        # 首次使用，提示创建
+        self.on_new_list()
 
     def update_info(self):
         if self.current_list_name:
-            self.list_name_label.text = f"当前清单：{self.current_list_name}"
-            # 更新项目数
+            folder = get_list_folder(self.current_list_name)
+            csv_path = get_csv_path(self.current_list_name)
             items = read_all_items(self.current_list_name)
-            count = len(items)
-            self.stats_label.text = f"共 {count} 项\n清单位置：{get_csv_path(self.current_list_name)}"
+            self.list_name_label.text = f"当前清单：{self.current_list_name}"
+            self.stats_label.text = (
+                f"共 {len(items)} 项\n\n"
+                f"文件夹: {folder}\n"
+                f"清单文件: {csv_path}"
+            )
+            print(f"[主界面] 当前清单: {self.current_list_name}, 项目数: {len(items)}")
         else:
-            self.list_name_label.text = "未选择清单"
+            self.list_name_label.text = "点击下方按钮新建或打开清单"
             self.stats_label.text = ""
 
-    def on_choose_list(self, sender=None):
-        """创建新清单"""
+    def on_choose_or_switch(self, sender=None):
+        """新建 or 切换"""
+        btn = dialogs.alert("清单操作", "选择要做什么？", "新建清单", "切换清单")
+        if btn == 0:
+            self.on_new_list()
+        elif btn == 1:
+            self.on_switch_list()
+
+    def on_new_list(self):
         text = dialogs.input_alert("新建清单", "请输入清单名称：", "例如：2026年10月寄售")
         if text and text.strip():
-            list_name = text.strip()
-            # 清理非法字符
-            list_name = sanitize_filename(list_name)
+            list_name = sanitize_filename(text.strip())
+            print(f"[新建] 清单名: {list_name}")
             self.current_list_name = list_name
-            get_list_folder(list_name)
-            init_csv(list_name)
+
+            # 创建文件夹
+            folder = get_list_folder(list_name)
+            print(f"[新建] 文件夹: {folder}, 存在: {os.path.exists(folder)}")
+
+            # 创建 CSV
+            csv_path = init_csv(list_name)
+            print(f"[新建] CSV: {csv_path}, 存在: {os.path.exists(csv_path)}")
+
             save_config({"last_list": list_name})
             self.update_info()
-            dialogs.alert("成功", f"已创建清单：{list_name}")
+            dialogs.alert("成功", f"已创建清单：\n{list_name}")
 
-    def on_switch_list(self, sender=None):
-        """切换到已有清单"""
+    def on_switch_list(self):
         base = get_base_folder()
         folders = [d for d in os.listdir(base)
                    if os.path.isdir(os.path.join(base, d)) and not d.startswith('.')]
         if not folders:
-            dialogs.alert("提示", "暂无已有清单，请先新建")
-            self.on_choose_list()
+            dialogs.alert("提示", "暂无已有清单，先新建一个吧")
+            self.on_new_list()
             return
-
-        items = list(folders)
-        selected = dialogs.list_alert("选择清单", items)
-        if selected >= 0:
-            self.current_list_name = items[selected]
+        selected = dialogs.list_alert("选择清单", folders)
+        if 0 <= selected < len(folders):
+            self.current_list_name = folders[selected]
             save_config({"last_list": self.current_list_name})
             self.update_info()
 
     def on_add_item(self, sender=None):
-        """添加玩具信息"""
         if not self.current_list_name:
-            dialogs.alert("提示", "请先选择或新建清单")
+            dialogs.alert("提示", "请先新建或选择一个清单")
             return
-
         seq = get_next_sequence(self.current_list_name)
         InputForm.open(self.current_list_name, seq, parent=self)
 
     def on_view_list(self, sender=None):
-        """查看清单"""
         if not self.current_list_name:
             dialogs.alert("提示", "请先选择清单")
             return
         ListViewer.open(self.current_list_name)
 
     def on_export_csv(self, sender=None):
-        """导出CSV"""
         if not self.current_list_name:
             dialogs.alert("提示", "请先选择清单")
             return
         csv_path = get_csv_path(self.current_list_name)
         if os.path.exists(csv_path):
-            # 尝试用其他方式打开/分享
             try:
                 import share
                 share.share_file(csv_path)
             except Exception:
-                dialogs.alert("提示", f"CSV文件位置：\n{csv_path}")
+                dialogs.alert("CSV 文件位置", csv_path)
         else:
             dialogs.alert("提示", "清单文件不存在")
 
@@ -440,138 +479,113 @@ class InputForm(ui.View):
     def __init__(self, list_name, initial_seq, parent=None):
         super().__init__()
         self.list_name = list_name
-        self.parent_controller = parent  # 主界面引用
-        self.item_data = {}
+        self.parent_controller = parent
         self.photo_files = []
+        self.condition_data = {}
 
         self.background_color = '#f2f2f7'
 
-        # 序号
-        self.lbl_seq = self.make_label("序号")
-        self.lbl_seq.frame = (20, 90, 100, 30)
-        self.add_subview(self.lbl_seq)
+        y = 90
 
-        self.txt_seq = ui.TextField()
+        def make_lbl(t):
+            l = ui.Label()
+            l.text = t; l.font = ('Helvetica', 15); l.text_color = '#333'
+            return l
+
+        def make_txt(placeholder, width=200, keyboard=None):
+            t = ui.TextField()
+            t.frame = (120, y - 3, width, 34)
+            t.border_width = 1; t.border_color = '#ccc'; t.corner_radius = 6
+            t.placeholder = placeholder
+            if keyboard: t.keyboard_type = keyboard
+            return t
+
+        # 序号
+        self.lbl_seq = make_lbl("序号"); self.lbl_seq.frame = (20, y, 100, 30)
+        self.add_subview(self.lbl_seq)
+        self.txt_seq = make_txt("序号", 200)
         self.txt_seq.text = str(initial_seq)
-        self.txt_seq.frame = (120, 85, 180, 36)
-        self.txt_seq.border_width = 1
-        self.txt_seq.border_color = '#ccc'
-        self.txt_seq.corner_radius = 6
-        self.txt_seq.placeholder = "序号"
         self.add_subview(self.txt_seq)
+        y += 40
 
         # 型号
-        self.lbl_model = self.make_label("型号")
-        self.lbl_model.frame = (20, 130, 100, 30)
+        self.lbl_model = make_lbl("型号"); self.lbl_model.frame = (20, y, 100, 30)
         self.add_subview(self.lbl_model)
-
-        self.txt_model = ui.TextField()
-        self.txt_model.frame = (120, 125, 180, 36)
-        self.txt_model.border_width = 1
-        self.txt_model.border_color = '#ccc'
-        self.txt_model.corner_radius = 6
-        self.txt_model.placeholder = "例如：MG Freedom 2.0"
+        self.txt_model = make_txt("例如：MG Freedom 2.0", 200)
         self.add_subview(self.txt_model)
+        y += 40
 
         # 数量
-        self.lbl_qty = self.make_label("数量")
-        self.lbl_qty.frame = (20, 170, 100, 30)
+        self.lbl_qty = make_lbl("数量"); self.lbl_qty.frame = (20, y, 100, 30)
         self.add_subview(self.lbl_qty)
-
-        self.txt_qty = ui.TextField()
+        self.txt_qty = make_txt("数量", 200, ui.KEYBOARD_NUMBER_PAD)
         self.txt_qty.text = "1"
-        self.txt_qty.frame = (120, 165, 180, 36)
-        self.txt_qty.border_width = 1
-        self.txt_qty.border_color = '#ccc'
-        self.txt_qty.corner_radius = 6
-        self.txt_qty.placeholder = "数量"
-        self.txt_qty.keyboard_type = ui.KEYBOARD_NUMBER_PAD
         self.add_subview(self.txt_qty)
+        y += 40
 
         # 参考价
-        self.lbl_price = self.make_label("参考价")
-        self.lbl_price.frame = (20, 210, 100, 30)
+        self.lbl_price = make_lbl("参考价"); self.lbl_price.frame = (20, y, 100, 30)
         self.add_subview(self.lbl_price)
-
-        self.txt_price = ui.TextField()
-        self.txt_price.frame = (120, 205, 180, 36)
-        self.txt_price.border_width = 1
-        self.txt_price.border_color = '#ccc'
-        self.txt_price.corner_radius = 6
-        self.txt_price.placeholder = "例如：280"
-        self.txt_price.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
+        self.txt_price = make_txt("例如：280", 200, ui.KEYBOARD_DECIMAL_PAD)
         self.add_subview(self.txt_price)
+        y += 50
 
         # 拍照按钮
         self.btn_photo = ui.Button()
         self.btn_photo.title = "📷 拍照（多角度）"
-        self.btn_photo.font = ('Helvetica', 16)
-        self.btn_photo.tint_color = 'white'
-        self.btn_photo.background_color = '#007aff'
-        self.btn_photo.corner_radius = 10
-        self.btn_photo.frame = (20, 260, 280, 45)
+        self.btn_photo.font = ('Helvetica', 16); self.btn_photo.tint_color = 'white'
+        self.btn_photo.background_color = '#007aff'; self.btn_photo.corner_radius = 10
+        self.btn_photo.frame = (20, y, 280, 45)
         self.btn_photo.action = self.on_take_photos
         self.add_subview(self.btn_photo)
+        y += 50
 
         self.lbl_photo_status = ui.Label()
         self.lbl_photo_status.text = "未拍照"
-        self.lbl_photo_status.font = ('Helvetica', 12)
-        self.lbl_photo_status.text_alignment = ui.ALIGN_CENTER
+        self.lbl_photo_status.font = ('Helvetica', 12); self.lbl_photo_status.text_alignment = ui.ALIGN_CENTER
         self.lbl_photo_status.text_color = '#666'
-        self.lbl_photo_status.frame = (20, 310, 280, 20)
+        self.lbl_photo_status.frame = (20, y, 280, 20)
         self.add_subview(self.lbl_photo_status)
+        y += 30
 
         # 盒况按钮
         self.btn_condition = ui.Button()
         self.btn_condition.title = "📦 填写盒况信息"
-        self.btn_condition.font = ('Helvetica', 16)
-        self.btn_condition.tint_color = 'white'
-        self.btn_condition.background_color = '#ff9500'
-        self.btn_condition.corner_radius = 10
-        self.btn_condition.frame = (20, 340, 280, 45)
+        self.btn_condition.font = ('Helvetica', 16); self.btn_condition.tint_color = 'white'
+        self.btn_condition.background_color = '#ff9500'; self.btn_condition.corner_radius = 10
+        self.btn_condition.frame = (20, y, 280, 45)
         self.btn_condition.action = self.on_edit_condition
         self.add_subview(self.btn_condition)
+        y += 50
 
         self.lbl_condition_status = ui.Label()
         self.lbl_condition_status.text = "未填写"
-        self.lbl_condition_status.font = ('Helvetica', 12)
-        self.lbl_condition_status.text_alignment = ui.ALIGN_CENTER
+        self.lbl_condition_status.font = ('Helvetica', 12); self.lbl_condition_status.text_alignment = ui.ALIGN_CENTER
         self.lbl_condition_status.text_color = '#666'
-        self.lbl_condition_status.frame = (20, 390, 280, 30)
+        self.lbl_condition_status.frame = (20, y, 280, 30)
+        self.lbl_condition_status.number_of_lines = 0
         self.add_subview(self.lbl_condition_status)
+        y += 40
 
         # 保存按钮
         self.btn_save = ui.Button()
         self.btn_save.title = "💾 保存本项"
-        self.btn_save.font = ('Helvetica-Bold', 17)
-        self.btn_save.tint_color = 'white'
-        self.btn_save.background_color = '#34c759'
-        self.btn_save.corner_radius = 10
-        self.btn_save.frame = (20, 440, 280, 50)
+        self.btn_save.font = ('Helvetica-Bold', 17); self.btn_save.tint_color = 'white'
+        self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 10
+        self.btn_save.frame = (20, y, 280, 50)
         self.btn_save.action = self.on_save
         self.add_subview(self.btn_save)
+        y += 60
 
         # 取消按钮
         self.btn_cancel = ui.Button()
         self.btn_cancel.title = "取消"
-        self.btn_cancel.font = ('Helvetica', 15)
-        self.btn_cancel.tint_color = '#007aff'
-        self.btn_cancel.frame = (20, 500, 280, 40)
+        self.btn_cancel.font = ('Helvetica', 15); self.btn_cancel.tint_color = '#007aff'
+        self.btn_cancel.frame = (20, y, 280, 40)
         self.btn_cancel.action = self.on_cancel
         self.add_subview(self.btn_cancel)
 
-        # 默认盒况数据
-        self.condition_data = {}
-
-    def make_label(self, text):
-        lbl = ui.Label()
-        lbl.text = text
-        lbl.font = ('Helvetica', 15)
-        lbl.text_color = '#333'
-        return lbl
-
     def on_take_photos(self, sender):
-        """拍照"""
         seq = self.txt_seq.text.strip()
         model = self.txt_model.text.strip()
         if not model:
@@ -591,12 +605,10 @@ class InputForm(ui.View):
             self.lbl_photo_status.text_color = '#666'
 
     def on_edit_condition(self, sender):
-        """打开盒况编辑界面"""
         ConditionEditor.open(self.condition_data, self.on_condition_saved)
 
     def on_condition_saved(self, data):
         self.condition_data = data
-        # 更新状态显示
         parts = []
         if data.get("拆封状态"):
             parts.append(f"拆封：{data['拆封状态']}")
@@ -614,13 +626,11 @@ class InputForm(ui.View):
             self.lbl_condition_status.text_color = '#666'
 
     def on_save(self, sender):
-        """保存本条记录"""
         seq = self.txt_seq.text.strip()
         model = self.txt_model.text.strip()
         qty = self.txt_qty.text.strip() or "1"
         price = self.txt_price.text.strip()
 
-        # 验证必填
         if not seq:
             dialogs.alert("提示", "请填写序号")
             return
@@ -628,21 +638,16 @@ class InputForm(ui.View):
             dialogs.alert("提示", "请填写型号")
             return
 
-        # 检查序号重复
+        # 重复检查
         try:
-            seq_int = int(seq)
-            if check_duplicate_seq(self.list_name, seq_int):
-                # 按钮顺序：0=覆盖, 1=取消。用户点取消才中断
-                result = dialogs.alert(
-                    "序号重复", f"序号 {seq} 已存在，\n确定要覆盖原记录吗？",
-                    "覆盖", "取消"
-                )
-                if result == 1:  # 用户选"取消"
+            if check_duplicate_seq(self.list_name, int(seq)):
+                result = dialogs.alert("序号重复", f"序号 {seq} 已存在，\n要覆盖吗？",
+                                     "覆盖", "取消")
+                if result == 1:
                     return
         except ValueError:
             pass
 
-        # 构建数据
         item_data = {
             "序号": seq,
             "型号": model,
@@ -652,18 +657,16 @@ class InputForm(ui.View):
         item_data.update(self.condition_data)
         item_data["照片文件"] = ";".join(self.photo_files)
 
-        # 追加到CSV
         try:
             append_item_to_csv(self.list_name, item_data)
-            # 刷新主界面统计
-            if self.parent_controller and hasattr(self.parent_controller, 'update_info'):
+            if self.parent_controller:
                 self.parent_controller.update_info()
-            dialogs.alert("成功", f"已保存：{seq} - {model}")
+            dialogs.alert("成功", f"已保存：\n{seq} - {model}")
             self.close()
         except Exception as e:
             import traceback
             traceback.print_exc()
-            dialogs.alert("错误", f"保存失败：{e}")
+            dialogs.alert("保存失败", str(e))
 
     def on_cancel(self, sender):
         self.close()
@@ -684,171 +687,138 @@ class ConditionEditor(ui.View):
         self.existing_data = existing_data or {}
         self.background_color = '#f2f2f7'
         self.current_y = 80
-        self.height = 700
 
-        # 拆封状态（单选）
-        self.add_section_label("拆封状态")
+        def section(t):
+            lbl = ui.Label()
+            lbl.text = t
+            lbl.font = ('Helvetica-Bold', 16); lbl.text_color = '#1a1a1a'
+            lbl.frame = (20, self.current_y, self.width - 40, 28)
+            self.add_subview(lbl)
+            self.current_y += 32
+
+        def field_label(t):
+            l = ui.Label()
+            l.text = t; l.font = ('Helvetica', 14); l.text_color = '#333'
+            return l
+
+        # 拆封（单选）
+        section("拆封状态")
         self.seal_seg = ui.SegmentedControl()
         self.seal_seg.segments = SEAL_OPTIONS
-        self.seal_seg.selected_index = 0
-        # 恢复已有选择
         existing_seal = self.existing_data.get("拆封状态", "")
-        if existing_seal in SEAL_OPTIONS:
-            self.seal_seg.selected_index = SEAL_OPTIONS.index(existing_seal)
+        self.seal_seg.selected_index = (SEAL_OPTIONS.index(existing_seal)
+                                        if existing_seal in SEAL_OPTIONS else 0)
         self.seal_seg.frame = (20, self.current_y, self.width - 40, 40)
         self.current_y += 50
         self.add_subview(self.seal_seg)
 
-        # 外盒状态
-        self.add_section_label("外盒状态（可多选）")
-        self.box_checks = self.add_multi_checkbox(BOX_CONDITION_OPTIONS, "外盒状态")
+        # 外盒
+        section("外盒状态（可多选）")
+        self.box_checks = self.add_checkbox_group(BOX_CONDITION_OPTIONS, "外盒状态")
         self.current_y += len(BOX_CONDITION_OPTIONS) * 30 + 10
 
-        # 外盒其他输入
-        self.lbl_box_other = self.make_label("外盒其他说明")
-        self.lbl_box_other.frame = (20, self.current_y, 140, 28)
-        self.add_subview(self.lbl_box_other)
-
+        # 外盒其他
+        lbl = field_label("外盒其他说明")
+        lbl.frame = (20, self.current_y, 140, 28)
+        self.add_subview(lbl)
         self.txt_box_other = ui.TextField()
         self.txt_box_other.frame = (160, self.current_y - 2, self.width - 180, 32)
-        self.txt_box_other.border_width = 1
-        self.txt_box_other.border_color = '#ccc'
+        self.txt_box_other.border_width = 1; self.txt_box_other.border_color = '#ccc'
         self.txt_box_other.corner_radius = 6
         self.txt_box_other.text = self.existing_data.get("外盒其他", "")
         self.add_subview(self.txt_box_other)
         self.current_y += 40
 
-        # 本体状态
-        self.add_section_label("本体状态（可多选）")
-        self.item_checks = self.add_multi_checkbox(ITEM_CONDITION_OPTIONS, "本体状态")
+        # 本体
+        section("本体状态（可多选）")
+        self.item_checks = self.add_checkbox_group(ITEM_CONDITION_OPTIONS, "本体状态")
         self.current_y += len(ITEM_CONDITION_OPTIONS) * 30 + 10
 
         # 本体其他
-        self.lbl_item_other = self.make_label("本体其他说明")
-        self.lbl_item_other.frame = (20, self.current_y, 140, 28)
-        self.add_subview(self.lbl_item_other)
-
+        lbl = field_label("本体其他说明")
+        lbl.frame = (20, self.current_y, 140, 28)
+        self.add_subview(lbl)
         self.txt_item_other = ui.TextField()
         self.txt_item_other.frame = (160, self.current_y - 2, self.width - 180, 32)
-        self.txt_item_other.border_width = 1
-        self.txt_item_other.border_color = '#ccc'
+        self.txt_item_other.border_width = 1; self.txt_item_other.border_color = '#ccc'
         self.txt_item_other.corner_radius = 6
         self.txt_item_other.text = self.existing_data.get("本体其他", "")
         self.add_subview(self.txt_item_other)
         self.current_y += 40
 
-        # 配件状态
-        self.add_section_label("配件状态（可多选）")
-        self.acc_checks = self.add_multi_checkbox(ACCESSORY_OPTIONS, "配件状态")
+        # 配件
+        section("配件状态（可多选）")
+        self.acc_checks = self.add_checkbox_group(ACCESSORY_OPTIONS, "配件状态")
         self.current_y += len(ACCESSORY_OPTIONS) * 30 + 10
 
         # 配件其他
-        self.lbl_acc_other = self.make_label("配件其他说明")
-        self.lbl_acc_other.frame = (20, self.current_y, 140, 28)
-        self.add_subview(self.lbl_acc_other)
-
+        lbl = field_label("配件其他说明")
+        lbl.frame = (20, self.current_y, 140, 28)
+        self.add_subview(lbl)
         self.txt_acc_other = ui.TextField()
         self.txt_acc_other.frame = (160, self.current_y - 2, self.width - 180, 32)
-        self.txt_acc_other.border_width = 1
-        self.txt_acc_other.border_color = '#ccc'
+        self.txt_acc_other.border_width = 1; self.txt_acc_other.border_color = '#ccc'
         self.txt_acc_other.corner_radius = 6
         self.txt_acc_other.text = self.existing_data.get("配件其他", "")
         self.add_subview(self.txt_acc_other)
         self.current_y += 40
 
-        # 其他瑕疵或说明
-        self.add_section_label("其他瑕疵或说明")
+        # 其他瑕疵
+        section("其他瑕疵或说明")
         self.txt_other = ui.TextView()
         self.txt_other.frame = (20, self.current_y, self.width - 40, 100)
-        self.txt_other.border_width = 1
-        self.txt_other.border_color = '#ccc'
+        self.txt_other.border_width = 1; self.txt_other.border_color = '#ccc'
         self.txt_other.corner_radius = 6
         self.txt_other.text = self.existing_data.get("其他瑕疵或说明", "")
         self.add_subview(self.txt_other)
         self.current_y += 115
 
-        # 保存按钮
+        # 保存
         self.btn_save = ui.Button()
         self.btn_save.title = "保存盒况信息"
-        self.btn_save.font = ('Helvetica-Bold', 17)
-        self.btn_save.tint_color = 'white'
-        self.btn_save.background_color = '#34c759'
-        self.btn_save.corner_radius = 10
+        self.btn_save.font = ('Helvetica-Bold', 17); self.btn_save.tint_color = 'white'
+        self.btn_save.background_color = '#34c759'; self.btn_save.corner_radius = 10
         self.btn_save.frame = (20, self.current_y, self.width - 40, 50)
         self.btn_save.action = self.on_save
         self.add_subview(self.btn_save)
 
-    def add_section_label(self, text):
-        lbl = ui.Label()
-        lbl.text = text
-        lbl.font = ('Helvetica-Bold', 16)
-        lbl.text_color = '#1a1a1a'
-        lbl.frame = (20, self.current_y, self.width - 40, 28)
-        self.add_subview(lbl)
-        self.current_y += 32
+        # 滚动（内容多时可用）
+        self.scroll_enabled = True
 
-    def make_label(self, text):
-        lbl = ui.Label()
-        lbl.text = text
-        lbl.font = ('Helvetica', 14)
-        lbl.text_color = '#333'
-        return lbl
-
-    def add_multi_checkbox(self, options, data_key):
-        """添加多选复选框"""
-        existing = self.existing_data.get(data_key, "")
-        existing_list = [x.strip() for x in existing.split("|") if x.strip()] if existing else []
-
+    def add_checkbox_group(self, options, data_key):
+        existing_str = self.existing_data.get(data_key, "")
+        existing_set = set(x.strip() for x in existing_str.split("|") if x.strip()) if existing_str else set()
         checks = []
         for opt in options:
             sw = ui.Switch()
             sw.frame = (self.width - 60, self.current_y, 40, 28)
-            sw.value = opt in existing_list
+            sw.value = opt in existing_set
             self.add_subview(sw)
-
             lbl = ui.Label()
-            lbl.text = opt
-            lbl.font = ('Helvetica', 15)
+            lbl.text = opt; lbl.font = ('Helvetica', 15)
             lbl.frame = (20, self.current_y, self.width - 90, 28)
             self.add_subview(lbl)
-
             checks.append((opt, sw))
             self.current_y += 30
-
         return checks
 
     def on_save(self, sender):
         data = {}
-
-        # 拆封状态
         if 0 <= self.seal_seg.selected_index < len(SEAL_OPTIONS):
             data["拆封状态"] = SEAL_OPTIONS[self.seal_seg.selected_index]
-
-        # 外盒
-        box_selected = [opt for opt, sw in self.box_checks if sw.value]
-        data["外盒状态"] = "|".join(box_selected)
+        data["外盒状态"] = "|".join(o for o, s in self.box_checks if s.value)
         data["外盒其他"] = self.txt_box_other.text.strip()
-
-        # 本体
-        item_selected = [opt for opt, sw in self.item_checks if sw.value]
-        data["本体状态"] = "|".join(item_selected)
+        data["本体状态"] = "|".join(o for o, s in self.item_checks if s.value)
         data["本体其他"] = self.txt_item_other.text.strip()
-
-        # 配件
-        acc_selected = [opt for opt, sw in self.acc_checks if sw.value]
-        data["配件状态"] = "|".join(acc_selected)
+        data["配件状态"] = "|".join(o for o, s in self.acc_checks if s.value)
         data["配件其他"] = self.txt_acc_other.text.strip()
-
-        # 其他
         data["其他瑕疵或说明"] = self.txt_other.text.strip()
-
         self.callback(data)
         self.close()
 
 
 # ============ 清单查看器 ============
 class ListViewer(ui.View):
-    """查看当前清单"""
 
     @classmethod
     def open(cls, list_name):
@@ -860,7 +830,7 @@ class ListViewer(ui.View):
         self.list_name = list_name
         self.background_color = 'white'
 
-        # 标题行
+        # 标题（第一行，16号黑体）
         self.title_label = ui.Label()
         self.title_label.text = "附件：寄售玩具清单"
         self.title_label.font = ('Helvetica-Bold', 16)
@@ -869,7 +839,7 @@ class ListViewer(ui.View):
         self.title_label.frame = (20, 80, self.width - 40, 24)
         self.add_subview(self.title_label)
 
-        # 副标题说明
+        # 第二行说明（10号字）
         self.subtitle_label = ui.Label()
         self.subtitle_label.text = "（本清单一式两份，双方各执一份；随附交接照片和视频）"
         self.subtitle_label.font = ('Helvetica', 10)
@@ -879,7 +849,6 @@ class ListViewer(ui.View):
         self.subtitle_label.number_of_lines = 0
         self.add_subview(self.subtitle_label)
 
-        # 清单名称
         self.list_name_label = ui.Label()
         self.list_name_label.text = f"清单：{list_name}"
         self.list_name_label.font = ('Helvetica-Bold', 14)
@@ -888,20 +857,13 @@ class ListViewer(ui.View):
         self.list_name_label.frame = (20, 135, self.width - 40, 22)
         self.add_subview(self.list_name_label)
 
-        # 表格视图（使用ScrollView + TextView来展示）
-        self.scroll = ui.ScrollView()
-        self.scroll.frame = (10, 165, self.width - 20, self.height - 260)
-        self.scroll.background_color = '#f9f9f9'
-        self.add_subview(self.scroll)
-
         self.table_view = ui.TextView()
-        self.table_view.frame = (0, 0, self.width - 20, 500)
+        self.table_view.frame = (10, 165, self.width - 20, self.height - 260)
         self.table_view.font = ('Menlo', 12)
         self.table_view.editable = False
-        self.table_view.background_color = 'white'
-        self.scroll.add_subview(self.table_view)
+        self.table_view.background_color = '#f9f9f9'
+        self.add_subview(self.table_view)
 
-        # 关闭按钮
         self.btn_close = ui.Button()
         self.btn_close.title = "关闭"
         self.btn_close.font = ('Helvetica', 15)
@@ -910,7 +872,6 @@ class ListViewer(ui.View):
         self.btn_close.action = lambda s: self.close()
         self.add_subview(self.btn_close)
 
-        # 加载数据
         self.load_data()
 
     def load_data(self):
@@ -918,42 +879,32 @@ class ListViewer(ui.View):
         if not items:
             self.table_view.text = "（暂无记录）"
             return
-
-        lines = []
-        # 表头
-        header = f"{'序号':<6}{'型号':<24}{'数量':<6}{'参考价':<10}{'盒况备注':<20}"
-        lines.append(header)
-        lines.append("-" * 80)
-
-        for item in items:
-            seq = item.get("序号", "")
-            model = item.get("型号", "")[:12]
-            qty = item.get("数量", "")
-            price = item.get("参考价", "")
-
-            # 盒况摘要
+        lines = ["序号  型号                    数量  参考价  盒况备注",
+                 "--------------------------------------------------"]
+        for it in items:
+            seq = it.get("序号", "")
+            model = (it.get("型号", "") or "")[:14]
+            qty = it.get("数量", "")
+            price = it.get("参考价", "")
             cond_parts = []
-            if item.get("拆封状态"):
-                cond_parts.append(item["拆封状态"])
-            if item.get("外盒状态"):
-                cond_parts.append("盒:" + item["外盒状态"].split("|")[0])
-            cond = "/".join(cond_parts)[:18]
-
-            line = f"{seq:<6}{model:<24}{qty:<6}{price:<10}{cond:<20}"
-            lines.append(line)
-
-        text = "\n".join(lines)
-        self.table_view.text = text
-        self.table_view.height = max(len(lines) * 18 + 20, self.height - 280)
+            if it.get("拆封状态"):
+                cond_parts.append(it["拆封状态"])
+            if it.get("外盒状态"):
+                cond_parts.append("盒:" + it["外盒状态"].split("|")[0])
+            cond = "/".join(cond_parts)[:16]
+            lines.append(f"{seq:<4}  {model:<20}  {qty:<4}  {price:<8}  {cond}")
+        self.table_view.text = "\n".join(lines)
 
     def layout(self):
-        self.scroll.frame = (10, 165, self.width - 20, self.height - 260)
-        self.table_view.frame = (0, 0, self.width - 20, self.table_view.height)
+        self.table_view.frame = (10, 165, self.width - 20, self.height - 260)
         self.btn_close.frame = (20, self.height - 80, self.width - 40, 44)
 
 
 # ============ 入口 ============
 def main():
+    print("=" * 40)
+    print("  玩具寄售清单 启动中...")
+    print("=" * 40)
     main_view = MainViewController()
     main_view.present(style='fullscreen', hide_title_bar=False,
                       title_bar_color='#007aff', title_color='white')
