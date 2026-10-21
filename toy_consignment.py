@@ -396,10 +396,12 @@ class MainViewController(ui.View):
         self.add_subview(self.list_name_label)
 
         self.btn_new_list = self.make_button("📋 新建清单", "#007aff", left_pad=False)
+        self.btn_new_list._label.text_alignment = ui.ALIGN_CENTER
         self.btn_new_list.action = self.on_new_list
         self.add_subview(self.btn_new_list)
 
         self.btn_open_list = self.make_button("📂 打开清单", "#007aff", left_pad=False)
+        self.btn_open_list._label.text_alignment = ui.ALIGN_CENTER
         self.btn_open_list.action = self.on_switch_list
         self.add_subview(self.btn_open_list)
 
