@@ -435,7 +435,7 @@ class MainViewController(ui.View):
         btn = ui.Button()
         if left_pad:
             # 前面加 4 个空格 → 文字起始位置约 3/10 处
-            btn.title = "    " + title
+            btn.title = "　　　　　" + title
         else:
             btn.title = title
         btn.font = ('Helvetica', 17)
