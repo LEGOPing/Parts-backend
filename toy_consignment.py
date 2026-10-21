@@ -14,10 +14,16 @@ import webbrowser
 from datetime import datetime
 
 # ============ 配置常量 ============
+# 主存储：JSON（天然支持数组字段、任意换行、key 契约不依赖列位置）
+JSON_FILENAME = "寄售清单.json"
+# 兼容：旧 CSV 只在迁移时读一次，之后不再写
 CSV_FILENAME = "寄售清单.csv"
 CONFIG_FILENAME = ".app_config.json"
 
-# 拆封状态（单选）
+# JSON 格式版本（未来升级时用来判断是否需要迁移）
+STORAGE_VERSION = 1
+
+# 单选 / 多选选项（不变）
 SEAL_OPTIONS = ["原封未拆", "已拆未砌", "已拆已砌"]
 
 # 外盒状态（多选）
@@ -63,8 +69,13 @@ def get_list_folder(list_name):
     return folder_path
 
 
+def get_json_path(list_name):
+    """获取 JSON 主存储文件完整路径"""
+    return os.path.join(get_list_folder(list_name), JSON_FILENAME)
+
+
 def get_csv_path(list_name):
-    """获取 CSV 文件完整路径"""
+    """获取 CSV 旧文件路径（仅迁移时用，之后不再读写）"""
     return os.path.join(get_list_folder(list_name), CSV_FILENAME)
 
 
@@ -95,44 +106,190 @@ def load_config():
     return {}
 
 
-# ============ CSV 读写（简化写法，确保 Pythonista 兼容） ============
-def _sanitize_field(val):
-    """把字段值里的换行符/CRLF 全部替换成空格 —— 防 CSV 字段被裸换行拆成多行
-    
-    Python 的 csv.writer 虽然会自动给含换行的字段加引号，但：
-    1. 用户可能用 iPhone 文件 App / Numbers 手动编辑 CSV，那些工具可能破坏引号
-    2. 历史坏数据（lineterminator='' 时期）可能已有残留
-    → 所以所有写入前主动清洗，从源头杜绝
+# ============ JSON 主存储层 ============
+# 数据契约：
+#   items 是 list[dict]，每条 dict 的字段：
+#     序号: int, 型号: str, 数量: int, 参考价: str
+#     拆封状态: str (单选)
+#     外盒状态/本体状态/配件状态: list[str] (多选数组)
+#     外盒其他/本体其他/配件其他: str
+#     其他瑕疵或说明: str (可含任意 \n)
+#     照片文件: list[str]
+#     录入时间: str "YYYY-MM-DD HH:MM:SS"
+#
+# JSON 文件整体结构：
+#   { "清单名": "...", "版本": 1, "items": [...] }
+
+def _str_to_list(s):
+    """CSV 字符串 → JSON 数组。兼容三种来源：
+    - None / 空 → []
+    - 已是 list → 过滤空后返回
+    - "a|b|c" → ["a","b","c"]
     """
-    if val is None:
-        return ''
-    s = str(val)
-    # 依次替换 \r\n → \n → \r → 空格
-    s = s.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-    return s.strip()
+    if isinstance(s, list):
+        return [str(x).strip() for x in s if str(x).strip()]
+    if not s:
+        return []
+    parts = [p.strip() for p in str(s).split("|") if p.strip()]
+    return parts
 
 
-def init_csv(list_name):
-    """初始化 CSV 文件（用 utf-8-sig 自动处理 BOM）"""
+def _int_or_zero(v):
+    """安全转 int，转不了返回 0"""
+    try:
+        return int(str(v).strip())
+    except (ValueError, TypeError):
+        return 0
+
+
+def _item_from_csv_row(row):
+    """把 CSV 的一行 dict 转成 JSON 的一条 item dict。
+    row 来自 csv.DictReader，字段值全是 str。"""
+    return {
+        "序号": _int_or_zero(row.get("序号")),
+        "型号": str(row.get("型号", "")).strip(),
+        "数量": _int_or_zero(row.get("数量", "1")) or 1,
+        "参考价": str(row.get("参考价", "")).strip(),
+        "拆封状态": str(row.get("拆封状态", "")).strip(),
+        "外盒状态": _str_to_list(row.get("外盒状态")),
+        "外盒其他": str(row.get("外盒其他", "")).strip(),
+        "本体状态": _str_to_list(row.get("本体状态")),
+        "本体其他": str(row.get("本体其他", "")).strip(),
+        "配件状态": _str_to_list(row.get("配件状态")),
+        "配件其他": str(row.get("配件其他", "")).strip(),
+        "其他瑕疵或说明": str(row.get("其他瑕疵或说明", "")).strip(),
+        "照片文件": _str_to_list(row.get("照片文件")),
+        "录入时间": str(row.get("录入时间", "")).strip(),
+    }
+
+
+def _item_from_form(form_data):
+    """把表单 collect_condition_data() 拼出来的 dict 转成标准 JSON item。
+    form_data 里多选字段已经是 list[str]（InputForm 已改）。"""
+    return {
+        "序号": _int_or_zero(form_data.get("序号")),
+        "型号": str(form_data.get("型号", "")).strip(),
+        "数量": _int_or_zero(form_data.get("数量", "1")) or 1,
+        "参考价": str(form_data.get("参考价", "")).strip(),
+        "拆封状态": str(form_data.get("拆封状态", "")).strip(),
+        "外盒状态": _str_to_list(form_data.get("外盒状态")),
+        "外盒其他": str(form_data.get("外盒其他", "")).strip(),
+        "本体状态": _str_to_list(form_data.get("本体状态")),
+        "本体其他": str(form_data.get("本体其他", "")).strip(),
+        "配件状态": _str_to_list(form_data.get("配件状态")),
+        "配件其他": str(form_data.get("配件其他", "")).strip(),
+        "其他瑕疵或说明": str(form_data.get("其他瑕疵或说明", "")).strip(),
+        "照片文件": _str_to_list(form_data.get("照片文件")),
+        "录入时间": str(form_data.get("录入时间", "")).strip(),
+    }
+
+
+def _save_json(list_name, items):
+    """写 JSON 文件（原子写：先 .tmp 再 replace，防中途断电坏文件）"""
+    json_path = get_json_path(list_name)
+    data = {
+        "清单名": list_name,
+        "版本": STORAGE_VERSION,
+        "items": items,
+    }
+    tmp = json_path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, json_path)
+    print(f"[JSON] ✅ 已保存 {len(items)} 条 → {json_path}")
+
+
+def _load_json(list_name):
+    """读 JSON 文件，返回 items 列表。文件不存在或损坏返回 None。"""
+    json_path = get_json_path(list_name)
+    if not os.path.exists(json_path):
+        return None
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        items = data.get("items", [])
+        print(f"[JSON] 读入 {len(items)} 条 ← {json_path}")
+        return items
+    except Exception as e:
+        print(f"[JSON] ❌ 读取失败: {e}")
+        import traceback; traceback.print_exc()
+        return None
+
+
+def _migrate_csv_to_json(list_name):
+    """旧 CSV 自动迁移 → JSON。只在 init_json 时发现 JSON 不存在但 CSV 存在时触发。
+    
+    流程：
+    1. 先调用 CSV 修复函数（处理历史坏数据）
+    2. 用 csv.DictReader 读
+    3. 每行转成 JSON item（多选字段从 "a|b" → ["a","b"]）
+    4. 写 JSON，CSV 留着不删（用户备份用）
+    """
     csv_path = get_csv_path(list_name)
-    print(f"[CSV] 初始化检查: {csv_path}")
     if not os.path.exists(csv_path):
-        print(f"[CSV] 文件不存在，创建...")
-        headers = [
-            "序号", "型号", "数量", "参考价",
-            "拆封状态", "外盒状态", "外盒其他",
-            "本体状态", "本体其他",
-            "配件状态", "配件其他",
-            "其他瑕疵或说明", "照片文件", "录入时间"
-        ]
-        try:
-            with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
-                writer = csv.writer(f, lineterminator='\n')
-                writer.writerow(headers)
-            print(f"[CSV] 初始化成功")
-        except Exception as e:
-            print(f"[CSV] 初始化失败: {e}")
-            dialogs.alert("CSV 初始化失败", str(e))
+        print(f"[迁移] 没有旧 CSV，跳过")
+        return None
+
+    print(f"[迁移] 发现旧 CSV → 尝试迁移")
+    
+    # 先跑两层 CSV 修复（以防坏数据）
+    _try_fix_broken_csv(csv_path, CSV_HEADERS)
+    _fix_misaligned_rows(csv_path, CSV_HEADERS)
+
+    # 读修复后的 CSV
+    items = []
+    try:
+        with open(csv_path, 'r', encoding='utf-8-sig') as f:
+            for row in csv.DictReader(f):
+                cleaned = {k.lstrip('\ufeff') if k else k: v for k, v in row.items()}
+                items.append(_item_from_csv_row(cleaned))
+    except Exception as e:
+        print(f"[迁移] ❌ 读 CSV 失败: {e}")
+        import traceback; traceback.print_exc()
+        return None
+
+    if not items:
+        print(f"[迁移] CSV 里是空的，不写 JSON")
+        return None
+
+    # 写 JSON
+    _save_json(list_name, items)
+    print(f"[迁移] ✅ {len(items)} 条已从 CSV 迁到 JSON（旧 CSV 保留未删除）")
+    return items
+
+
+def init_json(list_name):
+    """初始化 JSON 主存储文件。
+    - JSON 已存在 → 直接返回路径
+    - JSON 不存在但 CSV 存在 → 自动迁移
+    - 都不存在 → 新建空 JSON
+    """
+    json_path = get_json_path(list_name)
+    
+    if os.path.exists(json_path):
+        print(f"[JSON] 已存在 → {json_path}")
+        return json_path
+    
+    # 尝试迁移旧 CSV
+    migrated = _migrate_csv_to_json(list_name)
+    if migrated is not None:
+        return json_path  # 迁移时已经写好了
+    
+    # 全新清单
+    _save_json(list_name, [])
+    return json_path
+
+
+# ============ 兼容层：保留旧 CSV 初始化函数（迁移时会被上面调用） ============
+# 下面两个函数只在迁移 / 极端兜底时用，正常运行不再调用
+def _legacy_init_csv(list_name):
+    """仅用于迁移时确保 CSV 文件存在（可能已被上面的修复函数处理）"""
+    csv_path = get_csv_path(list_name)
+    if not os.path.exists(csv_path):
+        headers = CSV_HEADERS
+        with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+            w = csv.writer(f, lineterminator='\n')
+            w.writerow(headers)
     return csv_path
 
 
@@ -348,81 +505,41 @@ def _fix_misaligned_rows(csv_path, headers):
 
 
 def read_all_items(list_name):
-    import re
-    csv_path = get_csv_path(list_name)
-    items = []
-    print(f"[读CSV] list='{list_name}', path='{csv_path}', 存在={os.path.exists(csv_path)}")
-    if os.path.exists(csv_path):
-        try:
-            # ========== 第一层修复：完全无换行（老问题） ==========
-            _try_fix_broken_csv(csv_path, CSV_HEADERS)
+    """读清单。优先走 JSON 主存储；JSON 不存在自动从旧 CSV 迁移。
+    返回 list[dict]，每条 dict 的多选字段都是 list[str]（不是 CSV 的 "a|b" 字符串）。
+    """
+    # 触发迁移（JSON 不存在但 CSV 存在时自动迁）
+    init_json(list_name)
 
-            # ========== 先正常读，做诊断检查 ==========
-            n_cols = len(CSV_HEADERS)
-            
-            # 用 csv.reader 读（DictReader 会自动跳过表头）
-            with open(csv_path, 'r', encoding='utf-8-sig') as f:
-                all_raw_rows = list(csv.reader(f))
-            
-            header_row = all_raw_rows[0] if all_raw_rows else []
-            data_rows = all_raw_rows[1:] if len(all_raw_rows) > 1 else []
-            
-            # 诊断：
-            # 1) 是否每个 header 行都是 n_cols 列？
-            col_inconsistent = any(len(r) != n_cols for r in data_rows)
-            
-            # 2) 序号列是否异常？（序号搞反、非递增、大数字出现在序号列）
-            seq_anomaly = False
-            seqs = []
-            for r in data_rows[:5]:
-                if not r:
-                    continue
-                seq = str(r[0]).strip() if len(r) > 0 else ''
-                model = str(r[1]).strip() if len(r) > 1 else ''
-                seqs.append(seq)
-                # 序号 > 1000 且型号 < 1000 → 搞反
-                if seq.isdigit() and model.isdigit() and int(seq) > 1000 and int(model) < 1000:
-                    seq_anomaly = True
-                # 录入时间格式异常
-                ts = str(r[-1]).strip() if r else ''
-                if ts and not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$', ts):
-                    seq_anomaly = True
-            
-            # 3) 序号非递增
-            numeric_seqs = [int(s) for s in seqs if s.isdigit()]
-            if len(numeric_seqs) >= 3:
-                for i in range(len(numeric_seqs) - 1):
-                    if numeric_seqs[i] > numeric_seqs[i + 1] * 2 and numeric_seqs[i] > 100:
-                        seq_anomaly = True
-                        break
-
-            need_fix = col_inconsistent or seq_anomaly
-            
-            if need_fix:
-                print(f"[读CSV] 需要修复: 列不一致={col_inconsistent}, 序号异常={seq_anomaly}")
-                print(f"[读CSV] csv.reader 产出 {len(data_rows)} 行, 每行: {[len(r) for r in data_rows[:10]]}")
-                _fix_misaligned_rows(csv_path, CSV_HEADERS)
-            else:
-                print(f"[读CSV] ✅ CSV 结构正常: {len(data_rows)} 行 × {n_cols} 列")
-
-            # ========== 正常读取 ==========
-            items = []
-            with open(csv_path, 'r', encoding='utf-8-sig') as f:
-                for row in csv.DictReader(f):
-                    cleaned = {}
-                    for k, v in row.items():
-                        k = k.lstrip('\ufeff') if k else k
-                        cleaned[k] = v if v else ''
-                    items.append(cleaned)
-            
-            print(f"[读CSV] 最终解析 {len(items)} 条有效记录")
-        except Exception as e:
-            print(f"读取 CSV 失败: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print(f"[读CSV] ❌ 文件不存在！")
-    return items
+    items = _load_json(list_name)
+    if items is None:
+        print(f"[读JSON] ❌ 文件不存在或损坏，返回空列表")
+        items = []
+    
+    # 保险：每条都强制标准化（防损坏/老版本字段）
+    normalized = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        normalized.append({
+            "序号": _int_or_zero(it.get("序号")),
+            "型号": str(it.get("型号", "")).strip(),
+            "数量": _int_or_zero(it.get("数量", "1")) or 1,
+            "参考价": str(it.get("参考价", "")).strip(),
+            "拆封状态": str(it.get("拆封状态", "")).strip(),
+            "外盒状态": _str_to_list(it.get("外盒状态")),
+            "外盒其他": str(it.get("外盒其他", "")).strip(),
+            "本体状态": _str_to_list(it.get("本体状态")),
+            "本体其他": str(it.get("本体其他", "")).strip(),
+            "配件状态": _str_to_list(it.get("配件状态")),
+            "配件其他": str(it.get("配件其他", "")).strip(),
+            "其他瑕疵或说明": str(it.get("其他瑕疵或说明", "")).strip(),
+            "照片文件": _str_to_list(it.get("照片文件")),
+            "录入时间": str(it.get("录入时间", "")).strip(),
+        })
+    
+    print(f"[读JSON] ✅ {len(normalized)} 条有效记录")
+    return normalized
 
 
 def get_next_sequence(list_name):
@@ -431,60 +548,38 @@ def get_next_sequence(list_name):
         return 1
     max_seq = 0
     for item in items:
-        try:
-            seq = int(item.get("序号", 0))
-            if seq > max_seq:
-                max_seq = seq
-        except (ValueError, TypeError):
-            pass
+        seq = _int_or_zero(item.get("序号"))
+        if seq > max_seq:
+            max_seq = seq
     return max_seq + 1
 
 
 def check_duplicate_seq(list_name, seq_num):
+    target = _int_or_zero(seq_num)
     items = read_all_items(list_name)
-    for item in items:
-        try:
-            if int(item.get("序号", 0)) == int(seq_num):
-                return True
-        except (ValueError, TypeError):
-            pass
-    return False
+    return any(_int_or_zero(it.get("序号")) == target for it in items)
 
 
 def append_item_to_csv(list_name, item_data):
-    """追加一条记录到 CSV（简单 open-write 方式，避免 Pythonista newline 兼容问题）"""
-    csv_path = init_csv(list_name)
-    print(f"[保存] 追加到: {csv_path}")
-    print(f"[保存] 数据: {item_data}")
-    try:
-        row = [
-            _sanitize_field(item_data.get("序号", "")),
-            _sanitize_field(item_data.get("型号", "")),
-            _sanitize_field(item_data.get("数量", "")),
-            _sanitize_field(item_data.get("参考价", "")),
-            _sanitize_field(item_data.get("拆封状态", "")),
-            _sanitize_field(item_data.get("外盒状态", "")),
-            _sanitize_field(item_data.get("外盒其他", "")),
-            _sanitize_field(item_data.get("本体状态", "")),
-            _sanitize_field(item_data.get("本体其他", "")),
-            _sanitize_field(item_data.get("配件状态", "")),
-            _sanitize_field(item_data.get("配件其他", "")),
-            _sanitize_field(item_data.get("其他瑕疵或说明", "")),
-            _sanitize_field(item_data.get("照片文件", "")),
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ]
-        # 用 open + csv.writer 方式
-        with open(csv_path, 'a', encoding='utf-8') as f:
-            writer = csv.writer(f, lineterminator='\n')
-            writer.writerow(row)   # ← 只写一次！（之前误写了两次导致 CSV 里每条记录重复）
-        print("[保存] ✅ 成功")
-    except Exception as e:
-        print(f"[保存] ❌ 失败: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+    """追加一条新记录到 JSON。item_data 是 InputForm.collect_condition_data() 的结果。"""
+    # 初始化 + 自动迁移
+    init_json(list_name)
+    
+    items = read_all_items(list_name)
+    
+    # 构建标准 item
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    item = _item_from_form(item_data)
+    if not item.get("录入时间"):
+        item["录入时间"] = now_str
+    
+    items.append(item)
+    _save_json(list_name, items)
+    print(f"[保存] ✅ 已追加 序={item['序号']} 型={item['型号']}")
+    return True
 
 
+# CSV_HEADERS 常量保留 —— 迁移函数 _try_fix_broken_csv 和 _fix_misaligned_rows 用
 CSV_HEADERS = [
     "序号", "型号", "数量", "参考价",
     "拆封状态", "外盒状态", "外盒其他",
@@ -495,37 +590,28 @@ CSV_HEADERS = [
 
 
 def update_item_in_csv(list_name, seq, item_data):
-    """按序号更新 CSV 中已有的行"""
-    csv_path = init_csv(list_name)
-    rows = []
+    """按序号更新 JSON 中已有的记录。函数名保留旧名只是为了 InputForm.on_save 调用不变。"""
+    init_json(list_name)
+    target_seq = _int_or_zero(seq)
+    items = read_all_items(list_name)
     found = False
-    with open(csv_path, 'r', encoding='utf-8-sig') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                if str(row.get("序号", "")) == str(seq):
-                    # 更新这一行 —— 每个字段用 _sanitize_field 清洗
-                    new_row = {h: _sanitize_field(item_data.get(h, row.get(h, ""))) for h in CSV_HEADERS}
-                    if not new_row.get("录入时间"):
-                        new_row["录入时间"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    rows.append(new_row)
-                    found = True
-                else:
-                    # 旧行也要清洗（防止历史坏数据残留）
-                    rows.append({h: _sanitize_field(row.get(h, "")) for h in CSV_HEADERS})
-            except Exception as e:
-                print(f"[更新] 跳过一行: {e}")
-                rows.append(row)
+    
+    for i, it in enumerate(items):
+        if _int_or_zero(it.get("序号")) == target_seq:
+            # 用表单数据覆盖
+            new_item = _item_from_form(item_data)
+            # 保留原有录入时间（如果表单没给新的）
+            if not new_item.get("录入时间"):
+                new_item["录入时间"] = it.get("录入时间") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            items[i] = new_item
+            found = True
+            break
+    
     if not found:
+        print(f"[更新] ❌ 没找到序号 {seq}")
         return False
-    # 重写 CSV
-    tmp_path = csv_path + '.tmp'
-    with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
-        writer.writeheader()
-        for r in rows:
-            writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
-    os.replace(tmp_path, csv_path)
+    
+    _save_json(list_name, items)
     print(f"[更新] ✅ 序号 {seq} 已更新")
     return True
 
@@ -623,9 +709,9 @@ def take_photos(list_name, seq, model):
 
 
 def sort_items_by_model(list_name):
-    """按型号自然排序，重编序号，写回 CSV"""
+    """按型号自然排序，重编序号，写回 JSON"""
     import re
-    csv_path = init_csv(list_name)
+    init_json(list_name)
     items = read_all_items(list_name)
     if len(items) < 2:
         return 0  # 无需排序
@@ -638,18 +724,11 @@ def sort_items_by_model(list_name):
 
     items.sort(key=lambda r: natural_key(r.get("型号", "")))
 
-    # 重编序号
+    # 重编序号（int 类型）
     for i, row in enumerate(items, 1):
-        row["序号"] = str(i)
+        row["序号"] = i
 
-    # 写回 CSV（带 BOM + 全部字段清洗）
-    with open(csv_path, 'w', encoding='utf-8') as f:
-        f.write('\ufeff')
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
-        writer.writeheader()
-        for row in items:
-            writer.writerow({h: _sanitize_field(row.get(h, "")) for h in CSV_HEADERS})
-
+    _save_json(list_name, items)
     print(f"[排序] ✅ 按型号排序完成，共 {len(items)} 项，序号重编为 1..{len(items)}")
     return len(items)
 
@@ -806,7 +885,7 @@ class MainViewController(ui.View):
     def update_info(self):
         if self.current_list_name:
             folder = get_list_folder(self.current_list_name)
-            csv_path = get_csv_path(self.current_list_name)
+            json_path = get_json_path(self.current_list_name)
             items = read_all_items(self.current_list_name)
             self.list_name_label.text = f"当前清单：{self.current_list_name}"
             # 显示详细状态和路径
@@ -814,7 +893,7 @@ class MainViewController(ui.View):
             folder_short = folder.replace(base, "~")
             self.stats_label.text = (
                 f"📂 共 {len(items)} 项\n"
-                f"📄 {folder_short}/寄售清单.csv\n"
+                f"📄 {folder_short}/寄售清单.json\n"
                 f"📸 {folder_short}/\n\n"
                 f"完整路径: {folder}"
             )
@@ -843,9 +922,9 @@ class MainViewController(ui.View):
             folder = get_list_folder(list_name)
             print(f"[新建] 文件夹: {folder}, 存在: {os.path.exists(folder)}")
 
-            # 创建 CSV
-            csv_path = init_csv(list_name)
-            print(f"[新建] CSV: {csv_path}, 存在: {os.path.exists(csv_path)}")
+            # 创建 JSON 存储（空文件）
+            json_path = init_json(list_name)
+            print(f"[新建] JSON: {json_path}, 存在: {os.path.exists(json_path)}")
 
             save_config({"last_list": list_name})
             self.update_info()
@@ -919,11 +998,30 @@ class MainViewController(ui.View):
         except Exception:
             _share = None
         if "CSV" in choice:
-            csv_path = get_csv_path(self.current_list_name)
-            if os.path.exists(csv_path):
-                _share.share_file(csv_path) if _share else dialogs.alert("CSV 位置", csv_path)
-            else:
-                dialogs.alert("提示", "清单文件不存在")
+            # 从 JSON items 生成一个临时 CSV 文件再分享
+            csv_path = os.path.join(folder, safe + '_清单.csv')
+            with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+                w = csv.writer(f, lineterminator='\n')
+                w.writerow(CSV_HEADERS)
+                for it in items:
+                    row = [
+                        it.get("序号", ""),
+                        it.get("型号", ""),
+                        it.get("数量", ""),
+                        it.get("参考价", ""),
+                        it.get("拆封状态", ""),
+                        "|".join(_str_to_list(it.get("外盒状态"))),
+                        it.get("外盒其他", ""),
+                        "|".join(_str_to_list(it.get("本体状态"))),
+                        it.get("本体其他", ""),
+                        "|".join(_str_to_list(it.get("配件状态"))),
+                        it.get("配件其他", ""),
+                        it.get("其他瑕疵或说明", ""),
+                        ";".join(_str_to_list(it.get("照片文件"))),
+                        it.get("录入时间", ""),
+                    ]
+                    w.writerow(row)
+            _share.share_file(csv_path) if _share else dialogs.alert("CSV 已生成", csv_path)
         elif "Word" in choice:
             self._export_rtf(folder, safe, items, _share)
         elif "PDF" in choice:
@@ -942,7 +1040,7 @@ class MainViewController(ui.View):
             dialogs.alert("提示", "请先选择清单")
             return
         folder = get_list_folder(self.current_list_name)
-        csv_path = get_csv_path(self.current_list_name)
+        json_path = get_json_path(self.current_list_name)
         list_name = self.current_list_name  # e.g. "例如：2026年10月寄售"
         # 路径缩短: /private/var/...  →  ~/Documents/玩具寄售/例如：2026年10月寄售
         short_folder = folder.replace(os.path.expanduser("~"), "~")
@@ -961,6 +1059,9 @@ class MainViewController(ui.View):
                 prefix = list_name + "_"
                 if display.startswith(prefix):
                     display = display[len(prefix):]
+                # 主存储的 .json 显示在上面，不放到 exports 分组
+                if display == JSON_FILENAME:
+                    continue
                 if ext in ('.csv', '.rtf', '.pdf', '.html', '.htm', '.doc', '.docx'):
                     exports.append(f"  {display}  ({size})")
                 elif ext in ('.jpg', '.jpeg', '.png', '.heic', '.gif'):
@@ -973,7 +1074,7 @@ class MainViewController(ui.View):
         parts = []
         parts.append(f"📁 {short_folder}")
         parts.append(f"")
-        parts.append(f"📄 CSV 清单：{'✅' if os.path.exists(csv_path) else '❌'}")
+        parts.append(f"📄 JSON 主存储：{'✅' if os.path.exists(json_path) else '❌'}")
         if exports:
             parts.append(f"")
             parts.append(f"📊 导出文件 ({len(exports)}):")
@@ -1069,8 +1170,8 @@ class MainViewController(ui.View):
         for it in items:
             cp = []
             if it.get("拆封状态"): cp.append(it["拆封状态"])
-            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
-            if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
+            if it.get("外盒状态"): cp.append("盒:"+"、".join(_str_to_list(it.get("外盒状态"))))
+            if it.get("本体状态"): cp.append("本:"+"、".join(_str_to_list(it.get("本体状态"))))
             cond = " ".join(cp)
             R.append('\\ql ' + str(it.get("序号","")) + '\\cell')
             R.append('\\ql ' + str(it.get("型号","")) + '\\cell')
@@ -1106,8 +1207,8 @@ class MainViewController(ui.View):
         for it in items:
             cp = []
             if it.get("拆封状态"): cp.append(it["拆封状态"])
-            if it.get("外盒状态"): cp.append("盒:" + it["外盒状态"].replace("|", "、"))
-            if it.get("本体状态"): cp.append("本:" + it["本体状态"].replace("|", "、"))
+            if it.get("外盒状态"): cp.append("盒:" + "、".join(_str_to_list(it.get("外盒状态"))))
+            if it.get("本体状态"): cp.append("本:" + "、".join(_str_to_list(it.get("本体状态"))))
             cond = " ".join(cp)
             th += (
                 f'<tr>'
@@ -1302,8 +1403,8 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         for it in items:
             cp = []
             if it.get("拆封状态"): cp.append(it["拆封状态"])
-            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
-            if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
+            if it.get("外盒状态"): cp.append("盒:"+"、".join(_str_to_list(it.get("外盒状态"))))
+            if it.get("本体状态"): cp.append("本:"+"、".join(_str_to_list(it.get("本体状态"))))
             cond = " ".join(cp)
             data.append([
                 Paragraph(str(it.get("序号","")), num_style),
@@ -1827,28 +1928,28 @@ class InputForm(ui.View):
         else:
             self.seal_seg.selected_index = 0
 
-        # 外盒多选
-        box = set(item.get("外盒状态", "").split("|"))
+        # 外盒多选 —— JSON 里已经是 list，直接转 set
+        box = set(_str_to_list(item.get("外盒状态")))
         for opt, cb in self.box_checks:
             cb.title = "☑" if opt in box else "☐"
         self.txt_box_other.text = item.get("外盒其他", "")
 
         # 本体多选
-        itm = set(item.get("本体状态", "").split("|"))
+        itm = set(_str_to_list(item.get("本体状态")))
         for opt, cb in self.item_checks:
             cb.title = "☑" if opt in itm else "☐"
         self.txt_item_other.text = item.get("本体其他", "")
 
         # 配件多选
-        acc = set(item.get("配件状态", "").split("|"))
+        acc = set(_str_to_list(item.get("配件状态")))
         for opt, cb in self.acc_checks:
             cb.title = "☑" if opt in acc else "☐"
         self.txt_acc_other.text = item.get("配件其他", "")
 
         self.txt_other.text = item.get("其他瑕疵或说明", "")
 
-        # 图片
-        self.photo_files = [f for f in item.get("照片文件", "").split(";") if f]
+        # 照片 —— JSON 里也是 list
+        self.photo_files = _str_to_list(item.get("照片文件"))
         self.lbl_photo_count.text = f"{len(self.photo_files)}张" if self.photo_files else ""
         self.lbl_photo_count.text_color = '#34c759' if self.photo_files else '#666'
 
@@ -1910,11 +2011,12 @@ class InputForm(ui.View):
         model = self.txt_model.text.strip()
         if not seq or not model:
             return  # 不完整的表单不同步
-        items_data["序号"] = seq
+        items_data["序号"] = _int_or_zero(seq)
         items_data["型号"] = model
-        items_data["数量"] = self.txt_qty.text.strip() or "1"
+        items_data["数量"] = _int_or_zero(self.txt_qty.text.strip() or "1") or 1
         items_data["参考价"] = self.txt_price.text.strip()
-        items_data["照片文件"] = ";".join(self.photo_files)
+        # JSON 里照片文件是 list
+        items_data["照片文件"] = list(self.photo_files)
         self.items[self.current_idx] = items_data
 
     # ========= 拍照 =========
@@ -1945,11 +2047,12 @@ class InputForm(ui.View):
         si = self.seal_seg.selected_index
         if 0 <= si < len(SEAL_OPTIONS):
             data["拆封状态"] = SEAL_OPTIONS[si]
-        data["外盒状态"] = "|".join(o for o, b in self.box_checks if is_checked(b))
+        # 多选字段 → 直接用 list（JSON 原生数组，不用 | 分隔字符串）
+        data["外盒状态"] = [o for o, b in self.box_checks if is_checked(b)]
         data["外盒其他"] = self.txt_box_other.text.strip()
-        data["本体状态"] = "|".join(o for o, b in self.item_checks if is_checked(b))
+        data["本体状态"] = [o for o, b in self.item_checks if is_checked(b)]
         data["本体其他"] = self.txt_item_other.text.strip()
-        data["配件状态"] = "|".join(o for o, b in self.acc_checks if is_checked(b))
+        data["配件状态"] = [o for o, b in self.acc_checks if is_checked(b)]
         data["配件其他"] = self.txt_acc_other.text.strip()
         data["其他瑕疵或说明"] = self.txt_other.text.strip()
         return data
@@ -1970,7 +2073,8 @@ class InputForm(ui.View):
 
         item_data = {"序号": seq, "型号": model, "数量": qty, "参考价": price}
         item_data.update(self.collect_condition_data())
-        item_data["照片文件"] = ";".join(self.photo_files)
+        # JSON 里照片文件是 list
+        item_data["照片文件"] = list(self.photo_files)
 
         editing = self.current_idx >= 0
         if editing:
@@ -2025,21 +2129,13 @@ class InputForm(ui.View):
             self.parent_controller.update_info()
 
     def _delete_item_from_csv(self, seq):
-        """从 CSV 删掉序号为 seq 的行"""
-        csv_path = get_csv_path(self.list_name)
-        rows = []
-        with open(csv_path, 'r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if str(row.get("序号", "")) != str(seq):
-                    rows.append({h: _sanitize_field(row.get(h, "")) for h in CSV_HEADERS})
-        tmp_path = csv_path + '.tmp'
-        with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
-            writer.writeheader()
-            for r in rows:
-                writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
-        os.replace(tmp_path, csv_path)
+        """从 JSON 删掉序号为 seq 的记录。函数名保留旧名兼容 on_save 调用。"""
+        init_json(self.list_name)
+        target = _int_or_zero(seq)
+        items = read_all_items(self.list_name)
+        items = [it for it in items if _int_or_zero(it.get("序号")) != target]
+        _save_json(self.list_name, items)
+        print(f"[删除] ✅ 序号 {seq} 已删除")
 
     def on_cancel(self, sender):
         self.close()
@@ -2108,11 +2204,11 @@ class ListViewer(ui.View):
             if it.get("拆封状态"):
                 cond_parts.append(it["拆封状态"])
             if it.get("外盒状态"):
-                cond_parts.append("盒:" + it["外盒状态"].replace("|", "、"))
+                cond_parts.append("盒:" + "、".join(_str_to_list(it.get("外盒状态"))))
             if it.get("本体状态"):
-                cond_parts.append("本:" + it["本体状态"].replace("|", "、"))
+                cond_parts.append("本:" + "、".join(_str_to_list(it.get("本体状态"))))
             if it.get("配件状态"):
-                cond_parts.append("配:" + it["配件状态"].replace("|", "、"))
+                cond_parts.append("配:" + "、".join(_str_to_list(it.get("配件状态"))))
             cond = " ".join(cond_parts) or "—"
 
             bg = '#fafafa' if idx % 2 else '#ffffff'
