@@ -1584,6 +1584,7 @@ class InputForm(ui.View):
 
 
 class ListViewer(ui.View):
+    """清单预览 — HTML 表格 + WebView（跟 PDF 导出一致）"""
 
     @classmethod
     def open(cls, list_name):
@@ -1594,15 +1595,12 @@ class ListViewer(ui.View):
         super().__init__()
         self.list_name = list_name
         self.background_color = 'white'
-        w = self.width
 
-        # 前 3 行：全宽 frame (x=0)
         self.title_label = ui.Label()
         self.title_label.text = "附件：寄售玩具清单"
         self.title_label.font = ('Helvetica-Bold', 16)
         self.title_label.text_alignment = ui.ALIGN_CENTER
         self.title_label.text_color = 'black'
-        self.title_label.frame = (0, 80, w, 24)
         self.add_subview(self.title_label)
 
         self.subtitle_label = ui.Label()
@@ -1610,110 +1608,103 @@ class ListViewer(ui.View):
         self.subtitle_label.font = ('Helvetica', 10)
         self.subtitle_label.text_alignment = ui.ALIGN_CENTER
         self.subtitle_label.text_color = '#666'
-        self.subtitle_label.frame = (0, 108, w, 18)
         self.add_subview(self.subtitle_label)
 
         self.list_name_label = ui.Label()
-        self.list_name_label.text = f"清单：{list_name}"
+        self.list_name_label.text = "清单：" + list_name
         self.list_name_label.font = ('Helvetica-Bold', 14)
         self.list_name_label.text_alignment = ui.ALIGN_CENTER
         self.list_name_label.text_color = '#007aff'
-        self.list_name_label.frame = (0, 132, w, 22)
         self.add_subview(self.list_name_label)
 
-        self.table_view = ui.TextView()
-        self.table_view.frame = (10, 162, w - 20, self.height - 260)
-        self.table_view.font = ('Menlo', 10)
-        self.table_view.editable = False
-        self.table_view.background_color = '#f9f9f9'
-        self.table_view.text = "加载中..."
-        self.add_subview(self.table_view)
+        self.webview = ui.WebView()
+        self.webview.background_color = 'white'
+        self.add_subview(self.webview)
 
         self.btn_close = ui.Button()
         self.btn_close.title = "返回"
         self.btn_close.font = ('Helvetica', 15)
         self.btn_close.tint_color = '#007aff'
-        self.btn_close.frame = (20, self.height - 80, w - 40, 44)
         self.btn_close.action = lambda s: self.close()
         self.add_subview(self.btn_close)
 
         self.load_data()
 
-    def _fmt_cell(self, s, width, align='center'):
-        """按显示宽度（中文=2 英文=1）+ 对齐方式格式化"""
-        s = str(s or "")
-        w = 0; out = ""
-        for ch in s:
-            cw = 2 if ord(ch) > 127 else 1
-            if w + cw > width:
-                break
-            out += ch; w += cw
-        pad = width - w
-        if align == 'center':
-            left = pad // 2; right = pad - left
-            return (" " * left) + out + (" " * right)
-        elif align == 'right':
-            return (" " * pad) + out
-        else:
-            return out + (" " * pad)
-
-    def load_data(self):
+    def _build_html(self):
+        import html as _hm
         items = read_all_items(self.list_name)
-        # 列宽（Menlo 11pt ≈ 6.6pt/字符，屏幕可用 ~370pt → 总 ≤56 字符）
-        # 序号=5 型号=18 数量=5 参考价=8 盒况=17  合计=53 + 4分隔=57
-        W_SEQ, W_MODEL, W_QTY, W_PRICE, W_COND = 5, 18, 5, 8, 17
-        sep = "─" * (W_SEQ + W_MODEL + W_QTY + W_PRICE + W_COND + 4)
-        # 表头：标题全居中
-        header = (
-            self._fmt_cell("序号", W_SEQ, 'center') + "│" +
-            self._fmt_cell("型号", W_MODEL, 'center') + "│" +
-            self._fmt_cell("数量", W_QTY, 'center') + "│" +
-            self._fmt_cell("参考价", W_PRICE, 'center') + "│" +
-            self._fmt_cell("盒况备注", W_COND, 'center')
+
+        # 列宽百分比：盒况给最多空间（36%）
+        colgroup = (
+            '<colgroup>'
+            '<col style="width:8%">'
+            '<col style="width:30%">'
+            '<col style="width:10%">'
+            '<col style="width:16%">'
+            '<col style="width:36%">'
+            '</colgroup>'
         )
-        lines = [sep, header, sep]
-        for it in items:
+
+        thead = (
+            '<thead><tr>'
+            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">序号</th>'
+            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">型号</th>'
+            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">数量</th>'
+            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">参考价</th>'
+            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">盒况备注</th>'
+            '</tr></thead>'
+        )
+
+        rows_html = []
+        for idx, it in enumerate(items):
             cond_parts = []
             if it.get("拆封状态"):
-                cond_parts.append(it["拆封状态"][:4])   # 截断过长的拆封状态
+                cond_parts.append(it["拆封状态"])
             if it.get("外盒状态"):
-                box = it["外盒状态"].replace("|", "、")
-                cond_parts.append("盒:" + box[:6])
+                cond_parts.append("盒:" + it["外盒状态"].replace("|", "、"))
             if it.get("本体状态"):
-                body = it["本体状态"].replace("|", "、")
-                cond_parts.append("本:" + body[:6])
-            cond = "·".join(cond_parts)   # 用中点 · 分隔比空格省位置
+                cond_parts.append("本:" + it["本体状态"].replace("|", "、"))
+            if it.get("配件状态"):
+                cond_parts.append("配:" + it["配件状态"].replace("|", "、"))
+            cond = " ".join(cond_parts) or "—"
+
+            bg = '#fafafa' if idx % 2 else '#ffffff'
             row = (
-                self._fmt_cell(it.get("序号",""), W_SEQ, 'center') + "│" +
-                self._fmt_cell(it.get("型号",""), W_MODEL, 'center') + "│" +
-                self._fmt_cell(it.get("数量",""), W_QTY, 'center') + "│" +
-                self._fmt_cell(it.get("参考价",""), W_PRICE, 'right') + "│" +
-                self._fmt_cell(cond, W_COND, 'left')
+                '<tr style="background:' + bg + '">'
+                '<td style="text-align:center;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("序号",""))) + '</td>'
+                '<td style="text-align:center;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("型号",""))) + '</td>'
+                '<td style="text-align:center;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("数量",""))) + '</td>'
+                '<td style="text-align:right;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("参考价",""))) + '</td>'
+                '<td style="text-align:left;padding:6px 4px;border-bottom:1px solid #ddd;word-break:break-all;">' + _hm.escape(cond) + '</td>'
+                '</tr>'
             )
-            lines.append(row)
-        lines.append(sep)
-        if not items:
-            self.table_view.text = sep + "\n" + header + "\n" + sep + "\n（暂无记录）"
+            rows_html.append(row)
+
+        if rows_html:
+            tbody = '<tbody>' + ''.join(rows_html) + '</tbody>'
         else:
-            self.table_view.text = "\n".join(lines)
+            tbody = '<tbody><tr><td colspan="5" style="text-align:center;padding:40px;color:#999;">（暂无记录）</td></tr></tbody>'
+
+        html_doc = (
+            '<!DOCTYPE html><html><head><meta charset="utf-8">'
+            '<style>'
+            'body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;'
+            'font-size:14px;margin:0;padding:0;background:white;color:black;}'
+            'table{border-collapse:collapse;width:100%;table-layout:fixed;}'
+            '</style></head><body>'
+            '<table>' + colgroup + thead + tbody + '</table>'
+            '</body></html>'
+        )
+        return html_doc
+
+    def load_data(self):
+        self.webview.load_html(self._build_html())
 
     def layout(self):
-        self.title_label.frame = (0, 80, self.width, 24)
-        self.subtitle_label.frame = (0, 108, self.width, 18)
-        self.list_name_label.frame = (0, 132, self.width, 22)
-        self.table_view.frame = (10, 162, self.width - 20, self.height - 260)
-        self.btn_close.frame = (20, self.height - 80, self.width - 40, 44)
+        w = self.width
+        self.title_label.frame = (0, 80, w, 24)
+        self.subtitle_label.frame = (0, 108, w, 18)
+        self.list_name_label.frame = (0, 132, w, 22)
+        self.webview.frame = (8, 160, w - 16, self.height - 260)
+        self.btn_close.frame = (20, self.height - 80, w - 40, 44)
 
-
-# ============ 入口 ============
-def main():
-    print("=" * 40)
-    print("  玩具寄售清单 启动中...")
-    print("=" * 40)
-    main_view = MainViewController()
-    main_view.present(style='fullscreen', hide_title_bar=False,
-                      title_bar_color='#007aff', title_color='white')
-
-
-if __name__ == "__main__":
-    main()
