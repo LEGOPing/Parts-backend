@@ -1637,21 +1637,21 @@ class ListViewer(ui.View):
         # 列宽百分比：盒况给最多空间（36%）
         colgroup = (
             '<colgroup>'
-            '<col style="width:8%">'
-            '<col style="width:30%">'
-            '<col style="width:10%">'
-            '<col style="width:16%">'
-            '<col style="width:36%">'
+            '<col style="width:38px">'
+            '<col style="width:26%">'
+            '<col style="width:38px">'
+            '<col style="width:14%">'
+            '<col style="width:auto">'
             '</colgroup>'
         )
 
         thead = (
             '<thead><tr>'
-            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">序号</th>'
-            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">型号</th>'
-            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">数量</th>'
-            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">参考价</th>'
-            '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #333;background:#f5f5f5;">盒况备注</th>'
+            '<th style="text-align:center;padding:10px 6px;border-bottom:2px solid #333;background:#f5f5f5;">序号</th>'
+            '<th style="text-align:center;padding:10px 6px;border-bottom:2px solid #333;background:#f5f5f5;">型号</th>'
+            '<th style="text-align:center;padding:10px 6px;border-bottom:2px solid #333;background:#f5f5f5;">数量</th>'
+            '<th style="text-align:center;padding:10px 6px;border-bottom:2px solid #333;background:#f5f5f5;">参考价</th>'
+            '<th style="text-align:center;padding:10px 6px;border-bottom:2px solid #333;background:#f5f5f5;">盒况备注</th>'
             '</tr></thead>'
         )
 
@@ -1671,11 +1671,11 @@ class ListViewer(ui.View):
             bg = '#fafafa' if idx % 2 else '#ffffff'
             row = (
                 '<tr style="background:' + bg + '">'
-                '<td style="text-align:center;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("序号",""))) + '</td>'
-                '<td style="text-align:center;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("型号",""))) + '</td>'
-                '<td style="text-align:center;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("数量",""))) + '</td>'
-                '<td style="text-align:right;padding:6px 4px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("参考价",""))) + '</td>'
-                '<td style="text-align:left;padding:6px 4px;border-bottom:1px solid #ddd;word-break:break-all;">' + _hm.escape(cond) + '</td>'
+                '<td style="text-align:center;padding:8px 6px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("序号",""))) + '</td>'
+                '<td style="text-align:center;padding:8px 6px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("型号",""))) + '</td>'
+                '<td style="text-align:center;padding:8px 6px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("数量",""))) + '</td>'
+                '<td style="text-align:right;padding:8px 6px;border-bottom:1px solid #ddd;">' + _hm.escape(str(it.get("参考价",""))) + '</td>'
+                '<td style="text-align:left;padding:8px 6px;border-bottom:1px solid #ddd;word-break:break-all;">' + _hm.escape(cond) + '</td>'
                 '</tr>'
             )
             rows_html.append(row)
@@ -1689,7 +1689,7 @@ class ListViewer(ui.View):
             '<!DOCTYPE html><html><head><meta charset="utf-8">'
             '<style>'
             'body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;'
-            'font-size:14px;margin:0;padding:0;background:white;color:black;}'
+            'font-size:16px;margin:0;padding:0;background:white;color:black;}'
             'table{border-collapse:collapse;width:100%;table-layout:fixed;}'
             '</style></head><body>'
             '<table>' + colgroup + thead + tbody + '</table>'
