@@ -1623,7 +1623,7 @@ class ListViewer(ui.View):
 
         self.table_view = ui.TextView()
         self.table_view.frame = (10, 162, w - 20, self.height - 260)
-        self.table_view.font = ('Menlo', 11)
+        self.table_view.font = ('Menlo', 10)
         self.table_view.editable = False
         self.table_view.background_color = '#f9f9f9'
         self.table_view.text = "加载中..."
@@ -1659,8 +1659,9 @@ class ListViewer(ui.View):
 
     def load_data(self):
         items = read_all_items(self.list_name)
-        # 列宽（显示宽度）：序号=6 型号=24 数量=6 参考价=10 盒况备注=24
-        W_SEQ, W_MODEL, W_QTY, W_PRICE, W_COND = 6, 24, 6, 10, 24
+        # 列宽（Menlo 11pt ≈ 6.6pt/字符，屏幕可用 ~370pt → 总 ≤56 字符）
+        # 序号=5 型号=18 数量=5 参考价=8 盒况=17  合计=53 + 4分隔=57
+        W_SEQ, W_MODEL, W_QTY, W_PRICE, W_COND = 5, 18, 5, 8, 17
         sep = "─" * (W_SEQ + W_MODEL + W_QTY + W_PRICE + W_COND + 4)
         # 表头：标题全居中
         header = (
@@ -1673,10 +1674,15 @@ class ListViewer(ui.View):
         lines = [sep, header, sep]
         for it in items:
             cond_parts = []
-            if it.get("拆封状态"): cond_parts.append(it["拆封状态"])
-            if it.get("外盒状态"): cond_parts.append("盒:" + it["外盒状态"].replace("|", "、"))
-            if it.get("本体状态"): cond_parts.append("本:" + it["本体状态"].replace("|", "、"))
-            cond = " ".join(cond_parts)
+            if it.get("拆封状态"):
+                cond_parts.append(it["拆封状态"][:4])   # 截断过长的拆封状态
+            if it.get("外盒状态"):
+                box = it["外盒状态"].replace("|", "、")
+                cond_parts.append("盒:" + box[:6])
+            if it.get("本体状态"):
+                body = it["本体状态"].replace("|", "、")
+                cond_parts.append("本:" + body[:6])
+            cond = "·".join(cond_parts)   # 用中点 · 分隔比空格省位置
             row = (
                 self._fmt_cell(it.get("序号",""), W_SEQ, 'center') + "│" +
                 self._fmt_cell(it.get("型号",""), W_MODEL, 'center') + "│" +
