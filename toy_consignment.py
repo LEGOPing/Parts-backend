@@ -872,98 +872,82 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         self._export_pdf_via_html(folder, safe, html_src, _share)
 
     def _try_webview_to_pdf(self, html_src, out_path):
-        """用 iOS 原生 WKWebView 把 HTML 渲染成 PDF。返回 True 表示成功。"""
+        """用 iOS 原生技术把 HTML 渲染成 PDF。返回 True 表示成功。
+
+        优先级：
+        1) UIMarkupTextPrintFormatter — 直接从 HTML 字符串生成 PDF（最快最稳）
+        2) WKWebView._pdfSnapshotAtFrame: — iOS 13+ 私有 API
+        3) 失败返回 False
+        """
         try:
             from objc_util import ObjCClass, ObjCInstance, ns, CGRect, c
-            import time
         except ImportError:
             print("[PDF] 非 iOS/Pythonista 环境，跳过 WebView 方案")
             return False
 
-        print("[PDF] 尝试 iOS WKWebView → PDF ...")
+        print("[PDF] 尝试 iOS 原生 → PDF ...")
+        page_w, page_h = 595.28, 841.89  # A4 in points
+        paper = CGRect((0, 0), (page_w, page_h))
+
+        # ---- 方案 A：UIMarkupTextPrintFormatter（从 HTML 字符串直接生成 PDF）----
+        # 这是最稳的方案，不需要 WKWebView、不需要等待加载
         try:
-            page_w, page_h = 595.28, 841.89  # A4 in points
-            self._wk_webview = ObjCClass('WKWebView').alloc().initWithFrame_(
-                CGRect((0, 0), (page_w, page_h))
-            )
-            self._wk_webview.loadHTMLString_baseURL_(ns(html_src), None)
-            # 等待页面加载
-            deadline = time.time() + 8
-            while time.time() < deadline:
-                if self._wk_webview.isLoading() == 0:
-                    break
-                time.sleep(0.15)
-            print(f"[PDF] WKWebView isLoading={self._wk_webview.isLoading()}")
-
-            pdf_data = None
-
-            # ---- 方案 1: WKWebView._pdfSnapshotAtFrame: (iOS 13+ 私有但被广泛使用) ----
-            try:
-                sel = '_pdfSnapshotAtFrame:_'
-                if self._wk_webview.respondsToSelector_(sel):
-                    pdf_obj = self._wk_webview._pdfSnapshotAtFrame_(
-                        CGRect((0, 0), (page_w, page_h))
-                    )
-                    if pdf_obj:
-                        pdf_data = bytes(ObjCInstance(pdf_obj))
-                        print(f"[PDF] ✅ _pdfSnapshotAtFrame 成功, {len(pdf_data)} 字节")
-            except Exception as e:
-                print(f"[PDF] 方案 1 失败: {e}")
-
-            # ---- 方案 2: UIPrintPageRenderer + 核心 PDF 绘制 (iOS 7+) ----
-            if not pdf_data:
-                print("[PDF] 尝试方案 2: UIPrintPageRenderer ...")
-                try:
-                    NSMutableData   = ObjCClass('NSMutableData')
-                    UIPrintPageRenderer = ObjCClass('UIPrintPageRenderer')
-                    UIEdgeInsetsMake = ObjCClass('UIEdgeInsetsMake')
-                    # 拿到 WKWebView 的 viewPrintFormatter
-                    fmt = self._wk_webview.viewPrintFormatter()
-                    # 配置 renderer
-                    renderer = UIPrintPageRenderer.alloc().init()
-                    renderer.addPrintFormatter_startAtPageAtIndex_(fmt, 0)
-                    renderer.paperRect = CGRect((0, 0), (page_w, page_h))
-                    # 留一点 printableRect 边距
-                    renderer.printableRect = CGRect((18, 18), (page_w - 36, page_h - 36))
-                    # 创建空的 NSMutableData
-                    mutable_data = NSMutableData.data()
-                    # 调 CoreGraphics 的 PDF 绘制 C 函数
-                    paper = CGRect((0, 0), (page_w, page_h))
-                    c.UIGraphicsBeginPDFContextToData(mutable_data, paper, None)
-                    n_pages = renderer.numberOfPages()
-                    for i in range(n_pages):
-                        c.UIGraphicsBeginPDFPage()
-                        renderer.drawPageAtIndex_inRect_(i, paper)
-                    c.UIGraphicsEndPDFContext()
-                    pdf_data = bytes(ObjCInstance(mutable_data))
-                    print(f"[PDF] ✅ 方案 2 UIPrintPageRenderer 成功, "
-                          f"{len(pdf_data)} 字节, {n_pages} 页")
-                except Exception as e:
-                    import traceback; traceback.print_exc()
-                    print(f"[PDF] 方案 2 失败: {e}")
-
-            # ---- 方案 3: WKWebView.createPDFWithCompletionHandler (iOS 14+, 公开 API) ----
-            if not pdf_data:
-                print("[PDF] 尝试方案 3: createPDFWithCompletionHandler ...")
-                try:
-                    import threading
-                    from Foundation import NSData, NSPrintInfo
-                    from objc_util import SEL, block_decorator
-                    # 需要等回调返回 —— Pythonista 的 createPDFWithCompletionHandler
-                    # 实现比较麻烦，这里简单用私有 snapshot 兜底即可，跳过
-                except Exception as e:
-                    print(f"[PDF] 方案 3 跳过/失败: {e}")
-
+            UIMarkupTextPrintFormatter = ObjCClass('UIMarkupTextPrintFormatter')
+            UIPrintPageRenderer = ObjCClass('UIPrintPageRenderer')
+            NSMutableData = ObjCClass('NSMutableData')
+            fmt = UIMarkupTextPrintFormatter.alloc().initWithMarkupText_(ns(html_src))
+            renderer = UIPrintPageRenderer.alloc().init()
+            renderer.addPrintFormatter_startAtPageAtIndex_(fmt, 0)
+            renderer.paperRect = paper
+            renderer.printableRect = CGRect((18, 18), (page_w - 36, page_h - 36))
+            mutable_data = NSMutableData.data()
+            c.UIGraphicsBeginPDFContextToData(mutable_data, paper, None)
+            n_pages = renderer.numberOfPages()
+            for i in range(n_pages):
+                c.UIGraphicsBeginPDFPage()
+                renderer.drawPageAtIndex_inRect_(i, paper)
+            c.UIGraphicsEndPDFContext()
+            pdf_data = bytes(ObjCInstance(mutable_data))
             if pdf_data and len(pdf_data) > 200:
                 with open(out_path, 'wb') as f:
                     f.write(pdf_data)
-                print(f"[PDF] ✅ PDF 写入: {out_path} ({len(pdf_data)} 字节)")
-                del self._wk_webview
+                print(f"[PDF] ✅ 方案 A UIMarkupTextPrintFormatter 成功, "
+                      f"{len(pdf_data)} 字节, {n_pages} 页")
                 return True
-
         except Exception as e:
             import traceback; traceback.print_exc()
-            print(f"[PDF] WKWebView 整体失败: {e}")
+            print(f"[PDF] 方案 A 失败: {e}")
+
+        # ---- 方案 B：WKWebView._pdfSnapshotAtFrame: (iOS 13+) ----
+        try:
+            import time
+            WKWebView = ObjCClass('WKWebView')
+            self._wk_webview = WKWebView.alloc().initWithFrame_(paper)
+            self._wk_webview.loadHTMLString_baseURL_(ns(html_src), None)
+            # 最多等 6 秒（WKWebView 要真加到 view 上才会加载，但有时候不加也能行）
+            deadline = time.time() + 6
+            waited = 0
+            while time.time() < deadline:
+                if self._wk_webview.isLoading() == 0:
+                    break
+                time.sleep(0.2)
+                waited += 0.2
+            print(f"[PDF] WKWebView 等了 {waited:.1f}s, isLoading={self._wk_webview.isLoading()}")
+
+            sel = '_pdfSnapshotAtFrame:_'
+            if self._wk_webview.respondsToSelector_(sel):
+                pdf_obj = self._wk_webview._pdfSnapshotAtFrame_(paper)
+                if pdf_obj:
+                    pdf_data = bytes(ObjCInstance(pdf_obj))
+                    if pdf_data and len(pdf_data) > 200:
+                        with open(out_path, 'wb') as f:
+                            f.write(pdf_data)
+                        print(f"[PDF] ✅ 方案 B _pdfSnapshotAtFrame 成功, {len(pdf_data)} 字节")
+                        del self._wk_webview
+                        return True
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[PDF] 方案 B 失败: {e}")
 
         try: del self._wk_webview
         except: pass
