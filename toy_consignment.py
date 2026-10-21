@@ -1005,16 +1005,11 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
         wrap_style = ParagraphStyle('wrap',
                                      fontName=fam, fontSize=10, leading=14)
-        # ⚠️ 型号/序号/数量/参考价 全部用 Helvetica（reportlab 内置 Type 1 英文字体）
-        # 原因：iOS 上 reportlab 解析 .ttc 中文字体的数字 advance width 度量有 bug，
-        # 导致 60011 / 10181 这种多位数数字互相重叠 —— 但 Helvetica 是标准 Type 1，
-        # 数字度量绝对精确，100% 不会重叠。型号全是数字+字母，不需要中文字体。
-        model_style = ParagraphStyle('model',
-                                      fontName='Helvetica', fontSize=12, leading=15,
-                                      alignment=1)  # 居中
-        num_style   = ParagraphStyle('num',
-                                      fontName='Helvetica', fontSize=10, leading=13,
-                                      alignment=1)
+        # 数字相关列全部用 Helvetica 12pt（reportlab 内置 Type 1 英文字体，
+        # 100% 不会有数字重叠问题）
+        num_style = ParagraphStyle('num',
+                                    fontName='Helvetica', fontSize=12, leading=15,
+                                    alignment=1)
         hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
         data = [hd]
         for it in items:
@@ -1025,7 +1020,7 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
             cond = " ".join(cp)
             data.append([
                 Paragraph(str(it.get("序号","")), num_style),
-                Paragraph(str(it.get("型号","")), model_style),
+                Paragraph(str(it.get("型号","")), num_style),
                 Paragraph(str(it.get("数量","")), num_style),
                 Paragraph(str(it.get("参考价","")), num_style),
                 Paragraph(cond, wrap_style),
