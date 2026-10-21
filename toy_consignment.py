@@ -96,6 +96,22 @@ def load_config():
 
 
 # ============ CSV 读写（简化写法，确保 Pythonista 兼容） ============
+def _sanitize_field(val):
+    """把字段值里的换行符/CRLF 全部替换成空格 —— 防 CSV 字段被裸换行拆成多行
+    
+    Python 的 csv.writer 虽然会自动给含换行的字段加引号，但：
+    1. 用户可能用 iPhone 文件 App / Numbers 手动编辑 CSV，那些工具可能破坏引号
+    2. 历史坏数据（lineterminator='' 时期）可能已有残留
+    → 所以所有写入前主动清洗，从源头杜绝
+    """
+    if val is None:
+        return ''
+    s = str(val)
+    # 依次替换 \r\n → \n → \r → 空格
+    s = s.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+    return s.strip()
+
+
 def init_csv(list_name):
     """初始化 CSV 文件（用 utf-8-sig 自动处理 BOM）"""
     csv_path = get_csv_path(list_name)
@@ -121,15 +137,24 @@ def init_csv(list_name):
 
 
 def _try_fix_broken_csv(csv_path, headers):
-    """当 CSV 只有一行（没有任何换行符）时，自动从字符串里切出 header + data rows"""
+    """当 CSV 只有一行（无换行、两条数据之间也无分隔符）时，自动修复
+    
+    根因：之前 lineterminator='' 把 CSV 搞成 header+所有数据 粘成一行，
+    两条数据的交接处变成 "2026-10-21 09:002"（录入时间+序号粘在一起）。
+    修复：先用 csv.reader 粗解析，再把 "时间戳+序号" 粘在一起的值拆回去，
+    最后按 header 列数切出每一行。
+    """
+    import re
     try:
         with open(csv_path, 'rb') as f:
             raw = f.read()
         if raw.startswith(b'\xef\xbb\xbf'):
             raw = raw[3:]
+        # 已经有换行 → 不是 broken CSV，跳过
         if b'\n' in raw or b'\r' in raw:
             return False
-        if b'\xe5\xba\x8f\xe5\x8f\xb7' not in raw:  # UTF-8 "序号"
+        # 必须包含 "序号" 才是有效 CSV
+        if b'\xe5\xba\x8f\xe5\x8f\xb7' not in raw:
             return False
 
         text = raw.decode('utf-8', errors='replace')
@@ -137,31 +162,51 @@ def _try_fix_broken_csv(csv_path, headers):
         if not text.startswith(header_str):
             return False
 
-        # header 和 data 之间没有逗号、没有换行 —— 直接粘在一起了
-        # 所以先把 header 后面的数据部分切出来
         data_part = text[len(header_str):]
         if not data_part.strip():
-            return False  # 只有 header 没有数据
+            return False
 
-        # 把 data_part 用 csv.reader 切成 values（用空字符串把末尾补齐到 n_cols 倍数）
-        n_cols = len(headers)
+        # Step 1: csv.reader 粗暴解析（会把粘在一起的时间戳+序号当成一个值）
         all_values = next(csv.reader([data_part]))
-        # 如果长度不是 n_cols 的倍数，补空值到下一个倍数
-        while len(all_values) % n_cols != 0:
-            all_values.append('')
+        print(f"[CSV修复] csv.reader 解析出 {len(all_values)} 个原始值")
 
+        # Step 2: 拆分 "时间戳+序号" 粘在一起的值
+        # 录入时间格式：YYYY-MM-DD HH:MM[:SS]；序号是纯数字
+        ts_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?)(\d+)$')
+        fixed_values = []
+        split_count = 0
+        for v in all_values:
+            m = ts_pattern.match(v)
+            if m:
+                fixed_values.append(m.group(1))  # 时间戳
+                fixed_values.append(m.group(2))  # 序号
+                split_count += 1
+                print(f"  拆分: {repr(v)} → {repr(m.group(1))} + {repr(m.group(2))}")
+            else:
+                fixed_values.append(v)
+
+        if split_count == 0:
+            # 没有粘在一起的值，那直接切行就行
+            pass
+
+        # Step 3: 补齐到 header 列数的倍数
+        n_cols = len(headers)
+        while len(fixed_values) % n_cols != 0:
+            fixed_values.append('')
+
+        # Step 4: 按 n_cols 切行
         rows = []
-        for i in range(0, len(all_values), n_cols):
-            chunk = all_values[i:i + n_cols]
-            if any(v.strip() for v in chunk):  # 跳过全空行
+        for i in range(0, len(fixed_values), n_cols):
+            chunk = fixed_values[i:i + n_cols]
+            if any(v.strip() for v in chunk):
                 rows.append(chunk)
 
         if not rows:
             return False
 
-        print(f"[CSV修复] 检测到坏 CSV（无换行/无分隔），自动切出 {len(rows)} 条数据")
+        print(f"[CSV修复] 检测到坏 CSV，修复 {split_count} 处粘连，切出 {len(rows)} 条数据")
 
-        # 写回正确格式
+        # Step 5: 写回正确格式
         tmp_path = csv_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
             w = csv.writer(f, lineterminator='\n')
@@ -178,28 +223,199 @@ def _try_fix_broken_csv(csv_path, headers):
         return False
 
 
+def _fix_misaligned_rows(csv_path, headers):
+    """当 CSV 有换行但字段错位/含裸换行时，用时间戳锚点逆向切分恢复。
+    
+    根因（多种）：
+    1. 历史 lineterminator='' 时期搞坏的无换行 CSV → 第一层修
+    2. 字段值里有裸换行（用户用文件 App 打开编辑，破坏了 csv.writer 加的引号）
+       → csv.reader 会把一条记录拆成多行，每行列数不一致
+    3. 时间戳+序号粘在一起（如 "2026-10-21 09:002"）
+    
+    修复策略：
+    - 录入时间列（最后一列）是唯一锚点：每条记录有且只有一个
+    - 逆向扫描时间戳，从后往前用 N_COLS 个值切一条记录
+    - 锚点之间值多了 → 多余的合并进「其他瑕疵或说明」列（数据不丢）
+    - 锚点之间值少了 → 补空
+    - 写回时主动清洗所有字段里的换行符
+    """
+    import re
+    try:
+        n_cols = len(headers)
+        ts_seq_pattern = re.compile(
+            r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?)(\d+)$')
+        ts_pattern = re.compile(
+            r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$')
+
+        # Step 1: csv.reader 平铺所有值
+        all_values = []
+        with open(csv_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            for i, row in enumerate(reader):
+                if i == 0:
+                    continue
+                for v in row:
+                    all_values.append(v.strip())
+
+        if not all_values:
+            return False
+
+        print(f"[CSV修复-2] 收集到 {len(all_values)} 个原始值")
+
+        # Step 2: 拆分 "时间戳+序号" 粘在一起的值
+        fixed = []
+        split_count = 0
+        for v in all_values:
+            m = ts_seq_pattern.match(v)
+            if m:
+                fixed.append(m.group(1))
+                fixed.append(m.group(2))
+                split_count += 1
+            else:
+                fixed.append(v)
+        all_values = fixed
+        print(f"[CSV修复-2] 拆分 {split_count} 处时间戳粘连")
+
+        # Step 3: 找所有时间戳锚点在值列表中的索引
+        ts_indices = [i for i, v in enumerate(all_values) if ts_pattern.match(v)]
+        if len(ts_indices) == 0:
+            print("[CSV修复-2] ❌ 没有时间戳锚点，无法修复")
+            return False
+        print(f"[CSV修复-2] 找到 {len(ts_indices)} 个录入时间锚点")
+
+        n_rows = len(ts_indices)
+        ideal_total = n_rows * n_cols
+        extra_count = len(all_values) - ideal_total
+        print(f"[CSV修复-2] 理想值数={ideal_total}, 实际={len(all_values)}, 多余={extra_count}")
+
+        # Step 4: 逆向遍历每个时间戳，切出 N_COLS 个值
+        rows = []
+        pos = 0  # 当前处理到 all_values 的位置
+        
+        for ts_idx in ts_indices:
+            # 这条记录应该从 pos 开始，到 ts_idx（含）结束
+            expected_end = pos + n_cols
+            actual_end = ts_idx + 1  # 包含 ts_idx 本身
+            
+            if actual_end == expected_end:
+                # 完美对齐：正好 n_cols 个值
+                row_vals = all_values[pos:actual_end]
+            elif actual_end < expected_end:
+                # 时间戳位置比预期早 —— 前面有空洞，补空在前面
+                row_vals = [''] * (expected_end - actual_end) + all_values[pos:actual_end]
+            else:
+                # actual_end > expected_end —— 中间有多余值（裸换行拆开的字段）
+                # 把多余的值合并进「其他瑕疵或说明」列（索引 11）
+                chunk = all_values[pos:actual_end]
+                last_two = chunk[-2:]  # 最后两个：照片文件、录入时间
+                front = chunk[:-2]     # 前面的所有值
+                # 前 11 个是正常列（序号 ~ 配件其他），后面的合并进「其他瑕疵或说明」
+                normal = front[:11]
+                rest = front[11:]  # 多余的值 → 合并
+                merged_other = ' '.join(v for v in rest if v)
+                # 补齐 normal 到 11 个（防止实际少了）
+                while len(normal) < 11:
+                    normal.append('')
+                row_vals = normal + [merged_other] + last_two
+            
+            # 保险：如果 row_vals 长度不对，强制截断/补齐
+            if len(row_vals) > n_cols:
+                row_vals = row_vals[-n_cols:]
+            while len(row_vals) < n_cols:
+                row_vals.append('')
+            
+            rows.append(row_vals)
+            pos = actual_end
+
+        print(f"[CSV修复-2] 切出 {len(rows)} 条完整记录")
+
+        # Step 5: 写回（主动清洗所有字段的换行符）
+        tmp_path = csv_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
+            w = csv.writer(f, lineterminator='\n')
+            w.writerow(headers)
+            for row in rows:
+                clean = [_sanitize_field(v) for v in row]
+                w.writerow(clean)
+        os.replace(tmp_path, csv_path)
+        print(f"[CSV修复-2] ✅ 已修复，写回 {len(rows)} 条记录")
+        return True
+    except Exception as e:
+        print(f"[CSV修复-2] ❌ 失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def read_all_items(list_name):
+    import re
     csv_path = get_csv_path(list_name)
     items = []
     print(f"[读CSV] list='{list_name}', path='{csv_path}', 存在={os.path.exists(csv_path)}")
     if os.path.exists(csv_path):
         try:
-            # 先尝试修复 broken CSV（没有换行的那种）
+            # ========== 第一层修复：完全无换行（老问题） ==========
             _try_fix_broken_csv(csv_path, CSV_HEADERS)
 
+            # ========== 先正常读，做诊断检查 ==========
+            n_cols = len(CSV_HEADERS)
+            
+            # 用 csv.reader 读（DictReader 会自动跳过表头）
             with open(csv_path, 'r', encoding='utf-8-sig') as f:
-                raw = f.read()
-            print(f"[读CSV] 文件大小: {len(raw)} bytes, 前100字: {repr(raw[:100])}")
-            lines = raw.split('\n')
-            print(f"[读CSV] 总行数: {len(lines)}, 空行数: {sum(1 for l in lines if not l.strip())}")
-            reader = csv.DictReader(lines)
-            for row in reader:
-                cleaned = {}
-                for k, v in row.items():
-                    k = k.lstrip('\ufeff') if k else k
-                    cleaned[k] = v
-                items.append(cleaned)
-            print(f"[读CSV] 成功解析 {len(items)} 条")
+                all_raw_rows = list(csv.reader(f))
+            
+            header_row = all_raw_rows[0] if all_raw_rows else []
+            data_rows = all_raw_rows[1:] if len(all_raw_rows) > 1 else []
+            
+            # 诊断：
+            # 1) 是否每个 header 行都是 n_cols 列？
+            col_inconsistent = any(len(r) != n_cols for r in data_rows)
+            
+            # 2) 序号列是否异常？（序号搞反、非递增、大数字出现在序号列）
+            seq_anomaly = False
+            seqs = []
+            for r in data_rows[:5]:
+                if not r:
+                    continue
+                seq = str(r[0]).strip() if len(r) > 0 else ''
+                model = str(r[1]).strip() if len(r) > 1 else ''
+                seqs.append(seq)
+                # 序号 > 1000 且型号 < 1000 → 搞反
+                if seq.isdigit() and model.isdigit() and int(seq) > 1000 and int(model) < 1000:
+                    seq_anomaly = True
+                # 录入时间格式异常
+                ts = str(r[-1]).strip() if r else ''
+                if ts and not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$', ts):
+                    seq_anomaly = True
+            
+            # 3) 序号非递增
+            numeric_seqs = [int(s) for s in seqs if s.isdigit()]
+            if len(numeric_seqs) >= 3:
+                for i in range(len(numeric_seqs) - 1):
+                    if numeric_seqs[i] > numeric_seqs[i + 1] * 2 and numeric_seqs[i] > 100:
+                        seq_anomaly = True
+                        break
+
+            need_fix = col_inconsistent or seq_anomaly
+            
+            if need_fix:
+                print(f"[读CSV] 需要修复: 列不一致={col_inconsistent}, 序号异常={seq_anomaly}")
+                print(f"[读CSV] csv.reader 产出 {len(data_rows)} 行, 每行: {[len(r) for r in data_rows[:10]]}")
+                _fix_misaligned_rows(csv_path, CSV_HEADERS)
+            else:
+                print(f"[读CSV] ✅ CSV 结构正常: {len(data_rows)} 行 × {n_cols} 列")
+
+            # ========== 正常读取 ==========
+            items = []
+            with open(csv_path, 'r', encoding='utf-8-sig') as f:
+                for row in csv.DictReader(f):
+                    cleaned = {}
+                    for k, v in row.items():
+                        k = k.lstrip('\ufeff') if k else k
+                        cleaned[k] = v if v else ''
+                    items.append(cleaned)
+            
+            print(f"[读CSV] 最终解析 {len(items)} 条有效记录")
         except Exception as e:
             print(f"读取 CSV 失败: {e}")
             import traceback
@@ -242,19 +458,19 @@ def append_item_to_csv(list_name, item_data):
     print(f"[保存] 数据: {item_data}")
     try:
         row = [
-            str(item_data.get("序号", "")),
-            str(item_data.get("型号", "")),
-            str(item_data.get("数量", "")),
-            str(item_data.get("参考价", "")),
-            str(item_data.get("拆封状态", "")),
-            str(item_data.get("外盒状态", "")),
-            str(item_data.get("外盒其他", "")),
-            str(item_data.get("本体状态", "")),
-            str(item_data.get("本体其他", "")),
-            str(item_data.get("配件状态", "")),
-            str(item_data.get("配件其他", "")),
-            str(item_data.get("其他瑕疵或说明", "")),
-            str(item_data.get("照片文件", "")),
+            _sanitize_field(item_data.get("序号", "")),
+            _sanitize_field(item_data.get("型号", "")),
+            _sanitize_field(item_data.get("数量", "")),
+            _sanitize_field(item_data.get("参考价", "")),
+            _sanitize_field(item_data.get("拆封状态", "")),
+            _sanitize_field(item_data.get("外盒状态", "")),
+            _sanitize_field(item_data.get("外盒其他", "")),
+            _sanitize_field(item_data.get("本体状态", "")),
+            _sanitize_field(item_data.get("本体其他", "")),
+            _sanitize_field(item_data.get("配件状态", "")),
+            _sanitize_field(item_data.get("配件其他", "")),
+            _sanitize_field(item_data.get("其他瑕疵或说明", "")),
+            _sanitize_field(item_data.get("照片文件", "")),
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ]
         # 用 open + csv.writer 方式
@@ -288,14 +504,15 @@ def update_item_in_csv(list_name, seq, item_data):
         for row in reader:
             try:
                 if str(row.get("序号", "")) == str(seq):
-                    # 更新这一行
-                    new_row = {h: str(item_data.get(h, row.get(h, ""))) for h in CSV_HEADERS}
+                    # 更新这一行 —— 每个字段用 _sanitize_field 清洗
+                    new_row = {h: _sanitize_field(item_data.get(h, row.get(h, ""))) for h in CSV_HEADERS}
                     if not new_row.get("录入时间"):
                         new_row["录入时间"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     rows.append(new_row)
                     found = True
                 else:
-                    rows.append(row)
+                    # 旧行也要清洗（防止历史坏数据残留）
+                    rows.append({h: _sanitize_field(row.get(h, "")) for h in CSV_HEADERS})
             except Exception as e:
                 print(f"[更新] 跳过一行: {e}")
                 rows.append(row)
@@ -425,12 +642,13 @@ def sort_items_by_model(list_name):
     for i, row in enumerate(items, 1):
         row["序号"] = str(i)
 
-    # 写回 CSV（带 BOM）
+    # 写回 CSV（带 BOM + 全部字段清洗）
     with open(csv_path, 'w', encoding='utf-8') as f:
-        f.write('﻿')
+        f.write('\ufeff')
         writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
         writer.writeheader()
-        writer.writerows(items)
+        for row in items:
+            writer.writerow({h: _sanitize_field(row.get(h, "")) for h in CSV_HEADERS})
 
     print(f"[排序] ✅ 按型号排序完成，共 {len(items)} 项，序号重编为 1..{len(items)}")
     return len(items)
@@ -1814,10 +2032,10 @@ class InputForm(ui.View):
             reader = csv.DictReader(f)
             for row in reader:
                 if str(row.get("序号", "")) != str(seq):
-                    rows.append(row)
+                    rows.append({h: _sanitize_field(row.get(h, "")) for h in CSV_HEADERS})
         tmp_path = csv_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator=chr(10))
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
             writer.writeheader()
             for r in rows:
                 writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
