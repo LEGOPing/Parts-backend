@@ -97,7 +97,7 @@ def load_config():
 
 # ============ CSV 读写（简化写法，确保 Pythonista 兼容） ============
 def init_csv(list_name):
-    """初始化 CSV 文件（带 BOM，Excel 能直接打开）"""
+    """初始化 CSV 文件（用 utf-8-sig 自动处理 BOM）"""
     csv_path = get_csv_path(list_name)
     print(f"[CSV] 初始化检查: {csv_path}")
     if not os.path.exists(csv_path):
@@ -110,15 +110,9 @@ def init_csv(list_name):
             "其他瑕疵或说明", "照片文件", "录入时间"
         ]
         try:
-            f = open(csv_path, 'wb')
-            # 写 BOM
-            f.write('\ufeff'.encode('utf-8'))
-            f.close()
-            # 写表头
-            f = open(csv_path, 'a', encoding='utf-8')
-            writer = csv.writer(f)
-            writer.writerow(headers)
-            f.close()
+            with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+                writer = csv.writer(f, lineterminator='\n')
+                writer.writerow(headers)
             print(f"[CSV] 初始化成功")
         except Exception as e:
             print(f"[CSV] 初始化失败: {e}")
@@ -131,10 +125,15 @@ def read_all_items(list_name):
     items = []
     if os.path.exists(csv_path):
         try:
-            with open(csv_path, 'r', encoding='utf-8') as f:
+            with open(csv_path, 'r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    items.append(row)
+                    # 清理可能残留的 BOM header key
+                    cleaned = {}
+                    for k, v in row.items():
+                        k = k.lstrip('\ufeff') if k else k
+                        cleaned[k] = v
+                    items.append(cleaned)
         except Exception as e:
             print(f"读取 CSV 失败: {e}")
     return items
@@ -215,7 +214,7 @@ def update_item_in_csv(list_name, seq, item_data):
     csv_path = init_csv(list_name)
     rows = []
     found = False
-    with open(csv_path, 'r', encoding='utf-8') as f:
+    with open(csv_path, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
@@ -235,8 +234,7 @@ def update_item_in_csv(list_name, seq, item_data):
         return False
     # 重写 CSV
     tmp_path = csv_path + '.tmp'
-    with open(tmp_path, 'w', encoding='utf-8', newline='') as f:
-        f.write('\ufeff')  # BOM
+    with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='')
         writer.writeheader()
         for r in rows:
@@ -1562,14 +1560,13 @@ class InputForm(ui.View):
         """从 CSV 删掉序号为 seq 的行"""
         csv_path = get_csv_path(self.list_name)
         rows = []
-        with open(csv_path, 'r', encoding='utf-8') as f:
+        with open(csv_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 if str(row.get("序号", "")) != str(seq):
                     rows.append(row)
         tmp_path = csv_path + '.tmp'
-        with open(tmp_path, 'w', encoding='utf-8', newline='') as f:
-            f.write('\ufeff')
+        with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator=chr(10))
             writer.writeheader()
             for r in rows:
