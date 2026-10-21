@@ -395,11 +395,11 @@ class MainViewController(ui.View):
         self.list_name_label.number_of_lines = 0
         self.add_subview(self.list_name_label)
 
-        self.btn_new_list = self.make_button("📋 新建清单", '#007aff')
+        self.btn_new_list = self.make_button("📋 新建清单", "#007aff", left_pad=False)
         self.btn_new_list.action = self.on_new_list
         self.add_subview(self.btn_new_list)
 
-        self.btn_open_list = self.make_button("📂 打开清单", '#007aff')
+        self.btn_open_list = self.make_button("📂 打开清单", "#007aff", left_pad=False)
         self.btn_open_list.action = self.on_switch_list
         self.add_subview(self.btn_open_list)
 
@@ -431,15 +431,23 @@ class MainViewController(ui.View):
         self.stats_label.number_of_lines = 0
         self.add_subview(self.stats_label)
 
-    def make_button(self, title, color):
+    def make_button(self, title, color, left_pad=True):
         btn = ui.Button()
-        btn.title = title
+        if left_pad:
+            # 前面加 4 个空格 → 文字起始位置约 3/10 处
+            btn.title = "    " + title
+        else:
+            btn.title = title
         btn.font = ('Helvetica', 17)
         btn.tint_color = 'white'
         btn.background_color = color
         btn.corner_radius = 10
         btn.height = 50
-        btn.content_horizontal_alignment = ui.ALIGN_LEFT
+        # 左对齐 — 用 content_edge_insets 设置左 padding
+        try:
+            btn.content_edge_insets = ui.EdgeInsets(0, 0, 0, 0)
+        except Exception:
+            pass
         return btn
 
     def layout(self):
@@ -447,10 +455,12 @@ class MainViewController(ui.View):
         self.title_label.frame = (20, 60, w - 40, 40)
         self.list_name_label.frame = (20, 105, w - 40, 40)
 
-        # 第一行：两个按钮并排
-        pair_w = (w - 50) / 2          # 左右各 20 margin + 中间 10 gap
-        self.btn_new_list.frame  = (20,        155, pair_w, 50)
-        self.btn_open_list.frame = (30 + pair_w, 155, pair_w, 50)
+        # 第一行：两个按钮并排，总宽 = btn_w（跟下面按钮左右对齐）
+        btn_w = min(w - 40, 320)
+        x = (w - btn_w) / 2
+        half_w = (btn_w - 10) / 2    # 中间 10pt gap
+        self.btn_new_list.frame  = (x,            155, half_w, 50)
+        self.btn_open_list.frame = (x + half_w + 10, 155, half_w, 50)
 
         # 第二行起：单个全宽按钮
         btn_w = min(w - 40, 320)
@@ -462,17 +472,7 @@ class MainViewController(ui.View):
         self.btn_show_folder.frame = (x, 480, btn_w, 50)
         self.stats_label.frame = (20, 545, w - 40, 140)
 
-        # 调整按钮内部文字 padding: 左对齐 + 3/10 位置
-        for btn in (self.btn_add, self.btn_view, self.btn_sort,
-                    self.btn_export, self.btn_show_folder):
-            self._adjust_btn_padding(btn)
 
-    def _adjust_btn_padding(self, btn):
-        """让按钮文字看起来在 3/10 宽度位置（用 content_edge_insets 实现）"""
-        try:
-            btn.content_edge_insets = ui.EdgeInsets(0, 0, 0, 0)
-        except Exception:
-            pass
 
     def on_view_appear(self):
         """主视图显示后再让 dialog 弹出，避免界面卡住"""
@@ -522,7 +522,7 @@ class MainViewController(ui.View):
         elif btn == 2:
             self.on_switch_list()
 
-    def on_new_list(self):
+    def on_new_list(self, sender=None):
         text = dialogs.input_alert("新建清单", "请输入清单名称：", "例如：2026年10月寄售")
         if text and text.strip():
             list_name = sanitize_filename(text.strip())
@@ -542,7 +542,7 @@ class MainViewController(ui.View):
             folder = get_list_folder(list_name)
             dialogs.alert("成功", f"已创建清单：\n{list_name}\n\n📁 {folder}")
 
-    def on_switch_list(self):
+    def on_switch_list(self, sender=None):
         base = get_script_dir()
         folders = [d for d in os.listdir(base)
                    if os.path.isdir(os.path.join(base, d)) and not d.startswith('.')]
