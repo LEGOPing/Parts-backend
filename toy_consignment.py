@@ -395,11 +395,11 @@ class MainViewController(ui.View):
         self.list_name_label.number_of_lines = 0
         self.add_subview(self.list_name_label)
 
-        self.btn_new_list = self.make_button("📋 新建清单", "#007aff", left_pad=False)
+        self.btn_new_list = self.make_button("📋 新建清单", "#007aff", pad_title=False)
         self.btn_new_list.action = self.on_new_list
         self.add_subview(self.btn_new_list)
 
-        self.btn_open_list = self.make_button("📂 打开清单", "#007aff", left_pad=False)
+        self.btn_open_list = self.make_button("📂 打开清单", "#007aff", pad_title=False)
         self.btn_open_list.action = self.on_switch_list
         self.add_subview(self.btn_open_list)
 
@@ -431,11 +431,43 @@ class MainViewController(ui.View):
         self.stats_label.number_of_lines = 0
         self.add_subview(self.stats_label)
 
-    def make_button(self, title, color, left_pad=True):
+    @staticmethod
+    def _cjk_width(s):
+        """计算字符串的 CJK 宽度（中日韩算 2，ASCII/数字算 1，emoji 算 2）"""
+        w = 0
+        for ch in s:
+            cp = ord(ch)
+            # 中日韩统一表意文字 + 扩展 A/B/C/D
+            if ((0x1100 <= cp <= 0x115f) or (0x2e80 <= cp <= 0x9fff) or
+                (0xa000 <= cp <= 0xa4cf) or (0xac00 <= cp <= 0xd7af) or
+                (0xf900 <= cp <= 0xfaff) or (0xfe10 <= cp <= 0xfe19) or
+                (0xfe30 <= cp <= 0xfe6f) or (0xff01 <= cp <= 0xff60) or
+                (0xffe0 <= cp <= 0xffe6)):
+                w += 2
+            # emoji (基础多文种平面补充 + 符号补充 A)
+            elif (0x1f300 <= cp <= 0x1faff) or (0x1f000 <= cp <= 0x1f02f) or cp == 0x2600:
+                w += 2
+            else:
+                w += 1
+        return w
+
+    def make_button(self, title, color, pad_title=True, cjk_target=14):
+        """title 格式: "emoji 中文标题"，中文部分补齐到 cjk_target CJK 宽（14 = 7个中文字）"""
         btn = ui.Button()
-        if left_pad:
-            # 前面加 4 个空格 → 文字起始位置约 3/10 处
-            btn.title = "　　　　　" + title
+        if pad_title:
+            # 拆分 emoji 和中文（按第一个空格）
+            parts = title.split(' ', 1)
+            if len(parts) == 2:
+                emoji_part = parts[0]
+                cn_part = parts[1]
+                # 计算中文部分的 CJK 宽度
+                cn_w = self._cjk_width(cn_part)
+                # 补全角空格到 cjk_target 宽度
+                pad = max(0, cjk_target - cn_w)
+                padded_cn = cn_part + ('　' * pad)
+                btn.title = emoji_part + '　' + padded_cn
+            else:
+                btn.title = title
         else:
             btn.title = title
         btn.font = ('Helvetica', 17)
@@ -443,11 +475,7 @@ class MainViewController(ui.View):
         btn.background_color = color
         btn.corner_radius = 10
         btn.height = 50
-        # 左对齐 — 用 content_edge_insets 设置左 padding
-        try:
-            btn.content_edge_insets = ui.EdgeInsets(0, 0, 0, 0)
-        except Exception:
-            pass
+        # 居中对齐（默认）
         return btn
 
     def layout(self):
