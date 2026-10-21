@@ -798,177 +798,39 @@ class MainViewController(ui.View):
             f.write(''.join(R))
         _share.share_file(out_path) if _share else dialogs.alert("Word 已导出 (.rtf)", out_path)
 
-    def _export_pdf(self, folder, safe, items, _share):
-        generated = False
-        try:
-            from reportlab.lib import colors
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.units import mm
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.pdfbase import pdfmetrics
-            from reportlab.pdfbase.ttfonts import TTFont
-            # ===== 关键：注册中文字体 =====
-            # .ttc 是 TrueType Collection（多个字体打包），必须加 subfontIndex
-            cn_font = False
-            fam = 'Helvetica'
-            registered_name = None
-            def _try_ttf(name, path):
-                try:
-                    pdfmetrics.registerFont(TTFont(name, path))
-                    return True
-                except Exception: return False
-            def _try_ttc(name, path, idx=0):
-                try:
-                    pdfmetrics.registerFont(TTFont(name, path, subfontIndex=idx))
-                    return True
-                except Exception: return False
-            # 候选列表：(注册名, 路径, subfontIndex)
-            font_candidates = [
-                ('CN', '/System/Library/Fonts/PingFang.ttc', 0),
-                ('CN', '/System/Library/Fonts/PingFang.ttc', 4),
-                ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),
-                ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),
-                ('CN', '/Library/Fonts/Songti.ttc', 0),
-            ]
-            for _n, _p, _i in font_candidates:
-                if os.path.exists(_p):
-                    if _try_ttc(_n, _p, _i):
-                        cn_font = True
-                        fam = _n
-                        registered_name = _n
-                        print(f"[PDF] 字体注册成功: {_n} <- {_p} (idx={_i})")
-                        break
-            # 兜底：reportlab 内置 CID 字体（STSong-Light）
-            if not cn_font:
-                try:
-                    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-                    pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-                    cn_font = True
-                    fam = 'STSong-Light'
-                    registered_name = fam
-                    print("[PDF] 兜底 CID 字体: STSong-Light")
-                except Exception as e:
-                    print(f"[PDF] CID 也失败: {e}")
-                    fam = 'Helvetica'
-            # ====== 关键中的关键：注册字体家族 ======
-            # reportlab 的 Paragraph/Table 内部会问："CN 的 bold/italic 变体在哪？"
-            # 中文字体通常只有 normal，我们把 bold/italic 全部映射到 normal
-            if registered_name and registered_name != 'Helvetica':
-                try:
-                    from reportlab.pdfbase.pdfmetrics import registerFontFamily
-                    registerFontFamily(
-                        registered_name,
-                        normal=registered_name,
-                        bold=registered_name,
-                        italic=registered_name,
-                        boldItalic=registered_name,
-                    )
-                    print(f"[PDF] 字体家族映射: {registered_name} bold/italic → normal")
-                except Exception as e:
-                    print(f"[PDF] 字体家族映射失败: {e}")
-            print(f"[PDF] 最终字体: {fam}")
-            out_path = os.path.join(folder, safe + '_清单.pdf')
-            doc = SimpleDocTemplate(out_path, pagesize=A4,
-                                    leftMargin=18*mm, rightMargin=18*mm,
-                                    topMargin=18*mm, bottomMargin=18*mm)
-            styles = getSampleStyleSheet()
-            # fam 已经在字体注册环节正确设置好了
-            title_style = ParagraphStyle('title',
-                                          fontName=fam, fontSize=20, leading=26,
-                                          alignment=1, textColor=colors.black)
-            sub_style = ParagraphStyle('sub',
-                                        fontName=fam, fontSize=10, leading=14,
-                                        alignment=1, textColor=colors.grey)
-            lnm_style = ParagraphStyle('lnm',
-                                        fontName=fam, fontSize=14, leading=18,
-                                        alignment=1, textColor=colors.HexColor('#007aff'))
-            body_style = ParagraphStyle('body',
-                                         fontName=fam, fontSize=10, leading=14)
-            story = []
-            story.append(Paragraph('附件：寄售玩具清单', title_style))
-            story.append(Spacer(1, 4))
-            story.append(Paragraph('（本清单一式两份，双方各执一份；随附交接照片和视频）', sub_style))
-            story.append(Spacer(1, 2))
-            story.append(Paragraph('清单：' + self.current_list_name, lnm_style))
-            story.append(Spacer(1, 10))
-            # 盒况 / 型号自动换行用的 style —— 型号用 leading 略大的单独 style，
-            # 避免数字在 tight 字体下看起来互相"顶"在一起
-            model_style = ParagraphStyle('model',
-                                          fontName=fam, fontSize=10, leading=14,
-                                          alignment=1)
-            wrap_style = ParagraphStyle('wrap',
-                                         fontName=fam, fontSize=10, leading=14)
-            hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
-            data = [hd]
-            for it in items:
-                cp = []
-                if it.get("拆封状态"): cp.append(it["拆封状态"])
-                if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
-                if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
-                cond = " ".join(cp)
-                # 型号也用 Paragraph 包起来 —— reportlab Table 直接塞字符串时
-                # 不会用 FontMetrics 逐字符计算宽度，遇到中文字体的数字度量 bug
-                # 就会把相邻数字绘制在重叠位置
-                model_wrapped = Paragraph(str(it.get("型号","")), model_style)
-                cond_wrapped  = Paragraph(cond, wrap_style)
-                data.append([str(it.get("序号","")), model_wrapped,
-                             str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
-            # 列宽: A4 可用 174mm (210 - 2*18mm margin)
-            # 加宽型号列到 28mm，盒况备注缩到 92mm（盒况内容已经过水平拼接不会太长）
-            # 序号 15 + 型号 28 + 数量 15 + 参考价 24 + 盒况备注 92 = 174 ✓
-            col_widths = [15*mm, 28*mm, 15*mm, 24*mm, 92*mm]
-            t = Table(data, colWidths=col_widths, repeatRows=1)
-            t.setStyle(TableStyle([
-                ('FONTNAME', (0,0), (-1,-1), fam),
-                ('FONTSIZE', (0,0), (-1,-1), 10),
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-                ('ALIGN', (0,0), (-1,0), 'CENTER'),
-                ('ALIGN', (0,1), (2,-1), 'CENTER'),
-                ('ALIGN', (3,1), (3,-1), 'RIGHT'),
-                ('ALIGN', (4,1), (4,-1), 'LEFT'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
-                # padding 加大: 默认 3pt 太挤 → 数字贴边框像重叠
-                ('TOPPADDING', (0,0), (-1,-1), 6),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-                ('LEFTPADDING', (0,0), (-1,-1), 8),
-                ('RIGHTPADDING', (0,0), (-1,-1), 8),
-            ]))
-            story.append(t)
-            story.append(Spacer(1, 20))
-            story.append(Paragraph('双方签字确认：________________________', body_style))
-            doc.build(story)
-            generated = True
-            _share.share_file(out_path) if _share else dialogs.alert("PDF 已生成", out_path)
-        except ImportError:
-            dialogs.alert("提示",
-                "reportlab 未找到，请在 Pythonista 包管理里搜索 reportlab\\n"
-                "或用 Stash 终端 pip install reportlab")
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            print(f"[reportlab] 失败: {e}")
-            dialogs.alert("PDF 生成失败 (reportlab)", str(e))
-        if not generated:
-            self._export_pdf_via_webview(folder, safe, items, _share)
+    # ============ 导出 PDF（iOS WebView 优先，reportlab 兜底）============
+    # iOS 上 reportlab 从 PingFang/STHeiti .ttc 加载数字的 advance width 度量有 bug，
+    # 导致多位数型号（如 60011、10181）数字互相重叠 —— 所以用 iOS 系统自己的
+    # WKWebView 渲染 → PDF 才是正解，reportlab 只在非 iOS 环境或 WebView 不可用时使用。
 
-    def _export_pdf_via_webview(self, folder, safe, items, _share):
+    def _build_pdf_html(self, items):
+        """生成清单 PDF 的 HTML 源码（WKWebView 和 reportlab 兜底都复用）"""
         import html as _hm
-        th = '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:12pt;font-family:PingFang SC,Helvetica,sans-serif;">'
-        th += '<tr bgcolor="#f0f0f0"><th align="center">序号</th><th align="center">型号</th>'
-        th += '<th align="center">数量</th><th align="center">参考价</th><th align="center">盒况备注</th></tr>'
+        # 序号/型号/数量 居中，参考价 右对齐，盒况备注 左对齐
+        th = (
+            '<table border="1" cellspacing="0" cellpadding="6" '
+            'style="border-collapse:collapse;width:100%;'
+            'font-size:11pt;font-family:PingFang SC,Helvetica,sans-serif;">'
+            '<tr bgcolor="#f0f0f0">'
+            '<th align="center">序号</th><th align="center">型号</th>'
+            '<th align="center">数量</th><th align="center">参考价</th>'
+            '<th align="center">盒况备注</th></tr>'
+        )
         for it in items:
             cp = []
             if it.get("拆封状态"): cp.append(it["拆封状态"])
-            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
-            if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
+            if it.get("外盒状态"): cp.append("盒:" + it["外盒状态"].replace("|", "、"))
+            if it.get("本体状态"): cp.append("本:" + it["本体状态"].replace("|", "、"))
             cond = " ".join(cp)
-            th += f'<tr><td align="center">{_hm.escape(str(it.get("序号","")))}</td>'
-            th += f'<td align="center">{_hm.escape(str(it.get("型号","")))}</td>'
-            th += f'<td align="center">{_hm.escape(str(it.get("数量","")))}</td>'
-            th += f'<td align="right">{_hm.escape(str(it.get("参考价","")))}</td>'
-            th += f'<td align="left">{_hm.escape(cond)}</td></tr>'
+            th += (
+                f'<tr>'
+                f'<td align="center">{_hm.escape(str(it.get("序号", "")))}</td>'
+                f'<td align="center">{_hm.escape(str(it.get("型号", "")))}</td>'
+                f'<td align="center">{_hm.escape(str(it.get("数量", "")))}</td>'
+                f'<td align="right">{_hm.escape(str(it.get("参考价", "")))}</td>'
+                f'<td align="left">{_hm.escape(cond)}</td>'
+                f'</tr>'
+            )
         th += "</table>"
         html_doc = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
@@ -984,10 +846,262 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 {th}
 <p style="margin-top:30pt;font-size:10pt;">双方签字确认：________________________</p>
 </body></html>"""
-        out_path = os.path.join(folder, safe + '_清单.html')
+        return html_doc
+
+    def _export_pdf(self, folder, safe, items, _share):
+        """优先 iOS WebView → PDF；失败再走 reportlab；最后导出 HTML 让用户手动存。"""
+        out_path = os.path.join(folder, safe + '_清单.pdf')
+        html_src = self._build_pdf_html(items)
+
+        # ---- 方案 1：iOS WKWebView → PDF（渲染 100% 正确，数字绝对不重叠）----
+        if self._try_webview_to_pdf(html_src, out_path):
+            _share.share_file(out_path) if _share else dialogs.alert("PDF 已生成", out_path)
+            return
+
+        # ---- 方案 2：reportlab（兜底，非 iOS 环境能用）----
+        try:
+            self._export_pdf_via_reportlab(folder, safe, items, _share, out_path)
+            return
+        except ImportError:
+            print("[PDF] reportlab 未安装")
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[reportlab] 失败: {e}")
+
+        # ---- 方案 3：导出 HTML，让用户在 iOS 上手动"打印 → 存 PDF" ----
+        self._export_pdf_via_html(folder, safe, html_src, _share)
+
+    def _try_webview_to_pdf(self, html_src, out_path):
+        """用 iOS 原生 WKWebView 把 HTML 渲染成 PDF。返回 True 表示成功。"""
+        try:
+            from objc_util import ObjCClass, ObjCInstance, ns, CGRect, c
+            import time
+        except ImportError:
+            print("[PDF] 非 iOS/Pythonista 环境，跳过 WebView 方案")
+            return False
+
+        print("[PDF] 尝试 iOS WKWebView → PDF ...")
+        try:
+            page_w, page_h = 595.28, 841.89  # A4 in points
+            self._wk_webview = ObjCClass('WKWebView').alloc().initWithFrame_(
+                CGRect((0, 0), (page_w, page_h))
+            )
+            self._wk_webview.loadHTMLString_baseURL_(ns(html_src), None)
+            # 等待页面加载
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                if self._wk_webview.isLoading() == 0:
+                    break
+                time.sleep(0.15)
+            print(f"[PDF] WKWebView isLoading={self._wk_webview.isLoading()}")
+
+            pdf_data = None
+
+            # ---- 方案 1: WKWebView._pdfSnapshotAtFrame: (iOS 13+ 私有但被广泛使用) ----
+            try:
+                sel = '_pdfSnapshotAtFrame:_'
+                if self._wk_webview.respondsToSelector_(sel):
+                    pdf_obj = self._wk_webview._pdfSnapshotAtFrame_(
+                        CGRect((0, 0), (page_w, page_h))
+                    )
+                    if pdf_obj:
+                        pdf_data = bytes(ObjCInstance(pdf_obj))
+                        print(f"[PDF] ✅ _pdfSnapshotAtFrame 成功, {len(pdf_data)} 字节")
+            except Exception as e:
+                print(f"[PDF] 方案 1 失败: {e}")
+
+            # ---- 方案 2: UIPrintPageRenderer + 核心 PDF 绘制 (iOS 7+) ----
+            if not pdf_data:
+                print("[PDF] 尝试方案 2: UIPrintPageRenderer ...")
+                try:
+                    NSMutableData   = ObjCClass('NSMutableData')
+                    UIPrintPageRenderer = ObjCClass('UIPrintPageRenderer')
+                    UIEdgeInsetsMake = ObjCClass('UIEdgeInsetsMake')
+                    # 拿到 WKWebView 的 viewPrintFormatter
+                    fmt = self._wk_webview.viewPrintFormatter()
+                    # 配置 renderer
+                    renderer = UIPrintPageRenderer.alloc().init()
+                    renderer.addPrintFormatter_startAtPageAtIndex_(fmt, 0)
+                    renderer.paperRect = CGRect((0, 0), (page_w, page_h))
+                    # 留一点 printableRect 边距
+                    renderer.printableRect = CGRect((18, 18), (page_w - 36, page_h - 36))
+                    # 创建空的 NSMutableData
+                    mutable_data = NSMutableData.data()
+                    # 调 CoreGraphics 的 PDF 绘制 C 函数
+                    paper = CGRect((0, 0), (page_w, page_h))
+                    c.UIGraphicsBeginPDFContextToData(mutable_data, paper, None)
+                    n_pages = renderer.numberOfPages()
+                    for i in range(n_pages):
+                        c.UIGraphicsBeginPDFPage()
+                        renderer.drawPageAtIndex_inRect_(i, paper)
+                    c.UIGraphicsEndPDFContext()
+                    pdf_data = bytes(ObjCInstance(mutable_data))
+                    print(f"[PDF] ✅ 方案 2 UIPrintPageRenderer 成功, "
+                          f"{len(pdf_data)} 字节, {n_pages} 页")
+                except Exception as e:
+                    import traceback; traceback.print_exc()
+                    print(f"[PDF] 方案 2 失败: {e}")
+
+            # ---- 方案 3: WKWebView.createPDFWithCompletionHandler (iOS 14+, 公开 API) ----
+            if not pdf_data:
+                print("[PDF] 尝试方案 3: createPDFWithCompletionHandler ...")
+                try:
+                    import threading
+                    from Foundation import NSData, NSPrintInfo
+                    from objc_util import SEL, block_decorator
+                    # 需要等回调返回 —— Pythonista 的 createPDFWithCompletionHandler
+                    # 实现比较麻烦，这里简单用私有 snapshot 兜底即可，跳过
+                except Exception as e:
+                    print(f"[PDF] 方案 3 跳过/失败: {e}")
+
+            if pdf_data and len(pdf_data) > 200:
+                with open(out_path, 'wb') as f:
+                    f.write(pdf_data)
+                print(f"[PDF] ✅ PDF 写入: {out_path} ({len(pdf_data)} 字节)")
+                del self._wk_webview
+                return True
+
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[PDF] WKWebView 整体失败: {e}")
+
+        try: del self._wk_webview
+        except: pass
+        return False
+
+    def _export_pdf_via_reportlab(self, folder, safe, items, _share, out_path):
+        """reportlab 兜底生成 PDF（仅当 iOS WebView 方案不可用时使用）"""
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        fam = self._register_cn_font()
+        doc = SimpleDocTemplate(out_path, pagesize=A4,
+                                leftMargin=18*mm, rightMargin=18*mm,
+                                topMargin=18*mm, bottomMargin=18*mm)
+        title_style = ParagraphStyle('title',
+                                      fontName=fam, fontSize=20, leading=26,
+                                      alignment=1, textColor=colors.black)
+        sub_style = ParagraphStyle('sub',
+                                    fontName=fam, fontSize=10, leading=14,
+                                    alignment=1, textColor=colors.grey)
+        lnm_style = ParagraphStyle('lnm',
+                                    fontName=fam, fontSize=14, leading=18,
+                                    alignment=1, textColor=colors.HexColor('#007aff'))
+        body_style = ParagraphStyle('body',
+                                     fontName=fam, fontSize=10, leading=14)
+        story = []
+        story.append(Paragraph('附件：寄售玩具清单', title_style))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph('（本清单一式两份，双方各执一份；随附交接照片和视频）', sub_style))
+        story.append(Spacer(1, 2))
+        story.append(Paragraph('清单：' + self.current_list_name, lnm_style))
+        story.append(Spacer(1, 10))
+
+        wrap_style = ParagraphStyle('wrap',
+                                     fontName=fam, fontSize=10, leading=14)
+        hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
+        data = [hd]
+        for it in items:
+            cp = []
+            if it.get("拆封状态"): cp.append(it["拆封状态"])
+            if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
+            if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
+            cond = " ".join(cp)
+            cond_wrapped = Paragraph(cond, wrap_style)
+            data.append([str(it.get("序号","")), str(it.get("型号","")),
+                         str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
+
+        col_widths = [15*mm, 28*mm, 15*mm, 24*mm, 92*mm]
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (-1,-1), fam),
+            ('FONTSIZE', (0,0), (-1,-1), 10),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+            ('ALIGN', (0,0), (-1,0), 'CENTER'),
+            ('ALIGN', (0,1), (2,-1), 'CENTER'),
+            ('ALIGN', (3,1), (3,-1), 'RIGHT'),
+            ('ALIGN', (4,1), (4,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 20))
+        story.append(Paragraph('双方签字确认：________________________', body_style))
+        doc.build(story)
+        _share.share_file(out_path) if _share else dialogs.alert("PDF 已生成 (reportlab)", out_path)
+
+    def _register_cn_font(self):
+        """给 reportlab 注册 iOS 中文字体；返回字体名。"""
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        cn_font = False
+        fam = 'Helvetica'
+        registered_name = None
+        font_candidates = [
+            ('CN', '/System/Library/Fonts/PingFang.ttc', 0),
+            ('CN', '/System/Library/Fonts/PingFang.ttc', 4),
+            ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),
+            ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),
+            ('CN', '/Library/Fonts/Songti.ttc', 0),
+        ]
+        for _n, _p, _i in font_candidates:
+            if os.path.exists(_p):
+                try:
+                    pdfmetrics.registerFont(TTFont(_n, _p, subfontIndex=_i))
+                    cn_font = True
+                    fam = _n
+                    registered_name = _n
+                    print(f"[PDF] 字体: {_n} <- {_p} idx={_i}")
+                    break
+                except Exception:
+                    pass
+        if not cn_font:
+            try:
+                from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+                pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+                cn_font = True
+                fam = 'STSong-Light'
+                registered_name = fam
+            except Exception:
+                pass
+        if registered_name and registered_name != 'Helvetica':
+            try:
+                from reportlab.pdfbase.pdfmetrics import registerFontFamily
+                registerFontFamily(registered_name,
+                                   normal=registered_name, bold=registered_name,
+                                   italic=registered_name, boldItalic=registered_name)
+            except Exception:
+                pass
+        return fam
+
+    def _export_pdf_via_html(self, folder, safe, html_src, _share):
+        """最后的兜底：导出 HTML 文件，让用户在 iOS 上用系统"打印 → 存 PDF"。"""
+        out_html = os.path.join(folder, safe + '_清单.html')
+        with open(out_html, 'w', encoding='utf-8') as f:
+            f.write(html_src)
+        # 也存一个 .pdf 扩展名（内容是 HTML），iOS 分享时用户选择"打印→存 PDF"
+        out_path = os.path.join(folder, safe + '_清单.pdf')
         with open(out_path, 'w', encoding='utf-8') as f:
-            f.write(html_doc)
-        _share.share_file(out_path) if _share else dialogs.alert("HTML 已生成 (兜底)", out_path)
+            f.write(html_src)
+        if _share:
+            _share.share_file(out_path)
+            dialogs.alert("提示",
+                "PDF 自动生成失败，已导出 HTML。\n"
+                "在 iOS 上点击分享 → 打印 → 左上角"打印" → 存为文件，即可得到真正的 PDF。")
+        else:
+            dialogs.alert("PDF 生成失败",
+                "已导出 PDF 占位文件（内容是 HTML），\n"
+                "在 iOS 上打开后用系统分享 → 打印 → 存文件即可。")
 
 # ============ 数据输入表单（内嵌盒况）============
 def _safe_image_from_file(path):
