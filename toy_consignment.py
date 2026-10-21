@@ -1097,7 +1097,7 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
             _share.share_file(out_path)
             dialogs.alert("提示",
                 "PDF 自动生成失败，已导出 HTML。\n"
-                "在 iOS 上点击分享 → 打印 → 左上角"打印" → 存为文件，即可得到真正的 PDF。")
+                "在 iOS 上点分享 → 打印 → 左上角'打印' → 存为文件，即可得到真正的 PDF。")
         else:
             dialogs.alert("PDF 生成失败",
                 "已导出 PDF 占位文件（内容是 HTML），\n"
