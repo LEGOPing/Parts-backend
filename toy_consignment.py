@@ -1708,3 +1708,17 @@ class ListViewer(ui.View):
         self.webview.frame = (8, 160, w - 16, self.height - 260)
         self.btn_close.frame = (20, self.height - 80, w - 40, 44)
 
+
+
+# ============ 入口 ============
+def main():
+    print("=" * 40)
+    print("  玩具寄售清单 启动中...")
+    print("=" * 40)
+    main_view = MainViewController()
+    main_view.present(style='fullscreen', hide_title_bar=False,
+                      title_bar_color='#007aff', title_color='white')
+
+
+if __name__ == "__main__":
+    main()
