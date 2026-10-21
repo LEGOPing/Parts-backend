@@ -123,19 +123,28 @@ def init_csv(list_name):
 def read_all_items(list_name):
     csv_path = get_csv_path(list_name)
     items = []
+    print(f"[读CSV] list='{list_name}', path='{csv_path}', 存在={os.path.exists(csv_path)}")
     if os.path.exists(csv_path):
         try:
             with open(csv_path, 'r', encoding='utf-8-sig') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # 清理可能残留的 BOM header key
-                    cleaned = {}
-                    for k, v in row.items():
-                        k = k.lstrip('\ufeff') if k else k
-                        cleaned[k] = v
-                    items.append(cleaned)
+                raw = f.read()
+            print(f"[读CSV] 文件大小: {len(raw)} bytes, 前100字: {repr(raw[:100])}")
+            lines = raw.split('\n')
+            print(f"[读CSV] 总行数: {len(lines)}, 空行数: {sum(1 for l in lines if not l.strip())}")
+            reader = csv.DictReader(lines)
+            for row in reader:
+                cleaned = {}
+                for k, v in row.items():
+                    k = k.lstrip('\ufeff') if k else k
+                    cleaned[k] = v
+                items.append(cleaned)
+            print(f"[读CSV] 成功解析 {len(items)} 条")
         except Exception as e:
             print(f"读取 CSV 失败: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"[读CSV] ❌ 文件不存在！")
     return items
 
 
@@ -1767,10 +1776,8 @@ class ListViewer(ui.View):
     def open(cls, list_name):
         viewer = cls(list_name)
         viewer.present(style='fullscreen', hide_title_bar=True)
-        # present 之后 WebView 的 frame 才被 layout 设置好，此时再 load_html
-        # 避免 frame 为 0 时 WebView 无法正确加载内容
-        import ui as _ui
-        _ui.delay(0.15, viewer.load_data)
+        # present 返回时 layout 已跑完，WebView.frame 已正确设置，直接 load
+        viewer.load_data()
 
     def __init__(self, list_name):
         super().__init__()
