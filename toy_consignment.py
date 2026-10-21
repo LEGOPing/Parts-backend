@@ -338,6 +338,37 @@ def take_photos(list_name, seq, model):
     return photo_paths
 
 
+def sort_items_by_model(list_name):
+    """按型号自然排序，重编序号，写回 CSV"""
+    import re
+    csv_path = init_csv(list_name)
+    items = read_all_items(list_name)
+    if len(items) < 2:
+        return 0  # 无需排序
+
+    def natural_key(s):
+        """自然排序键：数字段按数值比，字符串段按字典序"""
+        s = str(s or "")
+        parts = re.split(r'(\d+)', s)
+        return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+    items.sort(key=lambda r: natural_key(r.get("型号", "")))
+
+    # 重编序号
+    for i, row in enumerate(items, 1):
+        row["序号"] = str(i)
+
+    # 写回 CSV（带 BOM）
+    with open(csv_path, 'w', encoding='utf-8') as f:
+        f.write('﻿')
+        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(items)
+
+    print(f"[排序] ✅ 按型号排序完成，共 {len(items)} 项，序号重编为 1..{len(items)}")
+    return len(items)
+
+
 # ============ 主界面 ============
 class MainViewController(ui.View):
     """主控制界面"""
@@ -378,6 +409,10 @@ class MainViewController(ui.View):
         self.btn_view.action = self.on_view_list
         self.add_subview(self.btn_view)
 
+        self.btn_sort = self.make_button("🔀 按型号排序", '#ff6b00')
+        self.btn_sort.action = self.on_sort_items
+        self.add_subview(self.btn_sort)
+
         self.btn_export = self.make_button("📤 导出清单", '#5856d6')
         self.btn_export.action = self.on_export
         self.add_subview(self.btn_export)
@@ -413,9 +448,10 @@ class MainViewController(ui.View):
         self.btn_list_name.frame = (x, 155, btn_w, 50)
         self.btn_add.frame = (x, 220, btn_w, 50)
         self.btn_view.frame = (x, 285, btn_w, 50)
-        self.btn_export.frame = (x, 350, btn_w, 50)
-        self.btn_show_folder.frame = (x, 415, btn_w, 50)
-        self.stats_label.frame = (20, 480, w - 40, 140)
+        self.btn_sort.frame = (x, 350, btn_w, 50)
+        self.btn_export.frame = (x, 415, btn_w, 50)
+        self.btn_show_folder.frame = (x, 480, btn_w, 50)
+        self.stats_label.frame = (20, 545, w - 40, 140)
 
     def on_view_appear(self):
         """主视图显示后再让 dialog 弹出，避免界面卡住"""
@@ -511,6 +547,30 @@ class MainViewController(ui.View):
             dialogs.alert("提示", "请先选择清单")
             return
         ListViewer.open(self.current_list_name)
+
+    def on_sort_items(self, sender=None):
+        """按型号排序 + 重编序号"""
+        if not self.current_list_name:
+            dialogs.alert("提示", "请先新建或选择一个清单")
+            return
+        items = read_all_items(self.current_list_name)
+        if len(items) < 2:
+            dialogs.alert("提示", "只有 1 项，无需排序")
+            return
+        confirm = dialogs.alert(
+            "🔀 按型号排序",
+            f"共 {len(items)} 项，将按型号自然排序并重新编号。\n此操作不可撤销。",
+            "取消", "确认排序", hide_cancel_button=False
+        )
+        if confirm == 2:
+            try:
+                n = sort_items_by_model(self.current_list_name)
+                dialogs.alert("✅ 排序完成", f"已排序 {n} 项，序号重编为 1..{n}")
+                self.update_info()
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                dialogs.alert("❌ 排序失败", str(e))
+
 
     def on_export(self, sender=None):
         if not self.current_list_name:
