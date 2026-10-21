@@ -395,9 +395,13 @@ class MainViewController(ui.View):
         self.list_name_label.number_of_lines = 0
         self.add_subview(self.list_name_label)
 
-        self.btn_list_name = self.make_button("📋 新建清单 / 切换清单", '#007aff')
-        self.btn_list_name.action = self.on_choose_or_switch
-        self.add_subview(self.btn_list_name)
+        self.btn_new_list = self.make_button("📋 新建清单", '#007aff')
+        self.btn_new_list.action = self.on_new_list
+        self.add_subview(self.btn_new_list)
+
+        self.btn_open_list = self.make_button("📂 打开清单", '#007aff')
+        self.btn_open_list.action = self.on_switch_list
+        self.add_subview(self.btn_open_list)
 
         self.btn_add = self.make_button("➕ 添加玩具信息", '#34c759')
         self.btn_add.action = self.on_add_item
@@ -435,21 +439,40 @@ class MainViewController(ui.View):
         btn.background_color = color
         btn.corner_radius = 10
         btn.height = 50
+        btn.content_horizontal_alignment = ui.ALIGN_LEFT
         return btn
 
     def layout(self):
         w = self.width
         self.title_label.frame = (20, 60, w - 40, 40)
         self.list_name_label.frame = (20, 105, w - 40, 40)
+
+        # 第一行：两个按钮并排
+        pair_w = (w - 50) / 2          # 左右各 20 margin + 中间 10 gap
+        self.btn_new_list.frame  = (20,        155, pair_w, 50)
+        self.btn_open_list.frame = (30 + pair_w, 155, pair_w, 50)
+
+        # 第二行起：单个全宽按钮
         btn_w = min(w - 40, 320)
         x = (w - btn_w) / 2
-        self.btn_list_name.frame = (x, 155, btn_w, 50)
-        self.btn_add.frame = (x, 220, btn_w, 50)
-        self.btn_view.frame = (x, 285, btn_w, 50)
-        self.btn_sort.frame = (x, 350, btn_w, 50)
-        self.btn_export.frame = (x, 415, btn_w, 50)
+        self.btn_add.frame        = (x, 220, btn_w, 50)
+        self.btn_view.frame       = (x, 285, btn_w, 50)
+        self.btn_sort.frame       = (x, 350, btn_w, 50)
+        self.btn_export.frame     = (x, 415, btn_w, 50)
         self.btn_show_folder.frame = (x, 480, btn_w, 50)
         self.stats_label.frame = (20, 545, w - 40, 140)
+
+        # 调整按钮内部文字 padding: 左对齐 + 3/10 位置
+        for btn in (self.btn_add, self.btn_view, self.btn_sort,
+                    self.btn_export, self.btn_show_folder):
+            self._adjust_btn_padding(btn)
+
+    def _adjust_btn_padding(self, btn):
+        """让按钮文字看起来在 3/10 宽度位置（用 content_edge_insets 实现）"""
+        try:
+            btn.content_edge_insets = ui.EdgeInsets(0, 0, 0, 0)
+        except Exception:
+            pass
 
     def on_view_appear(self):
         """主视图显示后再让 dialog 弹出，避免界面卡住"""
