@@ -1632,7 +1632,7 @@ class ListViewer(ui.View):
     @classmethod
     def open(cls, list_name):
         viewer = cls(list_name)
-        viewer.present(style='sheet', hide_title_bar=False)
+        viewer.present(style='fullscreen', hide_title_bar=True)
 
     def __init__(self, list_name):
         super().__init__()
@@ -1732,8 +1732,8 @@ class ListViewer(ui.View):
     def layout(self):
         w = self.width
         # sheet 顶部有系统留白，webview 从 y=60 开始刚好贴到 sheet 内容区顶端
-        self.webview.frame = (0, 54, w, self.height - 120)
-        self.btn_close.frame = (20, self.height - 50, w - 40, 44)
+        self.webview.frame = (0, 0, w, self.height - 60)
+        self.btn_close.frame = (20, self.height - 48, w - 40, 40)
 
 
 
