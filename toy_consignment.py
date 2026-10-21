@@ -1627,7 +1627,7 @@ class InputForm(ui.View):
 
 
 class ListViewer(ui.View):
-    """清单预览 — HTML 表格 + WebView（跟 PDF 导出一致）"""
+    """清单预览 — 标题+表格都内嵌 HTML，webview 顶到 sheet 顶部"""
 
     @classmethod
     def open(cls, list_name):
@@ -1638,27 +1638,6 @@ class ListViewer(ui.View):
         super().__init__()
         self.list_name = list_name
         self.background_color = 'white'
-
-        self.title_label = ui.Label()
-        self.title_label.text = "附件：寄售玩具清单"
-        self.title_label.font = ('Helvetica-Bold', 16)
-        self.title_label.text_alignment = ui.ALIGN_CENTER
-        self.title_label.text_color = 'black'
-        self.add_subview(self.title_label)
-
-        self.subtitle_label = ui.Label()
-        self.subtitle_label.text = "（本清单一式两份，双方各执一份；随附交接照片和视频）"
-        self.subtitle_label.font = ('Helvetica', 10)
-        self.subtitle_label.text_alignment = ui.ALIGN_CENTER
-        self.subtitle_label.text_color = '#666'
-        self.add_subview(self.subtitle_label)
-
-        self.list_name_label = ui.Label()
-        self.list_name_label.text = "清单：" + list_name
-        self.list_name_label.font = ('Helvetica-Bold', 14)
-        self.list_name_label.text_alignment = ui.ALIGN_CENTER
-        self.list_name_label.text_color = '#007aff'
-        self.add_subview(self.list_name_label)
 
         self.webview = ui.WebView()
         self.webview.background_color = 'white'
@@ -1677,7 +1656,6 @@ class ListViewer(ui.View):
         import html as _hm
         items = read_all_items(self.list_name)
 
-        # 列宽百分比：盒况给最多空间（36%）
         colgroup = (
             '<colgroup>'
             '<col style="min-width:44px">'
@@ -1728,14 +1706,22 @@ class ListViewer(ui.View):
         else:
             tbody = '<tbody><tr><td colspan="5" style="text-align:center;padding:40px;color:#999;">（暂无记录）</td></tr></tbody>'
 
+        title_block = (
+            '<h2 style="text-align:center;margin:10px 0 4px;font-size:22px;font-weight:bold;color:#111;">附件：寄售玩具清单</h2>'
+            '<p style="text-align:center;margin:0 0 4px;font-size:12px;color:#666;">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>'
+            '<p style="text-align:center;margin:0 0 8px;font-size:18px;color:#007aff;font-weight:bold;">清单：'
+            + _hm.escape(self.list_name) + '</p>'
+        )
+
         html_doc = (
             '<!DOCTYPE html><html><head><meta charset="utf-8">'
             '<style>'
             'body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;'
-            'font-size:16px;margin:0;padding:6px 8px;background:white;color:black;}'
+            'font-size:16px;margin:0;padding:0;background:white;color:black;}'
             'table{border-collapse:collapse;width:100%;}'
             '</style></head><body>'
-            '<table>' + colgroup + thead + tbody + '</table>'
+            + title_block
+            + '<table>' + colgroup + thead + tbody + '</table>'
             '</body></html>'
         )
         return html_doc
@@ -1745,14 +1731,9 @@ class ListViewer(ui.View):
 
     def layout(self):
         w = self.width
-        # sheet 内部顶部空白大 → 紧凑上移
-        self.title_label.frame = (0, 15, w, 24)
-        self.subtitle_label.frame = (0, 42, w, 16)
-        self.list_name_label.frame = (0, 62, w, 22)
-        # webview 左边距加大到 16，避免序号贴边被切
-        # top=90 刚好在 list_name 下方；右边距 16
-        self.webview.frame = (16, 92, w - 32, self.height - 200)
-        self.btn_close.frame = (20, self.height - 60, w - 40, 44)
+        # sheet 顶部有系统留白，webview 从 y=60 开始刚好贴到 sheet 内容区顶端
+        self.webview.frame = (0, 60, w, self.height - 130)
+        self.btn_close.frame = (20, self.height - 50, w - 40, 44)
 
 
 
