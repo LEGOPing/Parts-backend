@@ -120,12 +120,73 @@ def init_csv(list_name):
     return csv_path
 
 
+def _try_fix_broken_csv(csv_path, headers):
+    """当 CSV 只有一行（没有任何换行符）时，自动从字符串里切出 header + data rows"""
+    try:
+        with open(csv_path, 'rb') as f:
+            raw = f.read()
+        if raw.startswith(b'\xef\xbb\xbf'):
+            raw = raw[3:]
+        if b'\n' in raw or b'\r' in raw:
+            return False
+        if b'\xe5\xba\x8f\xe5\x8f\xb7' not in raw:  # UTF-8 "序号"
+            return False
+
+        text = raw.decode('utf-8', errors='replace')
+        header_str = ','.join(headers)
+        if not text.startswith(header_str):
+            return False
+
+        # header 和 data 之间没有逗号、没有换行 —— 直接粘在一起了
+        # 所以先把 header 后面的数据部分切出来
+        data_part = text[len(header_str):]
+        if not data_part.strip():
+            return False  # 只有 header 没有数据
+
+        # 把 data_part 用 csv.reader 切成 values（用空字符串把末尾补齐到 n_cols 倍数）
+        n_cols = len(headers)
+        all_values = next(csv.reader([data_part]))
+        # 如果长度不是 n_cols 的倍数，补空值到下一个倍数
+        while len(all_values) % n_cols != 0:
+            all_values.append('')
+
+        rows = []
+        for i in range(0, len(all_values), n_cols):
+            chunk = all_values[i:i + n_cols]
+            if any(v.strip() for v in chunk):  # 跳过全空行
+                rows.append(chunk)
+
+        if not rows:
+            return False
+
+        print(f"[CSV修复] 检测到坏 CSV（无换行/无分隔），自动切出 {len(rows)} 条数据")
+
+        # 写回正确格式
+        tmp_path = csv_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
+            w = csv.writer(f, lineterminator='\n')
+            w.writerow(headers)
+            for row in rows:
+                w.writerow(row)
+        os.replace(tmp_path, csv_path)
+        print(f"[CSV修复] ✅ 已修复")
+        return True
+    except Exception as e:
+        print(f"[CSV修复] ❌ 尝试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def read_all_items(list_name):
     csv_path = get_csv_path(list_name)
     items = []
     print(f"[读CSV] list='{list_name}', path='{csv_path}', 存在={os.path.exists(csv_path)}")
     if os.path.exists(csv_path):
         try:
+            # 先尝试修复 broken CSV（没有换行的那种）
+            _try_fix_broken_csv(csv_path, CSV_HEADERS)
+
             with open(csv_path, 'r', encoding='utf-8-sig') as f:
                 raw = f.read()
             print(f"[读CSV] 文件大小: {len(raw)} bytes, 前100字: {repr(raw[:100])}")
@@ -243,7 +304,7 @@ def update_item_in_csv(list_name, seq, item_data):
     # 重写 CSV
     tmp_path = csv_path + '.tmp'
     with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='')
+        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator='\n')
         writer.writeheader()
         for r in rows:
             writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
