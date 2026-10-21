@@ -1637,11 +1637,11 @@ class ListViewer(ui.View):
         # 列宽百分比：盒况给最多空间（36%）
         colgroup = (
             '<colgroup>'
-            '<col style="width:38px">'
-            '<col style="width:26%">'
-            '<col style="width:38px">'
-            '<col style="width:14%">'
-            '<col style="width:auto">'
+            '<col style="min-width:44px">'
+            '<col style="min-width:80px">'
+            '<col style="min-width:44px">'
+            '<col style="min-width:50px">'
+            '<col>'
             '</colgroup>'
         )
 
@@ -1690,7 +1690,7 @@ class ListViewer(ui.View):
             '<style>'
             'body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;'
             'font-size:16px;margin:0;padding:0;background:white;color:black;}'
-            'table{border-collapse:collapse;width:100%;table-layout:fixed;}'
+            'table{border-collapse:collapse;width:100%;}'
             '</style></head><body>'
             '<table>' + colgroup + thead + tbody + '</table>'
             '</body></html>'
