@@ -1732,7 +1732,7 @@ class ListViewer(ui.View):
             '<!DOCTYPE html><html><head><meta charset="utf-8">'
             '<style>'
             'body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;'
-            'font-size:16px;margin:0;padding:0;background:white;color:black;}'
+            'font-size:16px;margin:0;padding:6px 8px;background:white;color:black;}'
             'table{border-collapse:collapse;width:100%;}'
             '</style></head><body>'
             '<table>' + colgroup + thead + tbody + '</table>'
@@ -1745,11 +1745,14 @@ class ListViewer(ui.View):
 
     def layout(self):
         w = self.width
-        self.title_label.frame = (0, 80, w, 24)
-        self.subtitle_label.frame = (0, 108, w, 18)
-        self.list_name_label.frame = (0, 132, w, 22)
-        self.webview.frame = (8, 160, w - 16, self.height - 260)
-        self.btn_close.frame = (20, self.height - 80, w - 40, 44)
+        # sheet 内部顶部空白大 → 紧凑上移
+        self.title_label.frame = (0, 15, w, 24)
+        self.subtitle_label.frame = (0, 42, w, 16)
+        self.list_name_label.frame = (0, 62, w, 22)
+        # webview 左边距加大到 16，避免序号贴边被切
+        # top=90 刚好在 list_name 下方；右边距 16
+        self.webview.frame = (16, 92, w - 32, self.height - 200)
+        self.btn_close.frame = (20, self.height - 60, w - 40, 44)
 
 
 
