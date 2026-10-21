@@ -190,8 +190,7 @@ def append_item_to_csv(list_name, item_data):
         # 用 open + csv.writer 方式
         with open(csv_path, 'a', encoding='utf-8') as f:
             writer = csv.writer(f, lineterminator='\n')
-            writer.writerow(row)
-            writer.writerow(row)
+            writer.writerow(row)   # ← 只写一次！（之前误写了两次导致 CSV 里每条记录重复）
         print("[保存] ✅ 成功")
     except Exception as e:
         print(f"[保存] ❌ 失败: {e}")
@@ -1768,6 +1767,10 @@ class ListViewer(ui.View):
     def open(cls, list_name):
         viewer = cls(list_name)
         viewer.present(style='fullscreen', hide_title_bar=True)
+        # present 之后 WebView 的 frame 才被 layout 设置好，此时再 load_html
+        # 避免 frame 为 0 时 WebView 无法正确加载内容
+        import ui as _ui
+        _ui.delay(0.15, viewer.load_data)
 
     def __init__(self, list_name):
         super().__init__()
@@ -1785,11 +1788,13 @@ class ListViewer(ui.View):
         self.btn_close.action = lambda s: self.close()
         self.add_subview(self.btn_close)
 
-        self.load_data()
+        # 不在这里调 load_data() —— WebView frame 还没被 layout 设置，
+        # 必须等 present 之后 ui.delay(0.15, ...) 再调
 
     def _build_html(self):
         import html as _hm
         items = read_all_items(self.list_name)
+        print(f"[查看清单] list_name='{self.list_name}', items={len(items)}")
 
         colgroup = (
             '<colgroup>'
