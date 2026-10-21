@@ -395,13 +395,24 @@ class MainViewController(ui.View):
         self.list_name_label.number_of_lines = 0
         self.add_subview(self.list_name_label)
 
-        self.btn_new_list = self.make_button("📋 新建清单", "#007aff", left_pad=False)
-        self.btn_new_list._label.text_alignment = ui.ALIGN_CENTER
+        # 第一行小按钮: 直接用 Button.title（Button 默认居中渲染）
+        self.btn_new_list = ui.Button()
+        self.btn_new_list.title = "📋 新建清单"
+        self.btn_new_list.font = ('Helvetica', 17)
+        self.btn_new_list.tint_color = 'white'
+        self.btn_new_list.background_color = '#007aff'
+        self.btn_new_list.corner_radius = 10
+        self.btn_new_list.height = 50
         self.btn_new_list.action = self.on_new_list
         self.add_subview(self.btn_new_list)
 
-        self.btn_open_list = self.make_button("📂 打开清单", "#007aff", left_pad=False)
-        self.btn_open_list._label.text_alignment = ui.ALIGN_CENTER
+        self.btn_open_list = ui.Button()
+        self.btn_open_list.title = "📂 打开清单"
+        self.btn_open_list.font = ('Helvetica', 17)
+        self.btn_open_list.tint_color = 'white'
+        self.btn_open_list.background_color = '#007aff'
+        self.btn_open_list.corner_radius = 10
+        self.btn_open_list.height = 50
         self.btn_open_list.action = self.on_switch_list
         self.add_subview(self.btn_open_list)
 
@@ -467,10 +478,7 @@ class MainViewController(ui.View):
         half_w = (btn_w - 10) / 2    # 中间 10pt gap
         self.btn_new_list.frame  = (x,            155, half_w, 50)
         self.btn_open_list.frame = (x + half_w + 10, 155, half_w, 50)
-        # 第一行小按钮的 label
-        for b in (self.btn_new_list, self.btn_open_list):
-            if hasattr(b, '_label'):
-                b._label.frame = (0, 0, b.width, b.height)
+
 
         # 第二行起：单个全宽按钮
         btn_w = min(w - 40, 320)
