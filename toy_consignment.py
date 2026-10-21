@@ -892,9 +892,13 @@ class MainViewController(ui.View):
             story.append(Spacer(1, 2))
             story.append(Paragraph('清单：' + self.current_list_name, lnm_style))
             story.append(Spacer(1, 10))
-            # 盒况自动换行用的 style
+            # 盒况 / 型号自动换行用的 style —— 型号用 leading 略大的单独 style，
+            # 避免数字在 tight 字体下看起来互相"顶"在一起
+            model_style = ParagraphStyle('model',
+                                          fontName=fam, fontSize=10, leading=14,
+                                          alignment=1)
             wrap_style = ParagraphStyle('wrap',
-                                         fontName=fam, fontSize=10, leading=13)
+                                         fontName=fam, fontSize=10, leading=14)
             hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
             data = [hd]
             for it in items:
@@ -903,13 +907,17 @@ class MainViewController(ui.View):
                 if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
                 if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
                 cond = " ".join(cp)
-                # 盒况用 Paragraph 包起来 + <br/> 让 reportlab 自动换行
-                cond_wrapped = Paragraph(cond, wrap_style)
-                data.append([str(it.get("序号","")), str(it.get("型号","")),
+                # 型号也用 Paragraph 包起来 —— reportlab Table 直接塞字符串时
+                # 不会用 FontMetrics 逐字符计算宽度，遇到中文字体的数字度量 bug
+                # 就会把相邻数字绘制在重叠位置
+                model_wrapped = Paragraph(str(it.get("型号","")), model_style)
+                cond_wrapped  = Paragraph(cond, wrap_style)
+                data.append([str(it.get("序号","")), model_wrapped,
                              str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
             # 列宽: A4 可用 174mm (210 - 2*18mm margin)
-            # 序号 15 + 型号 24 + 数量 15 + 参考价 24 + 盒况备注 96 = 174 ✓
-            col_widths = [15*mm, 24*mm, 15*mm, 24*mm, 96*mm]
+            # 加宽型号列到 28mm，盒况备注缩到 92mm（盒况内容已经过水平拼接不会太长）
+            # 序号 15 + 型号 28 + 数量 15 + 参考价 24 + 盒况备注 92 = 174 ✓
+            col_widths = [15*mm, 28*mm, 15*mm, 24*mm, 92*mm]
             t = Table(data, colWidths=col_widths, repeatRows=1)
             t.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,-1), fam),
