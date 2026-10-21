@@ -1016,7 +1016,10 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
             data.append([str(it.get("序号","")), str(it.get("型号","")),
                          str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
 
-        col_widths = [15*mm, 28*mm, 15*mm, 24*mm, 92*mm]
+        # STSong-Light 下数字度量精确，列宽分配宽裕一些
+        # A4 可用 174mm (210 - 2*18mm margin)
+        # 序号 15 + 型号 35 + 数量 15 + 参考价 24 + 盒况备注 85 = 174 ✓
+        col_widths = [15*mm, 35*mm, 15*mm, 24*mm, 85*mm]
         t = Table(data, colWidths=col_widths, repeatRows=1)
         t.setStyle(TableStyle([
             ('FONTNAME', (0,0), (-1,-1), fam),
@@ -1041,47 +1044,47 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         _share.share_file(out_path) if _share else dialogs.alert("PDF 已生成 (reportlab)", out_path)
 
     def _register_cn_font(self):
-        """给 reportlab 注册 iOS 中文字体；返回字体名。"""
+        """给 reportlab 注册字体；返回字体名。
+
+        ⚠️ iOS 上 PingFang/STHeiti 等 .ttc 被 reportlab 解析时数字度量有 bug
+           → 相邻数字 advance width 太小 → 打印/PDF 里数字互相重叠！
+           所以 **STSong-Light (reportlab 内置 CID)** 设为首选，它的数字是
+           Type 1 PostScript 数据，度量绝对精确，绝不会重叠。
+        """
         from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-        cn_font = False
         fam = 'Helvetica'
-        registered_name = None
-        font_candidates = [
-            ('CN', '/System/Library/Fonts/PingFang.ttc', 0),
-            ('CN', '/System/Library/Fonts/PingFang.ttc', 4),
-            ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),
-            ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),
-            ('CN', '/Library/Fonts/Songti.ttc', 0),
-        ]
-        for _n, _p, _i in font_candidates:
-            if os.path.exists(_p):
-                try:
-                    pdfmetrics.registerFont(TTFont(_n, _p, subfontIndex=_i))
-                    cn_font = True
-                    fam = _n
-                    registered_name = _n
-                    print(f"[PDF] 字体: {_n} <- {_p} idx={_i}")
-                    break
-                except Exception:
-                    pass
-        if not cn_font:
-            try:
-                from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-                pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-                cn_font = True
-                fam = 'STSong-Light'
-                registered_name = fam
-            except Exception:
-                pass
-        if registered_name and registered_name != 'Helvetica':
-            try:
-                from reportlab.pdfbase.pdfmetrics import registerFontFamily
-                registerFontFamily(registered_name,
-                                   normal=registered_name, bold=registered_name,
-                                   italic=registered_name, boldItalic=registered_name)
-            except Exception:
-                pass
+
+        # ---- 首选：reportlab 自带 CID 字体（数字度量精确，绝无重叠）----
+        try:
+            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+            pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+            fam = 'STSong-Light'
+            print("[PDF] ✅ 首选字体: STSong-Light (CID, 数字度量精确)")
+            return fam
+        except Exception as e:
+            print(f"[PDF] STSong-Light 不可用: {e}")
+
+        # ---- 兜底：iOS 系统 .ttc 字体（可能有数字重叠问题，但中文效果更好）----
+        try:
+            from reportlab.pdfbase.ttfonts import TTFont
+            font_candidates = [
+                ('CN', '/System/Library/Fonts/PingFang.ttc', 0),
+                ('CN', '/System/Library/Fonts/PingFang.ttc', 4),
+                ('CN', '/System/Library/Fonts/STHeiti Light.ttc', 0),
+                ('CN', '/System/Library/Fonts/Hiragino Sans GB.ttc', 0),
+                ('CN', '/Library/Fonts/Songti.ttc', 0),
+            ]
+            for _n, _p, _i in font_candidates:
+                if os.path.exists(_p):
+                    try:
+                        pdfmetrics.registerFont(TTFont(_n, _p, subfontIndex=_i))
+                        fam = _n
+                        print(f"[PDF] ⚠️ 兜底字体: {_n} <- {_p} idx={_i} (可能数字重叠)")
+                        break
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         return fam
 
     def _export_pdf_via_html(self, folder, safe, html_src, _share):
