@@ -1005,6 +1005,16 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
         wrap_style = ParagraphStyle('wrap',
                                      fontName=fam, fontSize=10, leading=14)
+        # ⚠️ 型号/序号/数量/参考价 全部用 Helvetica（reportlab 内置 Type 1 英文字体）
+        # 原因：iOS 上 reportlab 解析 .ttc 中文字体的数字 advance width 度量有 bug，
+        # 导致 60011 / 10181 这种多位数数字互相重叠 —— 但 Helvetica 是标准 Type 1，
+        # 数字度量绝对精确，100% 不会重叠。型号全是数字+字母，不需要中文字体。
+        model_style = ParagraphStyle('model',
+                                      fontName='Helvetica', fontSize=12, leading=15,
+                                      alignment=1)  # 居中
+        num_style   = ParagraphStyle('num',
+                                      fontName='Helvetica', fontSize=10, leading=13,
+                                      alignment=1)
         hd = ["序号", "型号", "数量", "参考价", "盒况备注"]
         data = [hd]
         for it in items:
@@ -1013,24 +1023,28 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
             if it.get("外盒状态"): cp.append("盒:"+it["外盒状态"].replace("|", "、"))
             if it.get("本体状态"): cp.append("本:"+it["本体状态"].replace("|", "、"))
             cond = " ".join(cp)
-            cond_wrapped = Paragraph(cond, wrap_style)
-            data.append([str(it.get("序号","")), str(it.get("型号","")),
-                         str(it.get("数量","")), str(it.get("参考价","")), cond_wrapped])
+            data.append([
+                Paragraph(str(it.get("序号","")), num_style),
+                Paragraph(str(it.get("型号","")), model_style),
+                Paragraph(str(it.get("数量","")), num_style),
+                Paragraph(str(it.get("参考价","")), num_style),
+                Paragraph(cond, wrap_style),
+            ])
 
-        # STSong-Light 下数字度量精确，列宽分配宽裕一些
+        # 型号列用 12pt Helvetica，比其他列大 2 号更醒目；列宽分配也给足
         # A4 可用 174mm (210 - 2*18mm margin)
-        # 序号 15 + 型号 35 + 数量 15 + 参考价 24 + 盒况备注 85 = 174 ✓
-        col_widths = [15*mm, 35*mm, 15*mm, 24*mm, 85*mm]
+        # 序号 15 + 型号 40 + 数量 15 + 参考价 24 + 盒况备注 80 = 174 ✓
+        col_widths = [15*mm, 40*mm, 15*mm, 24*mm, 80*mm]
         t = Table(data, colWidths=col_widths, repeatRows=1)
         t.setStyle(TableStyle([
-            ('FONTNAME', (0,0), (-1,-1), fam),
+            # ⚠️ 字体只设表头行！数据行每个单元格是 Paragraph，
+            # 字体由各自 style 控制（型号/序号用 Helvetica，盒况用 fam）
+            ('FONTNAME', (0,0), (-1,0), fam),
             ('FONTSIZE', (0,0), (-1,-1), 10),
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
             ('TEXTCOLOR', (0,0), (-1,0), colors.black),
             ('ALIGN', (0,0), (-1,0), 'CENTER'),
-            ('ALIGN', (0,1), (2,-1), 'CENTER'),
-            ('ALIGN', (3,1), (3,-1), 'RIGHT'),
-            ('ALIGN', (4,1), (4,-1), 'LEFT'),
+            # 数据行的对齐由 Paragraph style 控制，TableStyle 不再覆盖
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
             ('TOPPADDING', (0,0), (-1,-1), 6),
