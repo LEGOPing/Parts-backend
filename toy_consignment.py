@@ -1707,9 +1707,9 @@ class ListViewer(ui.View):
             tbody = '<tbody><tr><td colspan="5" style="text-align:center;padding:40px;color:#999;">（暂无记录）</td></tr></tbody>'
 
         title_block = (
-            '<h2 style="text-align:center;margin:10px 0 4px;font-size:22px;font-weight:bold;color:#111;">附件：寄售玩具清单</h2>'
-            '<p style="text-align:center;margin:0 0 4px;font-size:12px;color:#666;">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>'
-            '<p style="text-align:center;margin:0 0 8px;font-size:18px;color:#007aff;font-weight:bold;">清单：'
+            '<h2 style="text-align:center;margin:10px 0 6px;font-size:26px;font-weight:bold;color:#111;">附件：寄售玩具清单</h2>'
+            '<p style="text-align:center;margin:0 0 6px;font-size:18px;font-weight:bold;color:#444;">（本清单一式两份，双方各执一份；随附交接照片和视频）</p>'
+            '<p style="text-align:center;margin:0 0 10px;font-size:22px;font-weight:bold;color:#007aff;">清单：'
             + _hm.escape(self.list_name) + '</p>'
         )
 
