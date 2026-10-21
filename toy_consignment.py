@@ -1916,10 +1916,10 @@ class InputForm(ui.View):
         self.current_idx = idx
         item = self.items[idx]
 
-        self.txt_seq.text = item.get("序号", "")
-        self.txt_model.text = item.get("型号", "")
-        self.txt_qty.text = item.get("数量", "1") or "1"
-        self.txt_price.text = item.get("参考价", "")
+        self.txt_seq.text = str(item.get("序号", "") or "")
+        self.txt_model.text = str(item.get("型号", "") or "")
+        self.txt_qty.text = str(item.get("数量", "") or "1")
+        self.txt_price.text = str(item.get("参考价", "") or "")
 
         # 拆封单选
         seal = item.get("拆封状态", "")
