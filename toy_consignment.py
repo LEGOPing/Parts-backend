@@ -446,7 +446,7 @@ class MainViewController(ui.View):
         # Label 子视图
         lbl = ui.Label()
         # 4 个全角空格前缀（U+3000）= 4 个中文字宽度
-        lbl.text = ('　　　　' if left_pad else '') + title
+        lbl.text = ('　　　　　' if left_pad else '') + title
         lbl.font = ('Helvetica', 17)
         lbl.text_color = 'white'
         lbl.text_alignment = ui.ALIGN_LEFT
