@@ -434,34 +434,24 @@ class MainViewController(ui.View):
     def make_button(self, title, color, left_pad=True):
         """
         创建按钮: ui.Button 壳 + 左对齐 ui.Label 子视图
-        - Button 默认 title 清空（避免干扰）
-        - Label 左对齐，通过 frame.x 固定左边距
-        - left_pad=True  → 左 padding=12pt（第二行起大按钮，emoji 对齐）
-        - left_pad=False → 左 padding=0（第一行并排小按钮）
+        - Label 左对齐 + 4 个全角空格前缀（= 4 个中文字宽），emoji 起始位置统一
+        - left_pad=True  → 加前缀空格（第二行起大按钮）
+        - left_pad=False → 不加前缀（第一行并排小按钮）
         """
         btn = ui.Button()
-        btn.title = ""                # Button 自己的 title 清空！
-        btn.font = ('Helvetica', 17) # 保留，让 Button 知道字体大小
+        btn.title = ""
         btn.background_color = color
         btn.corner_radius = 10
         btn.height = 50
-        # 用 Label 子视图来显示文字，完全可控对齐
+        # Label 子视图
         lbl = ui.Label()
-        lbl.text = title
+        # 4 个全角空格前缀（U+3000）= 4 个中文字宽度
+        lbl.text = ('　　　　' if left_pad else '') + title
         lbl.font = ('Helvetica', 17)
         lbl.text_color = 'white'
         lbl.text_alignment = ui.ALIGN_LEFT
-        lbl.flex = 'wh'               # 宽高都跟随父按钮
-        if left_pad:
-            # 让 label 在 Button 内左对齐，左边留 12pt padding
-            lbl.content_edge_insets = ui.EdgeInsets(0, 12, 0, 0) if hasattr(lbl, 'content_edge_insets') else None
-            # 退而求其次: 手动 frame
-            def _sync_label():
-                lbl.frame = (12, 0, btn.width - 24, btn.height)
-            btn.sync_label = _sync_label
         btn.add_subview(lbl)
-        btn._label = lbl  # 存引用
-        # layout 时同步
+        btn._label = lbl
         return btn
 
     def layout(self):
@@ -475,10 +465,10 @@ class MainViewController(ui.View):
         half_w = (btn_w - 10) / 2    # 中间 10pt gap
         self.btn_new_list.frame  = (x,            155, half_w, 50)
         self.btn_open_list.frame = (x + half_w + 10, 155, half_w, 50)
-        # 第一行小按钮的 label（无 padding）
+        # 第一行小按钮的 label
         for b in (self.btn_new_list, self.btn_open_list):
             if hasattr(b, '_label'):
-                b._label.frame = (6, 0, b.width - 12, b.height)
+                b._label.frame = (0, 0, b.width, b.height)
 
         # 第二行起：单个全宽按钮
         btn_w = min(w - 40, 320)
@@ -488,11 +478,11 @@ class MainViewController(ui.View):
         self.btn_sort.frame       = (x, 350, btn_w, 50)
         self.btn_export.frame     = (x, 415, btn_w, 50)
         self.btn_show_folder.frame = (x, 480, btn_w, 50)
-        # 同步 label frame（解决 iOS 上 Button 内 Label 位置问题）
+        # 同步 label frame
         for b in (self.btn_add, self.btn_view, self.btn_sort,
                   self.btn_export, self.btn_show_folder):
             if hasattr(b, '_label') and hasattr(b, 'width'):
-                b._label.frame = (12, 0, b.width - 24, b.height)
+                b._label.frame = (0, 0, b.width, b.height)
         self.stats_label.frame = (20, 545, w - 40, 140)
 
 
