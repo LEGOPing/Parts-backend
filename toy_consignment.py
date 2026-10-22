@@ -625,7 +625,7 @@ def sanitize_filename(name):
 
 # ============ 拍照功能（简化版，确保 Pythonista 兼容） ============
 def take_photos(list_name, seq, model):
-    """多角度拍照，文件名：序号-型号-N.jpg"""
+    """多角度拍照，文件名：型号-N.jpg"""
     folder = get_list_folder(list_name)
     photo_paths = []
     angle = 1
@@ -667,7 +667,7 @@ def take_photos(list_name, seq, model):
                 return photo_paths
 
         # 保存图片（用 PIL Image 标准方式）
-        filename = f"{seq}-{safe_model}-{angle}.jpg"
+        filename = f"{safe_model}-{angle}.jpg"
         filepath = os.path.join(folder, filename)
         print(f"[拍照] 保存: {filepath}")
 
