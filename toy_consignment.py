@@ -1804,18 +1804,16 @@ class InputForm(ui.View):
         return get_list_folder(self.list_name)
 
     def _render_thumbs(self):
-        """渲染图片缩略图网格 — 4列正方形"""
-        # 清除旧的
+        """渲染图片缩略图网格 — 4列正方形，真实图片缩小版"""
         for v in list(self.thumb_container.subviews):
             self.thumb_container.remove_subview(v)
         self._thumb_views = []
 
         photo_dir = self._get_photo_folder()
         n = len(self.photo_files)
-        print(f"[缩略图] photo_dir={photo_dir}")
-        print(f"[缩略图] photo_files={self.photo_files}")
+        print(f"[缩略图] photo_dir={photo_dir}, files={self.photo_files}")
 
-        thumb_size = 78       # 正方形缩略图大小
+        thumb_size = 78
         gap = 8
         cols = 4
         rows = max((n + cols - 1) // cols, 1)
@@ -1833,80 +1831,127 @@ class InputForm(ui.View):
             return
 
         for idx, fname in enumerate(self.photo_files):
-            # 路径处理：如果 fname 已经是绝对路径，直接用；否则拼 photo_dir
             if os.path.isabs(fname):
                 fp = fname
             else:
                 fp = os.path.join(photo_dir, fname)
-            print(f"[缩略图] #{idx} fname={fname!r} → fp={fp!r} exists={os.path.exists(fp)}")
 
             col = idx % cols
             row = idx // cols
             x = col * (thumb_size + gap)
             y = row * (thumb_size + gap)
 
+            # 外层：按钮接点击事件
             btn = ui.Button()
             btn.frame = (x, y, thumb_size, thumb_size)
+            btn.background_color = '#f0f0f0'
             btn.corner_radius = 6
             btn.border_width = 1
-            btn.border_color = '#ddd'
-            btn.background_color = '#f5f5f5'
+            btn.border_color = '#e0e0e0'
 
-            # 加载图片 (用兼容中文路径的 helper)
+            # 内层：ImageView 显示图片缩小版（裁切填充 + 圆角）
+            img_v = ui.ImageView()
+            img_v.frame = btn.bounds
+            img_v.flex = 'WH'
+            img_v.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
+            img_v.corner_radius = 6
+            img_v.clip_to_bounds = True
             img = _safe_image_from_file(fp)
             if img:
-                btn.image = img
+                img_v.image = img
+                btn.title = ""
             else:
-                if os.path.exists(fp):
-                    btn.title = "🖼"  # 文件存在但无法解码
-                else:
-                    btn.title = "❓"  # 文件不存在
-                btn.font = ('Helvetica', 24)
+                btn.title = "🖼" if os.path.exists(fp) else "❓"
+                btn.font = ('Helvetica', 22)
                 btn.tint_color = '#999'
 
-            def make_handler(path=fp, name=fname, i=idx):
-                def handler(sender):
-                    self._show_large_image(path, name)
-                return handler
-            btn.action = make_handler()
+            btn.add_subview(img_v)
+
+            def make_i(i=idx):
+                def h(s): self._show_image_viewer(i)
+                return h
+            btn.action = make_i()
             self.thumb_container.add_subview(btn)
             self._thumb_views.append(btn)
 
-    def _show_large_image(self, img_path, fname):
-        """全屏弹窗显示大图"""
-        mask = ui.View(frame=(0, 0, ui.get_screen_size().width, ui.get_screen_size().height))
-        mask.background_color = (0, 0, 0, 0.9)
+    def _show_image_viewer(self, start_idx=0):
+        """全屏图片浏览器 — 左右滑动翻页"""
+        screen_w, screen_h = ui.get_screen_size()
+
+        # 收集绝对路径
+        photo_dir = self._get_photo_folder()
+        paths = [fp if os.path.isabs(fp := os.path.join(photo_dir, fn)) else fp
+                 for fn in self.photo_files]
+        n = len(paths)
+        if n == 0:
+            return
+
+        # 遮罩
+        mask = ui.View(frame=(0, 0, screen_w, screen_h))
+        mask.background_color = (0, 0, 0, 0.95)
         mask.flex = 'WH'
 
-        # 图片 (同样用兼容中文路径的 helper)
-        img_view = ui.ImageView()
-        img_view.image = _safe_image_from_file(img_path)
-        print(f"[大图] path={img_path!r} exists={os.path.exists(img_path)} loaded={img_view.image is not None}")
-        img_view.content_mode = ui.CONTENT_SCALE_ASPECT_FIT
-        img_view.flex = 'WH'
-        mask.add_subview(img_view)
+        # ScrollView 分页
+        sv = ui.ScrollView(frame=(0, 40, screen_w, screen_h - 40 - 60))
+        sv.flex = 'WH'
+        sv.content_size = (screen_w * n, sv.height)
+        sv.paging_enabled = True
+        sv.shows_horizontal_scroll_indicator = False
 
-        # 文件名 label (顶部)
-        lbl = ui.Label()
-        lbl.text = fname
-        lbl.text_color = '#fff'
-        lbl.font = ('Helvetica', 12)
-        lbl.alignment = ui.ALIGN_CENTER
-        lbl.flex = 'TB'
-        lbl.height = 30
-        mask.add_subview(lbl)
+        # 每页一张图
+        for i, fp in enumerate(paths):
+            page = ui.ImageView(frame=(i * screen_w, 0, screen_w, sv.height))
+            page.content_mode = ui.CONTENT_SCALE_ASPECT_FIT
+            page.flex = 'WH'
+            page.image = _safe_image_from_file(fp)
+            sv.add_subview(page)
 
-        # 关闭按钮
+        # 页码 (顶部)
+        page_lbl = ui.Label()
+        page_lbl.text = f"{start_idx + 1}/{n}"
+        page_lbl.text_color = '#fff'
+        page_lbl.font = ('Helvetica', 16, 'bold')
+        page_lbl.alignment = ui.ALIGN_CENTER
+        page_lbl.frame = (0, 0, screen_w, 40)
+        page_lbl.flex = 'TB'
+        mask.add_subview(page_lbl)
+        mask.add_subview(sv)
+
+        # 文件名 (底部左) + 关闭 (底部右)
+        name_lbl = ui.Label()
+        name_lbl.text = self.photo_files[start_idx]
+        name_lbl.text_color = '#bbb'
+        name_lbl.font = ('Helvetica', 11)
+        name_lbl.frame = (10, screen_h - 55, screen_w - 80, 20)
+        name_lbl.flex = 'TB'
+        mask.add_subview(name_lbl)
+
         close = ui.Button()
         close.title = "✕ 关闭"
         close.tint_color = '#fff'
         close.font = ('Helvetica', 14)
         close.action = lambda s: mask.close()
-        close.flex = 'TB'
-        close.height = 50
+        close.frame = (screen_w - 80, screen_h - 55, 70, 44)
+        close.flex = 'TR'
         mask.add_subview(close)
 
+        # 翻页时更新页码
+        class _PageDelegate:
+            def __init__(self, plbl, nlbl, files, w):
+                self.plbl = plbl; self.nlbl = nlbl
+                self.files = files; self.w = w; self.last = -1
+            def scrollview_did_scroll(self, sc):
+                cur = max(0, min(int(round(sc.content_offset.x / self.w)), len(self.files) - 1))
+                if cur != self.last:
+                    self.last = cur
+                    self.plbl.text = f"{cur + 1}/{len(self.files)}"
+                    self.nlbl.text = self.files[cur]
+        sv.delegate = _PageDelegate(page_lbl, name_lbl, self.photo_files, screen_w)
+
         mask.present('sheet')
+
+        # present 后跳到起始页（必须在 present 之后）
+        ui.delay(0.1, lambda: setattr(sv, 'content_offset', (start_idx * screen_w, 0)))
 
     # ========= 加载已有货品 =========
     def _load_item(self, idx):
