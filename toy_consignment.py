@@ -1522,29 +1522,14 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
 # ============ 数据输入表单（内嵌盒况）============
 def _safe_image_from_file(path):
-    """兼容中文路径的图片加载"""
-    import tempfile
+    """从文件加载图片 — 返回 PIL Image 对象 (Pythonista 可直接赋给 ImageView.image)"""
     import PIL.Image as PILImage
     if not path or not os.path.exists(path):
         return None
-    # 主路径: ui.Image.from_file (Pythonista 原生，大多数情况能工作)
-    try:
-        return ui.Image.from_file(path)
-    except Exception:
-        pass
-    # 兜底: PIL 打开 → 存临时文件 → from_file
     try:
         pil_img = PILImage.open(path)
         pil_img.load()
-        tmp = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-        try:
-            rgb = pil_img.convert('RGB')
-            rgb.save(tmp_path, 'JPEG')
-        except Exception:
-            pil_img.save(tmp_path)
-        return ui.Image.from_file(tmp_path)
+        return pil_img
     except Exception as e:
         print(f"[图片加载失败] {path}: {e}")
         return None
@@ -1868,45 +1853,30 @@ class InputForm(ui.View):
             x = col * (thumb_size + gap)
             y = row * (thumb_size + gap)
 
-            # 外层 View 接点击手势
-            cell = ui.View()
-            cell.frame = (x, y, thumb_size, thumb_size)
-            cell.background_color = '#e8e8e8'
-            cell.corner_radius = 6
-            cell.border_width = 1
-            cell.border_color = '#ddd'
+            # 纯 Button — Pythonista 最稳的可点击控件
+            btn = ui.Button()
+            btn.frame = (x, y, thumb_size, thumb_size)
+            btn.background_color = '#e8e8e8'
+            btn.corner_radius = 6
+            btn.border_width = 1
+            btn.border_color = '#ddd'
 
-            # 内层 ImageView 显示原图 (Pythonista 会自动缩到 ImageView 大小)
-            iv = ui.ImageView()
-            iv.frame = cell.bounds
-            iv.flex = 'WH'
-            iv.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
-            iv.corner_radius = 6
-            iv.clip_to_bounds = True
-
-            img = _safe_image_from_file(fp)
-            if img:
-                iv.image = img
+            pil_img = _safe_image_from_file(fp)
+            if pil_img:
+                btn.image = pil_img  # Pythonista Button.image 接受 PIL Image
             else:
-                lbl = ui.Label()
-                lbl.text = "🖼" if os.path.exists(fp) else "❓"
-                lbl.font = ('Helvetica', 22)
-                lbl.text_color = '#bbb'
-                lbl.alignment = ui.ALIGN_CENTER
-                lbl.frame = cell.bounds
-                lbl.flex = 'WH'
-                cell.add_subview(lbl)
-
-            cell.add_subview(iv)
+                btn.title = "🖼" if os.path.exists(fp) else "❓"
+                btn.font = ('Helvetica', 22)
+                btn.tint_color = '#bbb'
 
             def make_tap(i=idx):
                 def tap(sender):
                     self._show_image_viewer(i)
                 return tap
-            cell.tap_action = make_tap()
+            btn.action = make_tap()
 
-            self.thumb_container.add_subview(cell)
-            self._thumb_views.append(cell)
+            self.thumb_container.add_subview(btn)
+            self._thumb_views.append(btn)
 
     def _show_image_viewer(self, start_idx=0):
         """全屏图片浏览器 — 翻页按钮切换 + 左右滑"""
