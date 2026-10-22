@@ -1522,18 +1522,29 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
 # ============ 数据输入表单（内嵌盒况）============
 def _safe_image_from_file(path):
-    """兼容中文路径的图片加载 (PIL → ui.Image)"""
+    """兼容中文路径的图片加载"""
+    import tempfile
     import PIL.Image as PILImage
     if not path or not os.path.exists(path):
         return None
+    # 主路径: ui.Image.from_file (Pythonista 原生，大多数情况能工作)
     try:
         return ui.Image.from_file(path)
     except Exception:
         pass
+    # 兜底: PIL 打开 → 存临时文件 → from_file
     try:
         pil_img = PILImage.open(path)
         pil_img.load()
-        return ui.Image.from_pil_image(pil_img)
+        tmp = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            rgb = pil_img.convert('RGB')
+            rgb.save(tmp_path, 'JPEG')
+        except Exception:
+            pil_img.save(tmp_path)
+        return ui.Image.from_file(tmp_path)
     except Exception as e:
         print(f"[图片加载失败] {path}: {e}")
         return None
@@ -1857,52 +1868,50 @@ class InputForm(ui.View):
             x = col * (thumb_size + gap)
             y = row * (thumb_size + gap)
 
-            # 纯 Button + .image 属性（Pythonista 最稳的缩略图方式）
-            btn = ui.Button()
-            btn.frame = (x, y, thumb_size, thumb_size)
-            btn.background_color = '#e8e8e8'
-            btn.corner_radius = 6
-            btn.border_width = 1
-            btn.border_color = '#ddd'
-            btn.font = ('Helvetica', 18)
-            btn.tint_color = '#888'
+            # 外层 View 接点击手势
+            cell = ui.View()
+            cell.frame = (x, y, thumb_size, thumb_size)
+            cell.background_color = '#e8e8e8'
+            cell.corner_radius = 6
+            cell.border_width = 1
+            cell.border_color = '#ddd'
+
+            # 内层 ImageView 显示原图 (Pythonista 会自动缩到 ImageView 大小)
+            iv = ui.ImageView()
+            iv.frame = cell.bounds
+            iv.flex = 'WH'
+            iv.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
+            iv.corner_radius = 6
+            iv.clip_to_bounds = True
 
             img = _safe_image_from_file(fp)
             if img:
-                # 预缩成 78x78 缩略图（PIL 裁切 + 缩小）
-                try:
-                    import PIL.Image as PILImage
-                    pil = PILImage.open(fp)
-                    pil.load()
-                    # 中心裁切
-                    w, h = pil.size
-                    side = min(w, h)
-                    left = (w - side) // 2
-                    top = (h - side) // 2
-                    pil = pil.crop((left, top, left + side, top + side))
-                    pil = pil.resize((thumb_size * 2, thumb_size * 2), PILImage.LANCZOS)  # Retina
-                    thumb_img = ui.Image.from_pil_image(pil)
-                    btn.image = thumb_img
-                    btn.title = ""
-                except Exception as e:
-                    print(f"[缩略图] 缩图失败: {e}, 用原图")
-                    btn.image = img
-                    btn.title = ""
+                iv.image = img
             else:
-                btn.title = "🖼" if os.path.exists(fp) else "❓"
+                lbl = ui.Label()
+                lbl.text = "🖼" if os.path.exists(fp) else "❓"
+                lbl.font = ('Helvetica', 22)
+                lbl.text_color = '#bbb'
+                lbl.alignment = ui.ALIGN_CENTER
+                lbl.frame = cell.bounds
+                lbl.flex = 'WH'
+                cell.add_subview(lbl)
 
-            def make_i(i=idx):
-                def h(s): self._show_image_viewer(i)
-                return h
-            btn.action = make_i()
-            self.thumb_container.add_subview(btn)
-            self._thumb_views.append(btn)
+            cell.add_subview(iv)
+
+            def make_tap(i=idx):
+                def tap(sender):
+                    self._show_image_viewer(i)
+                return tap
+            cell.tap_action = make_tap()
+
+            self.thumb_container.add_subview(cell)
+            self._thumb_views.append(cell)
 
     def _show_image_viewer(self, start_idx=0):
-        """全屏图片浏览器 — 左右滑动翻页"""
+        """全屏图片浏览器 — 翻页按钮切换 + 左右滑"""
         screen_w, screen_h = ui.get_screen_size()
 
-        # 收集绝对路径
         photo_dir = self._get_photo_folder()
         paths = []
         for fn in self.photo_files:
@@ -1919,22 +1928,7 @@ class InputForm(ui.View):
         mask.background_color = (0, 0, 0, 0.95)
         mask.flex = 'WH'
 
-        # ScrollView 分页
-        sv = ui.ScrollView(frame=(0, 40, screen_w, screen_h - 40 - 60))
-        sv.flex = 'WH'
-        sv.content_size = (screen_w * n, sv.height)
-        sv.paging_enabled = True
-        sv.shows_horizontal_scroll_indicator = False
-
-        # 每页一张图
-        for i, fp in enumerate(paths):
-            page = ui.ImageView(frame=(i * screen_w, 0, screen_w, sv.height))
-            page.content_mode = ui.CONTENT_SCALE_ASPECT_FIT
-            page.flex = 'WH'
-            page.image = _safe_image_from_file(fp)
-            sv.add_subview(page)
-
-        # 页码 (顶部)
+        # 顶部页码
         page_lbl = ui.Label()
         page_lbl.text = f"{start_idx + 1}/{n}"
         page_lbl.text_color = '#fff'
@@ -1943,17 +1937,62 @@ class InputForm(ui.View):
         page_lbl.frame = (0, 0, screen_w, 40)
         page_lbl.flex = 'TB'
         mask.add_subview(page_lbl)
-        mask.add_subview(sv)
 
-        # 文件名 (底部左) + 关闭 (底部右)
+        # 主图片区
+        img_area = ui.View(frame=(0, 40, screen_w, screen_h - 40 - 60))
+        img_area.flex = 'WH'
+        img_view = ui.ImageView(frame=(0, 0, screen_w, img_area.height))
+        img_view.content_mode = ui.CONTENT_SCALE_ASPECT_FIT
+        img_view.flex = 'WH'
+        img_view.image = _safe_image_from_file(paths[start_idx])
+        img_area.add_subview(img_view)
+        mask.add_subview(img_area)
+
+        # 翻页函数
+        def show_page(i):
+            i = max(0, min(i, n - 1))
+            page_lbl.text = f"{i + 1}/{n}"
+            name_lbl.text = self.photo_files[i]
+            img_view.image = _safe_image_from_file(paths[i])
+            prev_btn.enabled = i > 0
+            next_btn.enabled = i < n - 1
+            _state['cur'] = i
+
+        _state = {'cur': start_idx}
+
+        # 上一张
+        prev_btn = ui.Button()
+        prev_btn.title = "‹ 上一张"
+        prev_btn.tint_color = '#fff'
+        prev_btn.font = ('Helvetica', 14)
+        prev_btn.action = lambda s: show_page(_state['cur'] - 1)
+        prev_btn.frame = (10, screen_h - 55, 100, 44)
+        prev_btn.flex = 'TL'
+        prev_btn.enabled = start_idx > 0
+        mask.add_subview(prev_btn)
+
+        # 文件名
         name_lbl = ui.Label()
         name_lbl.text = self.photo_files[start_idx]
         name_lbl.text_color = '#bbb'
         name_lbl.font = ('Helvetica', 11)
-        name_lbl.frame = (10, screen_h - 55, screen_w - 80, 20)
+        name_lbl.alignment = ui.ALIGN_CENTER
+        name_lbl.frame = (110, screen_h - 55, screen_w - 290, 20)
         name_lbl.flex = 'TB'
         mask.add_subview(name_lbl)
 
+        # 下一张
+        next_btn = ui.Button()
+        next_btn.title = "下一张 ›"
+        next_btn.tint_color = '#fff'
+        next_btn.font = ('Helvetica', 14)
+        next_btn.action = lambda s: show_page(_state['cur'] + 1)
+        next_btn.frame = (screen_w - 190, screen_h - 55, 100, 44)
+        next_btn.flex = 'TR'
+        next_btn.enabled = start_idx < n - 1
+        mask.add_subview(next_btn)
+
+        # 关闭
         close = ui.Button()
         close.title = "✕ 关闭"
         close.tint_color = '#fff'
@@ -1963,24 +2002,7 @@ class InputForm(ui.View):
         close.flex = 'TR'
         mask.add_subview(close)
 
-        # 翻页时更新页码 — 用 delegate 回调
-        class _PageDelegate:
-            def __init__(self, plbl, nlbl, files, w):
-                self.plbl = plbl; self.nlbl = nlbl
-                self.files = files; self.w = w; self.last = -1
-            def scrollview_did_scroll(self, sc):
-                cur = max(0, min(int(round(sc.content_offset.x / self.w)), len(self.files) - 1))
-                if cur != self.last:
-                    self.last = cur
-                    self.plbl.text = f"{cur + 1}/{len(self.files)}"
-                    self.nlbl.text = self.files[cur]
-        sv.delegate = _PageDelegate(page_lbl, name_lbl, list(self.photo_files), screen_w)
-
         mask.present('sheet')
-
-        # 延迟滚到起始页 — 整数 tuple 赋值
-        target_x = start_idx * screen_w
-        ui.delay(0.1, lambda: setattr(sv, 'content_offset', (target_x, 0)))
 
     # ========= 加载已有货品 =========
     def _load_item(self, idx):
