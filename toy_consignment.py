@@ -1405,6 +1405,9 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         lnm_style = ParagraphStyle('lnm',
                                     fontName=fam, fontSize=14, leading=18,
                                     alignment=1, textColor=colors.HexColor('#007aff'))
+        lnm_val_style = ParagraphStyle('lnm_val',
+                                        fontName='Helvetica', fontSize=14, leading=18,
+                                        textColor=colors.HexColor('#007aff'))
         body_style = ParagraphStyle('body',
                                      fontName=fam, fontSize=10, leading=14)
         story = []
@@ -1412,7 +1415,7 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
         story.append(Spacer(1, 4))
         story.append(Paragraph('（本清单一式两份，双方各执一份；随附交接照片和视频）', sub_style))
         story.append(Spacer(1, 2))
-        story.append(Paragraph('清单：' + self.current_list_name, lnm_style))
+        story.append(Paragraph('清单：<font name="Helvetica">' + self.current_list_name + '</font>', lnm_style))
         story.append(Spacer(1, 10))
 
         wrap_style = ParagraphStyle('wrap',
