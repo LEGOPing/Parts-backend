@@ -1522,22 +1522,14 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
 # ============ 数据输入表单（内嵌盒况）============
 def _safe_image_from_file(path):
-    """从文件加载图片 — 返回 ui.Image 对象"""
-    import io
+    """从文件加载图片 — 返回 PIL Image (Pythonista 的 ImageView.image 直接接受)"""
     import PIL.Image as PILImage
     if not path or not os.path.exists(path):
         return None
     try:
         pil_img = PILImage.open(path)
         pil_img.load()
-        # 转成 JPEG bytes → ui.Image.from_data
-        try:
-            rgb = pil_img.convert('RGB')
-        except Exception:
-            rgb = pil_img
-        buf = io.BytesIO()
-        rgb.save(buf, 'JPEG')
-        return ui.Image.from_data(buf.getvalue())
+        return pil_img
     except Exception as e:
         print(f"[图片加载失败] {path}: {e}")
         return None
@@ -1861,21 +1853,36 @@ class InputForm(ui.View):
             x = col * (thumb_size + gap)
             y = row * (thumb_size + gap)
 
-            # 纯 Button — Pythonista 最稳的可点击控件
+            # 透明 Button 负责接收点击事件
             btn = ui.Button()
             btn.frame = (x, y, thumb_size, thumb_size)
-            btn.background_color = '#e8e8e8'
+            btn.background_color = '#f0f0f0'
             btn.corner_radius = 6
             btn.border_width = 1
             btn.border_color = '#ddd'
 
+            # ImageView 显示图片 — PIL Image 直接赋给 ImageView.image
+            iv = ui.ImageView()
+            iv.frame = btn.bounds
+            iv.flex = 'WH'
+            iv.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
+            iv.corner_radius = 6
+            iv.clip_to_bounds = True
+
             pil_img = _safe_image_from_file(fp)
             if pil_img:
-                btn.image = pil_img  # Pythonista Button.image 接受 PIL Image
+                iv.image = pil_img
             else:
-                btn.title = "🖼" if os.path.exists(fp) else "❓"
-                btn.font = ('Helvetica', 22)
-                btn.tint_color = '#bbb'
+                lbl = ui.Label()
+                lbl.text = "🖼" if os.path.exists(fp) else "❓"
+                lbl.font = ('Helvetica', 22)
+                lbl.text_color = '#bbb'
+                lbl.alignment = ui.ALIGN_CENTER
+                lbl.frame = btn.bounds
+                lbl.flex = 'WH'
+                btn.add_subview(lbl)
+
+            btn.add_subview(iv)
 
             def make_tap(i=idx):
                 def tap(sender):
