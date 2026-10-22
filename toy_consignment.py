@@ -1857,31 +1857,39 @@ class InputForm(ui.View):
             x = col * (thumb_size + gap)
             y = row * (thumb_size + gap)
 
-            # 外层：按钮接点击事件
+            # 纯 Button + .image 属性（Pythonista 最稳的缩略图方式）
             btn = ui.Button()
             btn.frame = (x, y, thumb_size, thumb_size)
-            btn.background_color = '#f0f0f0'
+            btn.background_color = '#e8e8e8'
             btn.corner_radius = 6
             btn.border_width = 1
-            btn.border_color = '#e0e0e0'
+            btn.border_color = '#ddd'
+            btn.font = ('Helvetica', 18)
+            btn.tint_color = '#888'
 
-            # 内层：ImageView 显示图片缩小版（裁切填充 + 圆角）
-            img_v = ui.ImageView()
-            img_v.frame = btn.bounds
-            img_v.flex = 'WH'
-            img_v.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
-            img_v.corner_radius = 6
-            img_v.clip_to_bounds = True
             img = _safe_image_from_file(fp)
             if img:
-                img_v.image = img
-                btn.title = ""
+                # 预缩成 78x78 缩略图（PIL 裁切 + 缩小）
+                try:
+                    import PIL.Image as PILImage
+                    pil = PILImage.open(fp)
+                    pil.load()
+                    # 中心裁切
+                    w, h = pil.size
+                    side = min(w, h)
+                    left = (w - side) // 2
+                    top = (h - side) // 2
+                    pil = pil.crop((left, top, left + side, top + side))
+                    pil = pil.resize((thumb_size * 2, thumb_size * 2), PILImage.LANCZOS)  # Retina
+                    thumb_img = ui.Image.from_pil_image(pil)
+                    btn.image = thumb_img
+                    btn.title = ""
+                except Exception as e:
+                    print(f"[缩略图] 缩图失败: {e}, 用原图")
+                    btn.image = img
+                    btn.title = ""
             else:
                 btn.title = "🖼" if os.path.exists(fp) else "❓"
-                btn.font = ('Helvetica', 22)
-                btn.tint_color = '#999'
-
-            btn.add_subview(img_v)
 
             def make_i(i=idx):
                 def h(s): self._show_image_viewer(i)
@@ -1896,8 +1904,12 @@ class InputForm(ui.View):
 
         # 收集绝对路径
         photo_dir = self._get_photo_folder()
-        paths = [fp if os.path.isabs(fp := os.path.join(photo_dir, fn)) else fp
-                 for fn in self.photo_files]
+        paths = []
+        for fn in self.photo_files:
+            if os.path.isabs(fn):
+                paths.append(fn)
+            else:
+                paths.append(os.path.join(photo_dir, fn))
         n = len(paths)
         if n == 0:
             return
@@ -1926,7 +1938,7 @@ class InputForm(ui.View):
         page_lbl = ui.Label()
         page_lbl.text = f"{start_idx + 1}/{n}"
         page_lbl.text_color = '#fff'
-        page_lbl.font = ('Helvetica', 16, 'bold')
+        page_lbl.font = ('Helvetica', 16)
         page_lbl.alignment = ui.ALIGN_CENTER
         page_lbl.frame = (0, 0, screen_w, 40)
         page_lbl.flex = 'TB'
@@ -1951,7 +1963,7 @@ class InputForm(ui.View):
         close.flex = 'TR'
         mask.add_subview(close)
 
-        # 翻页时更新页码
+        # 翻页时更新页码 — 用 delegate 回调
         class _PageDelegate:
             def __init__(self, plbl, nlbl, files, w):
                 self.plbl = plbl; self.nlbl = nlbl
@@ -1962,12 +1974,13 @@ class InputForm(ui.View):
                     self.last = cur
                     self.plbl.text = f"{cur + 1}/{len(self.files)}"
                     self.nlbl.text = self.files[cur]
-        sv.delegate = _PageDelegate(page_lbl, name_lbl, self.photo_files, screen_w)
+        sv.delegate = _PageDelegate(page_lbl, name_lbl, list(self.photo_files), screen_w)
 
         mask.present('sheet')
 
-        # present 后跳到起始页（必须在 present 之后）
-        ui.delay(0.1, lambda: setattr(sv, 'content_offset', (start_idx * screen_w, 0)))
+        # 延迟滚到起始页 — 整数 tuple 赋值
+        target_x = start_idx * screen_w
+        ui.delay(0.1, lambda: setattr(sv, 'content_offset', (target_x, 0)))
 
     # ========= 加载已有货品 =========
     def _load_item(self, idx):
