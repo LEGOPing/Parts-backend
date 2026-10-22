@@ -11,7 +11,15 @@ import csv
 import json
 import photos
 import webbrowser
+import io
 from datetime import datetime
+
+# Pythonista ObjC bridge（PIL → ui.Image 必须走这条路）
+try:
+    import objc_util
+    _HAS_OBJC = True
+except ImportError:
+    _HAS_OBJC = False
 
 # ============ 配置常量 ============
 # 主存储：JSON（天然支持数组字段、任意换行、key 契约不依赖列位置）
@@ -1521,15 +1529,29 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
                 "在 iOS 上打开后用系统分享 → 打印 → 存文件即可。")
 
 # ============ 数据输入表单（内嵌盒况）============
+def _pil_to_ui_image(pil_img):
+    """把 PIL Image 转成 Pythonista 能吃的 ui.Image（唯一靠谱路径：UIImage bridge）"""
+    if not _HAS_OBJC:
+        return None
+    try:
+        buf = io.BytesIO()
+        pil_img.save(buf, format='JPEG', quality=90)
+        nsdata = objc_util.nsdata(buf.getvalue())
+        uiimg = objc_util.UIImage.alloc().initWithData_(nsdata)
+        return ui.Image(uiimg)
+    except Exception as e:
+        print(f"[PIL→ui.Image 转换失败] {e}")
+        return None
+
 def _safe_image_from_file(path):
-    """从文件加载图片 — 返回 PIL Image (Pythonista 的 ImageView.image 直接接受)"""
+    """从文件加载图片 — 返回 ui.Image（Pythonista 所有 image 控件只认 ui.Image）"""
     import PIL.Image as PILImage
     if not path or not os.path.exists(path):
         return None
     try:
         pil_img = PILImage.open(path)
         pil_img.load()
-        return pil_img
+        return _pil_to_ui_image(pil_img)
     except Exception as e:
         print(f"[图片加载失败] {path}: {e}")
         return None
