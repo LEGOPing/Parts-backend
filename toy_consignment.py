@@ -1522,14 +1522,22 @@ h2 {{ text-align: center; margin: 0 0 6pt 0; font-size: 18pt; }}
 
 # ============ 数据输入表单（内嵌盒况）============
 def _safe_image_from_file(path):
-    """从文件加载图片 — 返回 PIL Image 对象 (Pythonista 可直接赋给 ImageView.image)"""
+    """从文件加载图片 — 返回 ui.Image 对象"""
+    import io
     import PIL.Image as PILImage
     if not path or not os.path.exists(path):
         return None
     try:
         pil_img = PILImage.open(path)
         pil_img.load()
-        return pil_img
+        # 转成 JPEG bytes → ui.Image.from_data
+        try:
+            rgb = pil_img.convert('RGB')
+        except Exception:
+            rgb = pil_img
+        buf = io.BytesIO()
+        rgb.save(buf, 'JPEG')
+        return ui.Image.from_data(buf.getvalue())
     except Exception as e:
         print(f"[图片加载失败] {path}: {e}")
         return None
