@@ -1967,30 +1967,20 @@ class InputForm(ui.View):
         name_lbl.text_color = '#bbb'
         name_lbl.font = ('Helvetica', 11)
         name_lbl.alignment = ui.ALIGN_CENTER
-        name_lbl.frame = (110, screen_h - 55, screen_w - 290, 20)
+        name_lbl.frame = (110, screen_h - 55, screen_w - 220, 20)
         name_lbl.flex = 'TB'
         mask.add_subview(name_lbl)
 
-        # 下一张
+        # 下一张（右对齐）
         next_btn = ui.Button()
         next_btn.title = "下一张 ›"
         next_btn.tint_color = '#fff'
         next_btn.font = ('Helvetica', 14)
         next_btn.action = lambda s: show_page(_state['cur'] + 1)
-        next_btn.frame = (screen_w - 190, screen_h - 55, 100, 44)
+        next_btn.frame = (screen_w - 110, screen_h - 55, 100, 44)
         next_btn.flex = 'TR'
         next_btn.enabled = start_idx < n - 1
         mask.add_subview(next_btn)
-
-        # 关闭
-        close = ui.Button()
-        close.title = "✕ 关闭"
-        close.tint_color = '#fff'
-        close.font = ('Helvetica', 14)
-        close.action = lambda s: mask.close()
-        close.frame = (screen_w - 80, screen_h - 55, 70, 44)
-        close.flex = 'TR'
-        mask.add_subview(close)
 
         mask.present('sheet')
 
