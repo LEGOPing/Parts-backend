@@ -628,8 +628,24 @@ def take_photos(list_name, seq, model):
     """多角度拍照，文件名：型号-N.jpg"""
     folder = get_list_folder(list_name)
     photo_paths = []
-    angle = 1
     safe_model = sanitize_filename(model) if model else "未知型号"
+
+    # 扫描已有同型号图片，从最大序号+1 开始（避免覆盖）
+    import re as _re
+    angle = 1
+    try:
+        existing = os.listdir(folder) if os.path.exists(folder) else []
+        pat = _re.compile(rf'^{_re.escape(safe_model)}-(\d+)\.jpg$')
+        max_n = 0
+        for fn in existing:
+            m = pat.match(fn)
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+        angle = max_n + 1
+        if max_n > 0:
+            print(f"[拍照] 已有 {max_n} 张，从 -{angle}.jpg 开始")
+    except Exception as e:
+        print(f"[拍照] 扫描旧文件失败: {e}")
 
     # 第一次提示来源
     choice = dialogs.list_dialog(
