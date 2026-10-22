@@ -1,0 +1,24 @@
+name: Supabase Heartbeat
+
+on:
+  schedule:
+    # 每 5 天运行一次 (UTC 00:00, 约北京时间 08:00)
+    - cron: '0 0 */5 * *'
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Supabase heartbeat
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: |
+          chmod +x supabase_heartbeat.sh
+          bash supabase_heartbeat.sh
